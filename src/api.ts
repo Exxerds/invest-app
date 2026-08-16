@@ -197,3 +197,70 @@ export const apiMarkNotificationsRead = (id?: number) =>
     headers: authHeader(),
     body: JSON.stringify(id ? { id } : {}),
   });
+
+// ---------- instrument search (proxied TradingView) ----------
+
+export interface ApiSymbol {
+  symbol: string;
+  name: string;
+  exchange: string;
+  kind: string;
+  category: string;
+  tv: string;
+  logo: string | null;
+}
+
+export const apiSearchSymbols = (q: string) =>
+  request<{ results: ApiSymbol[]; error?: string }>(`/symbols/search?q=${encodeURIComponent(q)}`);
+
+// ---------- trades ----------
+
+export interface ApiTrade {
+  id: number;
+  userId: number;
+  userName: string;
+  userEmail: string;
+  symbol: string;
+  tv: string;
+  name: string;
+  side: 'LONG' | 'SHORT' | 'SPOT';
+  amount: number;
+  entryPrice: number;
+  currentPrice: number;
+  leverage: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  pnl: number;
+  status: 'OPEN' | 'CLOSED';
+  openedAt: string;
+  closedAt?: string;
+  editedBy?: string;
+  editedAt?: string;
+}
+
+export const apiMyTrades = () =>
+  request<{ trades: ApiTrade[] }>('/trades/mine', { headers: authHeader() });
+
+export const apiAllTrades = () =>
+  request<{ trades: ApiTrade[] }>('/trades/all', { headers: authHeader() });
+
+export const apiOpenTrade = (data: Partial<ApiTrade> & { symbol: string; amount: number }) =>
+  request<{ ok: true; trade: ApiTrade }>('/trades', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify(data),
+  });
+
+/** Staff edits any parameter of a position */
+export const apiUpdateTrade = (id: number, patch: Partial<ApiTrade>) =>
+  request<{ ok: true; trade: ApiTrade }>(`/trades/${id}`, {
+    method: 'PATCH',
+    headers: authHeader(),
+    body: JSON.stringify(patch),
+  });
+
+export const apiCloseTrade = (id: number) =>
+  request<{ ok: true; trade: ApiTrade }>(`/trades/${id}/close`, {
+    method: 'POST',
+    headers: authHeader(),
+  });

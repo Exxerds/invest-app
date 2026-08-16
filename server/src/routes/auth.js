@@ -76,6 +76,10 @@ router.post('/register', async (req, res) => {
     const token = await createToken(user.id, 'confirm_email');
     const link = `${publicUrl(req)}/confirm-email?token=${token}`;
 
+    // The account already exists at this point. If the mail provider is down
+    // we must NOT return an error — that would tell the visitor registration
+    // failed while their account is actually there.
+    let mailSent = true;
     await sendMail({
       to: user.email,
       subject: 'Confirm your email',
@@ -92,9 +96,17 @@ router.post('/register', async (req, res) => {
         </p>
         <p style="color:#64748b;font-size:12px;">The link is valid for 1 hour. If you didn't register — ignore this email.</p>
       `)
+    }).catch(err => {
+      mailSent = false;
+      console.error('[register] Could not send the confirmation e-mail:', err.message);
     });
 
-    res.json({ ok: true, message: 'Account created. Check your email — we sent a confirmation link.' });
+    res.json({
+      ok: true,
+      message: mailSent
+        ? 'Account created. Check your email — we sent a confirmation link.'
+        : 'Account created, but the confirmation e-mail could not be sent. Please contact support to activate it.',
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -179,6 +191,9 @@ router.post('/forgot-password', async (req, res) => {
         </p>
         <p style="color:#64748b;font-size:12px;">The link is valid for 1 hour. If you didn't request it — ignore this email.</p>
       `)
+    }).catch(err => {
+      // Never leak mail-server problems to the visitor
+      console.error('[reset] Could not send the reset e-mail:', err.message);
     });
   }
 

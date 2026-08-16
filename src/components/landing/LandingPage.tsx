@@ -8,8 +8,7 @@
 //  → why us → affiliate → documentation → news → contact.
 // ============================================================
 import React, { useState, useRef, useEffect } from 'react';
-import { TickerTape, MarketOverview, MiniChart, MARKET_TABS } from '../investor/TradingViewChart';
-import type { MarketTab } from '../investor/TradingViewChart';
+import { TickerTape, MarketOverview, MiniChart } from '../investor/TradingViewChart';
 import {
   TrendingUp,
   ChevronDown,
@@ -73,7 +72,6 @@ const H2: React.FC<{ children: React.ReactNode; className?: string }> = ({ child
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOpenRegisterModal }) => {
   const [tradingOpen, setTradingOpen] = useState(false);
-  const [marketTab, setMarketTab] = useState<MarketTab>('Indices');
   const tradingRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -225,26 +223,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
           </p>
         </div>
 
-        {/* Our own category tabs — the widget itself is read-only, so its
-            built-in tabs are replaced with real buttons we control */}
-        <div className="flex flex-wrap justify-center gap-2 mb-5">
-          {MARKET_TABS.map(t => (
-            <button
-              key={t}
-              onClick={() => setMarketTab(t)}
-              className={`px-4 py-2 rounded-xl text-[13px] font-bold transition-all cursor-pointer border ${
-                marketTab === t
-                  ? 'bg-[#f5b400] text-[#17190f] border-[#f5b400]'
-                  : 'bg-white/[.04] text-slate-400 border-white/[.08] hover:text-white'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-
         <div className="bg-[#16181f] border border-white/[.07] rounded-2xl p-3 shadow-2xl shadow-black/40">
-          <MarketOverview tab={marketTab} height={480} />
+          <MarketOverview height={480} />
         </div>
 
         <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">

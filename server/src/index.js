@@ -16,6 +16,8 @@ import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import kycRoutes from './routes/kyc.js';
 import notificationRoutes from './routes/notifications.js';
+import symbolRoutes from './routes/symbols.js';
+import tradeRoutes from './routes/trades.js';
 import { seedUsers } from './seed.js';
 
 dotenv.config();
@@ -182,6 +184,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/symbols', symbolRoutes);
+app.use('/api/trades', tradeRoutes);
 
 // Unknown API route → JSON 404 (never fall through to the SPA)
 app.use('/api', (req, res) => res.status(404).json({ error: 'Unknown API endpoint' }));

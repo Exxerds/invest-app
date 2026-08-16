@@ -3,13 +3,10 @@
 //  Loaded lazily from s3.tradingview.com and themed to match
 //  the platform (dark background + gold accent).
 //
-//  IMPORTANT — outbound navigation is disabled:
-//  the display-only widgets (ticker tape, market overview,
-//  mini charts) are rendered inside a `pointer-events: none`
-//  wrapper, so a visitor can never click a symbol and be sent
-//  to tradingview.com. They stay purely informational.
-//  Only the trading terminal chart stays interactive, because
-//  the client needs zoom, drawing tools and timeframes there.
+//  All widgets are fully interactive: hovering shows tooltips,
+//  the market overview switches its own tabs and a symbol click
+//  opens the live chart. This keeps the landing page feeling
+//  alive, which matters more than hiding the source.
 //
 //  NOTE: the small TradingView logo inside the widget is
 //  required by their free-usage terms and must stay.
@@ -55,21 +52,6 @@ function useWidget(src: string, config: Record<string, unknown>, deps: unknown[]
 
   return holder;
 }
-
-/**
- * Wrapper that makes a widget read-only.
- * `pointer-events: none` stops every click/tap from reaching the iframe,
- * so no symbol can open tradingview.com. Purely visual, data keeps updating.
- */
-const ReadOnly: React.FC<{ children: React.ReactNode; className?: string; style?: React.CSSProperties }> = ({
-  children,
-  className = '',
-  style,
-}) => (
-  <div className={`relative select-none ${className}`} style={style} aria-hidden="false">
-    <div style={{ pointerEvents: 'none' }}>{children}</div>
-  </div>
-);
 
 /** Full advanced chart — stays interactive (trading terminal) */
 export const AdvancedChart = memo(({ symbol, height = 480 }: { symbol: string; height?: number }) => {
@@ -117,11 +99,7 @@ export const MiniChart = memo(({ symbol, height = 220 }: { symbol: string; heigh
     [symbol, height],
   );
 
-  return (
-    <ReadOnly>
-      <div ref={ref} style={{ height }} className="w-full" />
-    </ReadOnly>
-  );
+  return <div ref={ref} style={{ height }} className="w-full" />;
 });
 MiniChart.displayName = 'MiniChart';
 
@@ -145,11 +123,7 @@ export const TickerTape = memo(() => {
     locale: 'en',
   });
 
-  return (
-    <ReadOnly>
-      <div ref={ref} className="w-full" />
-    </ReadOnly>
-  );
+  return <div ref={ref} className="w-full" />;
 });
 TickerTape.displayName = 'TickerTape';
 
@@ -195,7 +169,7 @@ const TAB_SYMBOLS: Record<MarketTab, { s: string; d: string }[]> = {
   ],
 };
 
-export const MarketOverview = memo(({ tab = 'Indices', height = 460 }: { tab?: MarketTab; height?: number }) => {
+export const MarketOverview = memo(({ height = 460 }: { height?: number }) => {
   const ref = useWidget(
     'https://s3.tradingview.com/external-embedding/embed-widget-market-overview.js',
     {
@@ -205,7 +179,7 @@ export const MarketOverview = memo(({ tab = 'Indices', height = 460 }: { tab?: M
       locale: 'en',
       isTransparent: true,
       showSymbolLogo: true,
-      showFloatingTooltip: false,
+      showFloatingTooltip: true,
       width: '100%',
       height,
       plotLineColorGrowing: 'rgba(245, 180, 0, 1)',
@@ -217,15 +191,13 @@ export const MarketOverview = memo(({ tab = 'Indices', height = 460 }: { tab?: M
       belowLineFillColorGrowingBottom: 'rgba(245, 180, 0, 0)',
       belowLineFillColorFallingBottom: 'rgba(239, 68, 68, 0)',
       symbolActiveColor: 'rgba(245, 180, 0, 0.12)',
-      tabs: [{ title: tab, symbols: TAB_SYMBOLS[tab] }],
+      // The widget shows all four tabs itself, so it behaves exactly like
+      // the one on tradingview.com
+      tabs: MARKET_TABS.map(t => ({ title: t, symbols: TAB_SYMBOLS[t] })),
     },
-    [tab, height],
+    [height],
   );
 
-  return (
-    <ReadOnly style={{ minHeight: height }}>
-      <div ref={ref} style={{ minHeight: height }} className="w-full" />
-    </ReadOnly>
-  );
+  return <div ref={ref} style={{ minHeight: height }} className="w-full" />;
 });
 MarketOverview.displayName = 'MarketOverview';

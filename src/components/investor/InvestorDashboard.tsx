@@ -5,7 +5,7 @@
 //  Dashboard · Trading (Spot/Futures/P2P/AI) · Withdrawals ·
 //  Transactions · Support · Call manager · Profile · Statistics
 // ============================================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -23,11 +23,15 @@ import {
   Layers,
   DollarSign,
   Search,
+  X,
+  Loader2,
 } from 'lucide-react';
 import type { ActiveInvestment } from '../../types';
 import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
+import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade } from '../../api';
+import type { ApiTrade } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
 
@@ -77,6 +81,66 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [category, setCategory] = useState<AssetCategory>('Crypto');
   const [symbol, setSymbol] = useState<Instrument>(INSTRUMENTS[0]);
   const [instrumentQuery, setInstrumentQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Instrument[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [placing, setPlacing] = useState(false);
+
+  /**
+   * Live instrument search.
+   * Empty box → the curated list for the selected category.
+   * Typing → every asset TradingView knows, fetched through our own API
+   * (debounced so we don't fire a request on each keystroke).
+   */
+  useEffect(() => {
+    const q = instrumentQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiSearchSymbols(q);
+        setSearchResults(
+          res.results.map(r => ({
+            symbol: r.symbol,
+            name: r.name,
+            tv: r.tv,
+            category: (r.category as AssetCategory) || 'Crypto',
+            exchange: r.exchange,
+            kind: r.kind,
+          })),
+        );
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [instrumentQuery]);
+
+  const visibleInstruments: Instrument[] =
+    instrumentQuery.trim().length >= 2
+      ? searchResults
+      : INSTRUMENTS.filter(i => i.category === category);
+
+  /* ---- positions live on the server ---- */
+  const [myTrades, setMyTrades] = useState<ApiTrade[]>([]);
+
+  const reloadTrades = useCallback(async () => {
+    try {
+      const res = await apiMyTrades();
+      setMyTrades(res.trades);
+    } catch {
+      /* not signed in yet */
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadTrades();
+  }, [reloadTrades]);
   const [toast, setToast] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const [msgLog, setMsgLog] = useState<{ me: boolean; text: string }[]>([]);
@@ -292,25 +356,46 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
-              {/* Instrument list */}
-              <Card title={category} subtitle="Select an instrument" className="xl:col-span-1">
+              {/* Instrument list — live search across every TradingView asset */}
+              <Card
+                title={instrumentQuery ? 'Search results' : category}
+                subtitle={instrumentQuery ? `“${instrumentQuery}”` : 'Select an instrument'}
+                className="xl:col-span-1"
+              >
                 <div className="p-3">
                   <div className="relative mb-2">
                     <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                     <Input
-                      placeholder="Search..."
+                      placeholder="Search any asset — AAPL, gold, BTC…"
                       value={instrumentQuery}
                       onChange={e => setInstrumentQuery(e.target.value)}
-                      className="w-full pl-9"
+                      className="w-full pl-9 pr-8"
                     />
+                    {instrumentQuery && (
+                      <button
+                        onClick={() => setInstrumentQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
+                        title="Clear"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
+
+                  {searching && (
+                    <div className="flex items-center gap-2 px-3 py-2 text-[11px] text-slate-500">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Searching…
+                    </div>
+                  )}
+
+                  {!searching && instrumentQuery && visibleInstruments.length === 0 && (
+                    <div className="px-3 py-6 text-center text-[12px] text-slate-600">
+                      Nothing found for “{instrumentQuery}”
+                    </div>
+                  )}
+
                   <div className="space-y-1 max-h-[520px] overflow-y-auto">
-                    {INSTRUMENTS.filter(
-                      i =>
-                        i.category === category &&
-                        (i.symbol.toLowerCase().includes(instrumentQuery.toLowerCase()) ||
-                          i.name.toLowerCase().includes(instrumentQuery.toLowerCase())),
-                    ).map(i => (
+                    {visibleInstruments.map(i => (
                       <button
                         key={i.tv}
                         onClick={() => setSymbol(i)}
@@ -322,7 +407,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[13px] font-bold text-white">{i.symbol}</span>
-                          <span className="text-[9px] text-slate-600 uppercase">{i.exchange}</span>
+                          <span className="text-[9px] text-slate-600 uppercase shrink-0">{i.exchange}</span>
                         </div>
                         <div className="text-[11px] text-slate-500 truncate">{i.name}</div>
                         <div className="text-[9px] text-slate-600 mt-0.5">{i.kind}</div>
@@ -430,11 +515,33 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   </div>
 
                   <button
-                    onClick={() => setToast(`${side === 'buy' ? 'Long' : 'Short'} order placed on ${symbol.symbol}`)}
-                    className={`w-full py-2.5 rounded-xl text-[13px] font-bold text-white cursor-pointer ${
+                    disabled={placing}
+                    onClick={async () => {
+                      setPlacing(true);
+                      try {
+                        await apiOpenTrade({
+                          symbol: symbol.symbol,
+                          tv: symbol.tv,
+                          name: symbol.name,
+                          side: side === 'buy' ? 'LONG' : 'SHORT',
+                          amount,
+                          leverage,
+                          entryPrice: 0,
+                          pnl: 0,
+                        });
+                        await reloadTrades();
+                        setToast(`${side === 'buy' ? 'Long' : 'Short'} position opened on ${symbol.symbol}`);
+                      } catch (err) {
+                        setToast(err instanceof Error ? err.message : 'Could not open the position');
+                      } finally {
+                        setPlacing(false);
+                      }
+                    }}
+                    className={`w-full py-2.5 rounded-xl text-[13px] font-bold text-white cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 ${
                       side === 'buy' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-rose-500 hover:bg-rose-400'
                     }`}
                   >
+                    {placing && <Loader2 className="w-4 h-4 animate-spin" />}
                     {side === 'buy' ? 'Open Long' : 'Open Short'}
                   </button>
                 </div>
@@ -451,25 +558,48 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         <Th>Entry</Th>
                         <Th>Mark</Th>
                         <Th>P/L</Th>
+                        <Th className="text-right">Action</Th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[.05]">
-                      {[
-                        { p: 'BTC/USDT', s: 'LONG', l: '10x', e: 61400, m: 64337, pnl: 1450 },
-                        { p: 'ETH/USDT', s: 'LONG', l: '20x', e: 2680, m: 2820, pnl: 2100 },
-                        { p: 'AUD/CAD', s: 'SHORT', l: '50x', e: 0.9862, m: 0.98435, pnl: 318 },
-                      ].map(r => (
-                        <tr key={r.p} className="hover:bg-white/[.02]">
-                          <Td className="font-semibold text-white">{r.p}</Td>
-                          <Td>
-                            <Badge tone={r.s === 'LONG' ? 'green' : 'red'}>{r.s}</Badge>
+                      {myTrades.filter(t => t.status === 'OPEN').length === 0 && (
+                        <tr>
+                          <Td className="py-8 text-center text-slate-600">
+                            No open positions yet — place your first order on the left.
                           </Td>
-                          <Td>{r.l}</Td>
-                          <Td className="font-mono text-[12px]">{r.e}</Td>
-                          <Td className="font-mono text-[12px]">{r.m}</Td>
-                          <Td className="text-emerald-400 font-bold">+${r.pnl}</Td>
                         </tr>
-                      ))}
+                      )}
+                      {myTrades
+                        .filter(t => t.status === 'OPEN')
+                        .map(t => (
+                          <tr key={t.id} className="hover:bg-white/[.02]">
+                            <Td className="font-semibold text-white">{t.symbol}</Td>
+                            <Td>
+                              <Badge tone={t.side === 'LONG' ? 'green' : t.side === 'SHORT' ? 'red' : 'blue'}>
+                                {t.side}
+                              </Badge>
+                            </Td>
+                            <Td>{t.leverage}x</Td>
+                            <Td className="font-mono text-[12px]">{t.entryPrice || '—'}</Td>
+                            <Td className="font-mono text-[12px]">{t.currentPrice || '—'}</Td>
+                            <Td className={t.pnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                              {t.pnl >= 0 ? '+' : ''}${Math.abs(t.pnl).toLocaleString('en-US')}
+                            </Td>
+                            <Td className="text-right">
+                              <Btn
+                                size="sm"
+                                variant="danger"
+                                onClick={async () => {
+                                  await apiCloseTrade(t.id);
+                                  await reloadTrades();
+                                  setToast(`Position ${t.symbol} closed`);
+                                }}
+                              >
+                                Close
+                              </Btn>
+                            </Td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>

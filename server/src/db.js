@@ -45,7 +45,7 @@ async function getPool() {
  * so both backends behave the same and no migration is needed when the
  * shape of a record changes.
  */
-const TABLES = ['users', 'tokens', 'kyc', 'notifications'];
+const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades'];
 
 async function ensureSchema() {
   if (schemaReady) return schemaReady;
@@ -63,6 +63,7 @@ async function ensureSchema() {
     await p.query(`CREATE INDEX IF NOT EXISTS users_email_idx ON users ((data->>'email'))`);
     await p.query(`CREATE INDEX IF NOT EXISTS tokens_token_idx ON tokens ((data->>'token'))`);
     await p.query(`CREATE INDEX IF NOT EXISTS kyc_user_idx ON kyc (((data->>'userId')::int))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS trades_user_idx ON trades (((data->>'userId')::int))`);
   })();
   return schemaReady;
 }
@@ -105,7 +106,7 @@ const pgStore = {
 /* ============================================================
    JSON-FILE BACKEND (local development)
    ============================================================ */
-let data = { users: [], tokens: [], kyc: [], notifications: [], _seq: 1 };
+let data = { users: [], tokens: [], kyc: [], notifications: [], trades: [], _seq: 1 };
 
 function loadFile() {
   try {

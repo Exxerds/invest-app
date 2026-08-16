@@ -61,16 +61,24 @@ export async function sendMail({ to, subject, html }) {
     return;
   }
 
-  // Development mode: write the letter to a file and log it
-  fs.mkdirSync(MAILS_DIR, { recursive: true });
-  const fileName = `${Date.now()}-${to.replace(/[^a-zA-Z0-9]/g, '_')}.html`;
-  fs.writeFileSync(path.join(MAILS_DIR, fileName), html);
+  // ---- No SMTP configured ----
+  // Log the letter so the link is always recoverable.
   console.log(`\n[mail] Letter for ${to}: "${subject}"`);
-  console.log(`[mail] File: server/mails/${fileName}`);
-  // Print links on their own lines so they are easy to copy
   const links = [...html.matchAll(/https?:\/\/[^\s"<]+/g)].map(m => m[0]);
-  if (links.length) {
-    links.forEach(l => console.log(`[mail] 🔗 ${l}`));
+  links.forEach(l => console.log(`[mail] LINK ${l}`));
+
+  // Saving a copy only works where the filesystem is writable.
+  // Serverless hosts (Vercel) are read-only — attempting it there used to
+  // crash registration with "Server error", so it is skipped entirely.
+  if (!process.env.VERCEL) {
+    try {
+      fs.mkdirSync(MAILS_DIR, { recursive: true });
+      const fileName = `${Date.now()}-${to.replace(/[^a-zA-Z0-9]/g, '_')}.html`;
+      fs.writeFileSync(path.join(MAILS_DIR, fileName), html);
+      console.log(`[mail] File: server/mails/${fileName}`);
+    } catch (err) {
+      console.warn('[mail] Could not save a copy of the letter:', err.message);
+    }
   }
   console.log('');
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import type { ActiveTab } from './components/Header';
 import { LandingPage } from './components/landing/LandingPage';
@@ -12,7 +12,8 @@ import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
 import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
-import { apiKycAll, apiKycReview, apiNotifications, apiMarkNotificationsRead } from './api';
+import { apiKycAll, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
+import type { ApiTrade } from './api';
 import { 
   DepositModal, 
   WithdrawModal, 
@@ -62,6 +63,9 @@ export default function App() {
 
   // KYC documents uploaded by clients, reviewed by admin/agent in the CRM
   const [kycDocuments, setKycDocuments] = useState<ApiKycDoc[]>([]);
+
+  // Positions opened through the platform (persisted server-side)
+  const [serverTrades, setServerTrades] = useState<ApiTrade[]>([]);
 
   // Admin Trades State (Priority feature for CRM!)
   const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([
@@ -183,6 +187,12 @@ export default function App() {
         try {
           const res = await apiKycAll();
           setKycDocuments(res.documents);
+        } catch {
+          /* ignore transient errors */
+        }
+        try {
+          const t = await apiAllTrades();
+          setServerTrades(t.trades);
         } catch {
           /* ignore transient errors */
         }
@@ -404,12 +414,49 @@ export default function App() {
     showToast(`✔ Opened trading position «${newTradeData.asset}» for the client!`);
   };
 
-  const handleUpdateTrade = (tradeId: string, patch: Partial<AdminTrade>) => {
+  const handleUpdateTrade = async (tradeId: string, patch: Partial<AdminTrade>) => {
+    // Positions opened on the platform have a numeric id and live on the server
+    if (tradeId.startsWith('srv-')) {
+      const realId = Number(tradeId.replace('srv-', ''));
+      try {
+        await apiUpdateTrade(realId, {
+          side: patch.type,
+          amount: patch.amount,
+          entryPrice: patch.entryPrice,
+          currentPrice: patch.currentPrice,
+          leverage: patch.leverage,
+          pnl: patch.pnl,
+          openedAt: patch.openedAt,
+        } as Partial<ApiTrade>);
+        const t = await apiAllTrades();
+        setServerTrades(t.trades);
+        showToast('✔ Position updated.');
+      } catch (err) {
+        showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Update failed', 'info');
+      }
+      return;
+    }
     setAdminTrades(prev => prev.map(t => (t.id === tradeId ? { ...t, ...patch } : t)));
     showToast('✔ Position updated.');
   };
 
-  const handleCloseTrade = (tradeId: string) => {
+  const handleCloseTrade = async (tradeId: string) => {
+    if (tradeId.startsWith('srv-')) {
+      const realId = Number(tradeId.replace('srv-', ''));
+      try {
+        await apiCloseTradeReq(realId);
+        const t = await apiAllTrades();
+        setServerTrades(t.trades);
+        showToast('✔ Position closed.');
+      } catch (err) {
+        showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Close failed', 'info');
+      }
+      return;
+    }
+    return handleCloseTradeLocal(tradeId);
+  };
+
+  const handleCloseTradeLocal = (tradeId: string) => {
     setAdminTrades(prev => prev.map(t => {
       if (t.id === tradeId) {
         return {
@@ -540,6 +587,28 @@ export default function App() {
     showToast(`✔ User status updated: ${status}`);
   };
 
+  /**
+   * The CRM shows one list: demo positions plus everything actually opened
+   * on the platform. Server ids are prefixed so the handlers know where to
+   * send an edit.
+   */
+  const combinedTrades: AdminTrade[] = React.useMemo(() => {
+    const mapped: AdminTrade[] = serverTrades.map(t => ({
+      id: `srv-${t.id}`,
+      investorId: `acc-${t.userId}`,
+      asset: t.name ? `${t.symbol} — ${t.name}` : t.symbol,
+      type: t.side,
+      amount: t.amount,
+      entryPrice: t.entryPrice,
+      currentPrice: t.currentPrice,
+      leverage: t.leverage,
+      pnl: t.pnl,
+      status: t.status,
+      openedAt: t.openedAt,
+    }));
+    return [...adminTrades, ...mapped];
+  }, [adminTrades, serverTrades]);
+
   const handleAddClientNote = (clientId: string, text: string) => {
     const note: ClientNote = {
       id: `note-${Date.now()}`,
@@ -641,7 +710,7 @@ export default function App() {
             onRejectRequest={handleRejectRequest}
             projects={projects}
             onOpenNewProjectModal={() => setIsNewProjectModalOpen(true)}
-            trades={adminTrades}
+            trades={combinedTrades}
             onUpdateInvestorBalance={handleUpdateInvestorBalance}
             onCreateTrade={handleCreateTrade}
             onUpdateTrade={handleUpdateTrade}
