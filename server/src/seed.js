@@ -1,22 +1,22 @@
 // ============================================================
-//  Автоматическое создание демо-пользователей при старте сервера.
-//  Работает идемпотентно: если пользователь уже есть — не трогает.
+//  Creates the demo users automatically on server startup.
+//  Idempotent: existing users are left untouched.
 // ============================================================
 import bcrypt from 'bcryptjs';
-import * as store from './store.js';
+import * as store from './db.js';
 
 const SEED_USERS = [
-  { name: 'Admin Boss', email: 'admin@trade.io', password: 'admin123', role: 'ADMIN', status: 'active' },
-  { name: 'Elena Smirnova', email: 'manager@trade.io', password: 'manager123', role: 'MANAGER', status: 'active' },
-  { name: 'Alexander Gromov', email: 'client@trade.io', password: 'client123', role: 'CLIENT', status: 'active' }
+  { name: 'Admin', email: 'admin@trade.io', password: 'admin123', role: 'ADMIN', status: 'active' },
+  { name: 'Laura Bennett', email: 'manager@trade.io', password: 'manager123', role: 'MANAGER', status: 'active' },
+  { name: 'Michael Carter', email: 'client@trade.io', password: 'client123', role: 'CLIENT', status: 'active' }
 ];
 
 export async function seedUsers() {
   for (const u of SEED_USERS) {
-    const exists = store.findBy('users', 'email', u.email);
+    const exists = await store.findBy('users', 'email', u.email);
     if (!exists) {
       const hash = await bcrypt.hash(u.password, 10);
-      store.insert('users', {
+      await store.insert('users', {
         name: u.name,
         email: u.email,
         password: hash,

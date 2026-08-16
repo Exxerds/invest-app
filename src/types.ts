@@ -82,3 +82,85 @@ export interface ActiveInvestment {
   nextPayoutDate: string;
   accruedProfit: number;
 }
+
+/** Extra client fields used by the CRM "User details" screen (reference design) */
+export interface ClientExtras {
+  firstName?: string;
+  lastName?: string;
+  password?: string;
+  country?: string;
+  city?: string;
+  language?: string;
+  affiliate?: string;
+  withdrawBlocked?: boolean;
+  status?: 'active' | 'blocked';
+  lastActivity?: string;
+  online?: boolean;
+}
+
+export type CallStatus = 'answered' | 'missed' | 'declined';
+
+export interface CallRecord {
+  id: string;
+  client: string;
+  direction: 'in' | 'out';
+  status: CallStatus;
+  duration: string;
+  date: string;
+  manager: string;
+  recorded: boolean;
+}
+
+/**
+ * Daily note left by an agent on a client card.
+ * Append-only by design: once sent it can never be edited or deleted,
+ * so the history stays audit-proof.
+ */
+export interface ClientNote {
+  id: string;
+  clientId: string;
+  author: string;
+  authorRole: 'ADMIN' | 'MANAGER';
+  text: string;
+  createdAt: string;
+}
+
+/**
+ * Client workflow status. The exact list is supplied by the client later —
+ * these are placeholders so the field already works end-to-end.
+ */
+export type ClientStatus = string;
+
+export const CLIENT_STATUSES: string[] = [
+  'New',
+  'No answer',
+  'Callback',
+  'Interested',
+  'Deposited',
+  'Not interested',
+];
+
+/** KYC document slots the client must upload */
+export type KycDocType = 'front' | 'back' | 'address';
+
+export type KycDocStatus = 'missing' | 'pending' | 'approved' | 'rejected';
+
+export interface KycDocument {
+  id: string;
+  clientId: string;
+  type: KycDocType;
+  fileName: string;
+  /** data-URL preview (real deployment stores the file on the server) */
+  dataUrl: string;
+  status: KycDocStatus;
+  uploadedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectReason?: string;
+}
+
+export const KYC_DOC_LABELS: Record<KycDocType, string> = {
+  front: 'Front of ID',
+  back: 'Back of ID',
+  address: 'Proof of Address',
+};

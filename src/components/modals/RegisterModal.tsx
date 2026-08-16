@@ -38,28 +38,30 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-white/[.06]">
+        <div className="bg-[#0f1116] border-b border-white/[.08] p-6 text-white relative">
           <button
             onClick={onClose}
             className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
-          <button
-            onClick={onBackToLogin}
-            className="absolute top-5 left-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-            title="Back to sign in"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-white text-xs font-semibold mb-2">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Registration</span>
+          <div className="flex items-center gap-2.5 mb-2">
+            <button
+              onClick={onBackToLogin}
+              className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors cursor-pointer"
+              title="Back to sign in"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-white text-xs font-semibold">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Registration</span>
+            </div>
           </div>
           <h2 className="text-xl font-bold">Create account</h2>
-          <p className="text-xs text-blue-100 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             The account is activated after email confirmation. After payment you get full access.
           </p>
         </div>
@@ -68,18 +70,18 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
           <div className="p-6 space-y-4">
             <div className="flex flex-col items-center text-center gap-3 py-4">
               <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
-                <CheckCircle2 className="w-7 h-7 text-emerald-600" />
+                <CheckCircle2 className="w-7 h-7 text-emerald-400" />
               </div>
-              <div className="text-sm text-slate-600 leading-relaxed">
-                <strong className="text-slate-900">Account created!</strong>
+              <div className="text-sm text-slate-400 leading-relaxed">
+                <strong className="text-white">Account created!</strong>
                 <br />
-                We sent an email to <strong className="text-blue-600">{email}</strong>.
+                We sent an email to <strong className="text-[#f5b400]">{email}</strong>.
                 Follow the link in the email to confirm your address — then you can sign in.
               </div>
             </div>
             <button
               onClick={onClose}
-              className="w-full px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+              className="w-full px-6 py-2.5 bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 cursor-pointer"
             >
               Got it
             </button>
@@ -87,7 +89,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
                 Your name
               </label>
               <div className="relative">
@@ -98,13 +100,13 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   onChange={(e) => setName(e.target.value)}
                   required
                   placeholder="John Smith"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f5b400]/25 focus:border-[#f5b400]/50"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
                 Email
               </label>
               <div className="relative">
@@ -115,13 +117,13 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="you@email.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f5b400]/25 focus:border-[#f5b400]/50"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
                 Password
               </label>
               <div className="relative">
@@ -133,13 +135,13 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   required
                   minLength={6}
                   placeholder="Minimum 6 characters"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f5b400]/25 focus:border-[#f5b400]/50"
                 />
               </div>
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl text-xs text-rose-400">
                 {error}
               </div>
             )}
@@ -147,7 +149,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full px-6 py-2.5 bg-[#f5b400] hover:bg-[#ffc21f] disabled:opacity-60 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
             >
               {loading ? (
                 <>
@@ -164,7 +166,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               <button
                 type="button"
                 onClick={onBackToLogin}
-                className="text-blue-600 font-semibold hover:underline cursor-pointer"
+                className="text-[#f5b400] font-semibold hover:underline cursor-pointer"
               >
                 Sign in
               </button>

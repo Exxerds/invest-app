@@ -155,3 +155,41 @@ SMTP_FROM=Trade Nation <no-reply@yourdomain.ru>
 - **DB:** SQLite (→ PostgreSQL в проде)
 - **Auth:** JWT + bcrypt, письма через nodemailer
 - **Real-time (дальше):** WebSockets (Socket.io) + WebRTC для звонков и демонстрации экрана
+
+## Troubleshooting
+
+### "Cannot GET /" when opening http://localhost:4000
+That is **not an error**. Port 4000 is the API — it serves data, not pages.
+The website lives on **http://localhost:3000**. Opening the API root now shows
+a page with a link to the site.
+
+### "502" / "The API server is not running" when creating an account
+The website (port 3000) is running but the API server (port 4000) is not.
+`npm run dev` must start **both**. Check the terminal for the line:
+
+```
+TradeNation API server running: http://localhost:4000
+```
+
+If it is missing:
+
+1. **Port already in use** — the most common case on Windows:
+   ```bash
+   npx kill-port 3000 4000
+   npm run dev
+   ```
+   (or close every "Node.js" process in Task Manager)
+
+2. **Dependencies missing** — reinstall and start again:
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+3. **Windows + IPv6 (fixed in this build)** — `localhost` resolves to IPv6 `::1`
+   on Windows, while the API used to listen on IPv4 only, so the proxy could not
+   reach it. The dev proxy now targets `127.0.0.1` explicitly and the server
+   listens on both stacks. If you edited these files, keep those settings.
+
+`npm run dev` runs an automatic pre-flight check that installs anything missing
+and tells you if a port is occupied, so in most cases it fixes itself.

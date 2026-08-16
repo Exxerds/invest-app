@@ -31,3 +31,4 @@ server/data.db
 *.njsproj
 *.sln
 *.sw?
+uploads/

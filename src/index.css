@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Inter Variable — шрифт ВСТРОЕН в проект (src/assets/fonts).
-   Никаких npm-пакетов не нужно — работает всегда.
+   Inter Variable — the font is BUNDLED with the project (src/assets/fonts).
+   No npm package required — it always works offline.
    ============================================================ */
 @font-face {
   font-family: "Inter Variable";

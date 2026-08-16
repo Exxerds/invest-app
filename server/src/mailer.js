@@ -1,12 +1,11 @@
 // ============================================================
-//  Отправка писем
+//  Transactional e-mail sending.
 //
-//  Для разработки (без SMTP): письмо сохраняется в папку
-//  server/mails/ и выводится в консоль — так вы всегда видите
-//  ссылку, даже если SMTP ещё не настроен.
+//  Development (no SMTP): the letter is written to server/mails/
+//  and logged to the console, so the link is always visible.
 //
-//  Для продакшена: укажите SMTP-настройки в server/.env
-//  (подойдёт Яндекс.Почта, Mailgun, Brevo, SendGrid и т.п.)
+//  Production: set the SMTP credentials in server/.env
+//  (Mailgun, Brevo, SendGrid, Amazon SES, Postmark, etc.)
 // ============================================================
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
@@ -37,23 +36,38 @@ export const FROM_EMAIL = process.env.SMTP_FROM || 'no-reply@tradenation.io';
 export const SITE_URL = process.env.SITE_URL || 'http://localhost:3000';
 
 /**
- * Отправить письмо.
- * Если SMTP не настроен — сохраняет HTML в server/mails/ и логирует в консоль.
+ * Public address used in e-mail links.
+ * Falls back to the host the request actually came from, so confirmation and
+ * password-reset links keep working after deployment even if SITE_URL is unset.
+ */
+export function publicUrl(req) {
+  if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, '');
+  if (req) {
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    if (host) return `${proto}://${host}`;
+  }
+  return SITE_URL;
+}
+
+/**
+ * Send an e-mail.
+ * Without SMTP configured it stores the HTML in server/mails/ and logs it.
  */
 export async function sendMail({ to, subject, html }) {
   if (transporter) {
     await transporter.sendMail({ from: FROM_EMAIL, to, subject, html });
-    console.log(`[mail] Письмо "${subject}" отправлено на ${to}`);
+    console.log(`[mail] "${subject}" sent to ${to}`);
     return;
   }
 
-  // Режим разработки: письмо в файл + в консоль
+  // Development mode: write the letter to a file and log it
   fs.mkdirSync(MAILS_DIR, { recursive: true });
   const fileName = `${Date.now()}-${to.replace(/[^a-zA-Z0-9]/g, '_')}.html`;
   fs.writeFileSync(path.join(MAILS_DIR, fileName), html);
-  console.log(`\n[mail] 💌 Письмо для ${to}: "${subject}"`);
-  console.log(`[mail] Файл: server/mails/${fileName}`);
-  // Ссылка из письма — отдельной строкой, чтобы было удобно копировать
+  console.log(`\n[mail] Letter for ${to}: "${subject}"`);
+  console.log(`[mail] File: server/mails/${fileName}`);
+  // Print links on their own lines so they are easy to copy
   const links = [...html.matchAll(/https?:\/\/[^\s"<]+/g)].map(m => m[0]);
   if (links.length) {
     links.forEach(l => console.log(`[mail] 🔗 ${l}`));
@@ -61,22 +75,23 @@ export async function sendMail({ to, subject, html }) {
   console.log('');
 }
 
-/** Простой HTML-шаблон письма */
+/** Basic HTML e-mail layout (dark + gold brand styling) */
 export function letterLayout(title, contentHtml) {
   return `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 12px;">
+<html lang="en"><body style="margin:0;padding:0;background:#0a0b0e;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0b0e;padding:32px 12px;">
     <tr><td align="center">
-      <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;">
-        <tr><td style="background:#1d4ed8;padding:22px 28px;">
-          <span style="color:#ffffff;font-size:20px;font-weight:bold;">Trade Nation</span>
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="background:#14161c;border:1px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;">
+        <tr><td style="background:#0f1116;padding:22px 28px;border-bottom:1px solid rgba(255,255,255,.08);">
+          <span style="color:#f5b400;font-size:20px;font-weight:bold;">TradeNation</span>
         </td></tr>
         <tr><td style="padding:28px;">
-          <h2 style="margin:0 0 12px;color:#0f172a;font-size:18px;">${title}</h2>
+          <h2 style="margin:0 0 12px;color:#ffffff;font-size:18px;">${title}</h2>
           ${contentHtml}
         </td></tr>
-        <tr><td style="padding:16px 28px;background:#f8fafc;color:#64748b;font-size:12px;">
-          Это письмо сгенерировано автоматически. Не отвечайте на него.
+        <tr><td style="padding:16px 28px;background:#0f1116;color:#64748b;font-size:12px;border-top:1px solid rgba(255,255,255,.08);">
+          This message was generated automatically — please do not reply to it.<br>
+          &copy; ${new Date().getFullYear()} TradeNation. All rights reserved.
         </td></tr>
       </table>
     </td></tr>

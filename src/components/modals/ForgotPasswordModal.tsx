@@ -36,9 +36,9 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-white/[.06]">
+        <div className="bg-[#0f1116] border-b border-white/[.08] p-6 text-white relative">
           <button
             onClick={onClose}
             className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
@@ -64,18 +64,18 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
           <div className="p-6 space-y-4">
             <div className="flex flex-col items-center text-center gap-3 py-4">
               <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
-                <CheckCircle2 className="w-7 h-7 text-emerald-600" />
+                <CheckCircle2 className="w-7 h-7 text-emerald-400" />
               </div>
-              <div className="text-sm text-slate-600 leading-relaxed">
-                <strong className="text-slate-900">Email sent!</strong>
+              <div className="text-sm text-slate-400 leading-relaxed">
+                <strong className="text-white">Email sent!</strong>
                 <br />
-                If <strong className="text-blue-600">{email}</strong> is registered, you'll receive a
+                If <strong className="text-[#f5b400]">{email}</strong> is registered, you'll receive a
                 password reset link (valid for 1 hour).
               </div>
             </div>
             <button
               onClick={onClose}
-              className="w-full px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+              className="w-full px-6 py-2.5 bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 cursor-pointer"
             >
               Got it
             </button>
@@ -83,7 +83,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
                 Email
               </label>
               <div className="relative">
@@ -94,18 +94,18 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="you@email.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f5b400]/25 focus:border-[#f5b400]/50"
                 />
               </div>
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl text-xs text-rose-400">
                 {error}
               </div>
             )}
 
-            <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 text-xs text-slate-600">
+            <div className="p-3 bg-[#f5b400]/10/70 rounded-xl border border-[#f5b400]/20 text-xs text-slate-400">
               If the email doesn't arrive, check the «Spam» folder. In dev mode (no SMTP) the letter
               is saved to <strong>server/mails/</strong> and the link is printed in the server console.
             </div>
@@ -113,7 +113,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full px-6 py-2.5 bg-[#f5b400] hover:bg-[#ffc21f] disabled:opacity-60 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
             >
               {loading ? (
                 <>

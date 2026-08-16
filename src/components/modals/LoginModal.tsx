@@ -11,22 +11,22 @@ interface LoginModalProps {
   onOpenRegister: () => void;
 }
 
-/** Быстрый вход без сервера (демо-режим) */
+/** Instant demo sign-in that works without the API server */
 const DEMO_USERS: { label: string; role: 'ADMIN' | 'MANAGER' | 'CLIENT'; user: ApiUser }[] = [
   {
     label: 'Demo Admin (CRM)',
     role: 'ADMIN',
-    user: { id: 0, name: 'Super Admin', email: 'admin@demo.io', role: 'ADMIN', status: 'active' }
+    user: { id: 0, name: 'Admin', email: 'admin@demo.io', role: 'ADMIN', status: 'active' }
   },
   {
     label: 'Demo Manager',
     role: 'MANAGER',
-    user: { id: 0, name: 'Elena Smirnova', email: 'manager@demo.io', role: 'MANAGER', status: 'active' }
+    user: { id: 0, name: 'Laura Bennett', email: 'manager@demo.io', role: 'MANAGER', status: 'active' }
   },
   {
     label: 'Demo Client',
     role: 'CLIENT',
-    user: { id: 0, name: 'Alexander Gromov', email: 'client@demo.io', role: 'CLIENT', status: 'active' }
+    user: { id: 0, name: 'Michael Carter', email: 'client@demo.io', role: 'CLIENT', status: 'active' }
   }
 ];
 
@@ -66,9 +66,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-white/[.06]">
+        <div className="bg-[#0f1116] border-b border-white/[.08] p-6 text-white relative">
           <button
             onClick={onClose}
             className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
@@ -85,7 +85,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
               Email
             </label>
             <div className="relative">
@@ -96,13 +96,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 placeholder="you@email.com"
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                className="w-full pl-10 pr-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f5b400]/25 focus:border-[#f5b400]/50"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
               Password
             </label>
             <div className="relative">
@@ -113,14 +113,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 placeholder="Your password"
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                className="w-full pl-10 pr-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f5b400]/25 focus:border-[#f5b400]/50"
               />
             </div>
             <div className="flex justify-end mt-1.5">
               <button
                 type="button"
                 onClick={onOpenForgotPassword}
-                className="text-xs text-blue-600 font-semibold hover:underline cursor-pointer"
+                className="text-xs text-[#f5b400] font-semibold hover:underline cursor-pointer"
               >
                 Forgot password?
               </button>
@@ -128,7 +128,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </div>
 
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+            <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl text-xs text-rose-400">
               {error}
             </div>
           )}
@@ -136,7 +136,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           <button
             type="submit"
             disabled={loading}
-            className="w-full px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full px-6 py-2.5 bg-[#f5b400] hover:bg-[#ffc21f] disabled:opacity-60 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
           >
             {loading ? (
               <>
@@ -152,13 +152,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </button>
 
           {/* Test credentials hint */}
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-500 space-y-1">
-            <div className="font-bold text-slate-600 flex items-center gap-1.5">
+          <div className="p-3 bg-[#1b1e26] rounded-xl border border-white/[.06] text-[11px] text-slate-500 space-y-1">
+            <div className="font-bold text-slate-400 flex items-center gap-1.5">
               <KeyRound className="w-3 h-3" /> Test accounts (server):
             </div>
-            <div>Admin → <span className="font-mono font-bold text-slate-700">admin@trade.io / admin123</span></div>
-            <div>Manager → <span className="font-mono font-bold text-slate-700">manager@trade.io / manager123</span></div>
-            <div>Client → <span className="font-mono font-bold text-slate-700">client@trade.io / client123</span></div>
+            <div>Admin → <span className="font-mono font-bold text-slate-300">admin@trade.io / admin123</span></div>
+            <div>Manager → <span className="font-mono font-bold text-slate-300">manager@trade.io / manager123</span></div>
+            <div>Client → <span className="font-mono font-bold text-slate-300">client@trade.io / client123</span></div>
           </div>
 
           {/* Quick demo access (works even without server) */}
@@ -173,15 +173,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   key={d.role}
                   type="button"
                   onClick={() => handleDemoLogin(d)}
-                  className="px-2 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 text-slate-700 text-[11px] font-semibold flex flex-col items-center gap-1 transition-colors cursor-pointer"
+                  className="px-2 py-2 rounded-xl border border-white/[.06] bg-[#1b1e26] hover:bg-[#f5b400]/10 hover:border-blue-300 text-slate-300 text-[11px] font-semibold flex flex-col items-center gap-1 transition-colors cursor-pointer"
                   title={`Enter as ${d.label} without server`}
                 >
                   {d.role === 'ADMIN' ? (
                     <UserCog className="w-4 h-4 text-purple-600" />
                   ) : d.role === 'MANAGER' ? (
-                    <UserCog className="w-4 h-4 text-blue-600" />
+                    <UserCog className="w-4 h-4 text-[#f5b400]" />
                   ) : (
-                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
                   )}
                   <span className="text-center leading-tight">{d.label}</span>
                 </button>
@@ -189,14 +189,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </div>
           </div>
 
-          <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 text-xs text-slate-600 flex items-start gap-2">
-            <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+          <div className="p-3 bg-[#f5b400]/10/70 rounded-xl border border-[#f5b400]/20 text-xs text-slate-400 flex items-start gap-2">
+            <ShieldCheck className="w-4 h-4 text-[#f5b400] shrink-0 mt-0.5" />
             <div>
               No account?{' '}
               <button
                 type="button"
                 onClick={onOpenRegister}
-                className="text-blue-600 font-bold hover:underline cursor-pointer"
+                className="text-[#f5b400] font-bold hover:underline cursor-pointer"
               >
                 Register
               </button>

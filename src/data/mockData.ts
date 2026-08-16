@@ -102,155 +102,155 @@ export const INITIAL_PROJECTS: Project[] = [
 export const INITIAL_INVESTORS: Investor[] = [
   {
     id: 'inv-01',
-    name: 'Alexander Gromov (You)',
-    email: 'a.gromov@invest-pro.ru',
-    phone: '+7 (916) 455-82-90',
+    name: 'Michael Carter (You)',
+    email: 'm.carter@northbridge-cap.com',
+    phone: '+1 (415) 555-0182',
     kycStatus: 'verified',
     balance: 26500,
     invested: 98000,
     totalProfit: 12840,
     registrationDate: '2026-01-15',
-    manager: 'Elena Smirnova (Senior Advisor)',
-    documentName: 'Passport RU (KYC Verified)'
+    manager: 'Laura Bennett (Senior Advisor)',
+    documentName: "Driver's License — CA (KYC Verified)"
   },
   {
     id: 'inv-02',
-    name: 'Mikhail Sokolov',
-    email: 'mikhail.s@gmail.com',
-    phone: '+7 (903) 221-44-11',
+    name: 'James Whitaker',
+    email: 'j.whitaker@gmail.com',
+    phone: '+1 (312) 555-0147',
     kycStatus: 'verified',
     balance: 85000,
     invested: 320000,
     totalProfit: 44100,
     registrationDate: '2026-02-10',
-    manager: 'Elena Smirnova (Senior Advisor)',
-    documentName: 'Passport RU (Verified)'
+    manager: 'Laura Bennett (Senior Advisor)',
+    documentName: 'US Passport (Verified)'
   },
   {
     id: 'inv-03',
-    name: 'Olga Vorontsova',
-    email: 'olga.voron@yandex.ru',
-    phone: '+7 (926) 789-01-23',
+    name: 'Emily Rodriguez',
+    email: 'emily.rodriguez@outlook.com',
+    phone: '+1 (646) 555-0119',
     kycStatus: 'pending',
     balance: 15000,
     invested: 50000,
     totalProfit: 6200,
     registrationDate: '2026-07-28',
-    manager: 'Artem Lebedev (Desk 2)',
-    documentName: 'ID Card (Compliance review)'
+    manager: 'Daniel Foster (Desk 2)',
+    documentName: 'State ID (Compliance review)'
   },
   {
     id: 'inv-04',
-    name: 'Dmitry Belousov',
-    email: 'dbelousov@inbox.ru',
-    phone: '+7 (915) 678-33-90',
+    name: 'Robert Hayes',
+    email: 'r.hayes@mailbox.com',
+    phone: '+1 (720) 555-0164',
     kycStatus: 'verified',
     balance: 4200,
     invested: 140000,
     totalProfit: 19800,
     registrationDate: '2026-03-05',
-    manager: 'Artem Lebedev (Desk 2)',
-    documentName: 'Passport RU (Verified)'
+    manager: 'Daniel Foster (Desk 2)',
+    documentName: 'US Passport (Verified)'
   },
   {
     id: 'inv-05',
-    name: 'Ekaterina Romanova',
-    email: 'romanova.ek@gmail.com',
-    phone: '+7 (999) 112-99-88',
+    name: 'Jessica Turner',
+    email: 'jessica.turner@gmail.com',
+    phone: '+1 (305) 555-0173',
     kycStatus: 'rejected',
     balance: 0,
     invested: 0,
     totalProfit: 0,
     registrationDate: '2026-08-01',
-    manager: 'Elena Smirnova (Senior Advisor)',
+    manager: 'Laura Bennett (Senior Advisor)',
     documentName: 'Blurred scan (KYC retake required)'
   },
   {
     id: 'inv-06',
-    name: 'Viktor Kuznetsov',
-    email: 'vkuznetsov@corp.ru',
-    phone: '+7 (985) 443-12-09',
+    name: 'William Brooks',
+    email: 'w.brooks@brookscapital.com',
+    phone: '+1 (212) 555-0198',
     kycStatus: 'verified',
     balance: 110000,
     invested: 450000,
     totalProfit: 68500,
     registrationDate: '2025-11-20',
-    manager: 'Elena Smirnova (Senior Advisor)',
-    documentName: 'Passport RU (Verified)'
+    manager: 'Laura Bennett (Senior Advisor)',
+    documentName: 'US Passport (Verified)'
   }
 ];
 
 export const INITIAL_LEADS: Lead[] = [
   {
     id: 'lead-01',
-    name: 'Sergey Antonov',
-    phone: '+7 (916) 778-90-12',
+    name: 'Ethan Cooper',
+    phone: '+1 (503) 555-0126',
     potentialAmount: 50000,
     stage: 'new',
     notes: 'Interested in BTC/USDT Futures trading with leverage. Left a request on the landing page.',
-    manager: 'Elena Smirnova (Desk 1)',
+    manager: 'Laura Bennett (Desk 1)',
     createdAt: '2026-08-11',
     comments: [
-      { id: 'c-1', author: 'Elena Smirnova', text: 'Requested a call on Thursday. Sending him a platform overview first.', date: '2026-08-12 10:15' }
+      { id: 'c-1', author: 'Laura Bennett', text: 'Requested a call on Thursday. Sending him a platform overview first.', date: '2026-08-12 10:15' }
     ]
   },
   {
     id: 'lead-02',
-    name: 'Irina Danilova',
-    phone: '+7 (903) 554-11-00',
+    name: 'Sophia Mitchell',
+    phone: '+1 (214) 555-0158',
     potentialAmount: 25000,
     stage: 'new',
     notes: 'Looking for an alternative to Forex brokers, ready to start trading gold (XAU/USD).',
-    manager: 'Artem Lebedev (Desk 2)',
+    manager: 'Daniel Foster (Desk 2)',
     createdAt: '2026-08-12',
     comments: []
   },
   {
     id: 'lead-03',
-    name: 'Konstantin Volkov',
-    phone: '+7 (926) 334-88-77',
+    name: 'Christopher Reed',
+    phone: '+1 (617) 555-0135',
     potentialAmount: 100000,
     stage: 'contact',
     notes: 'First call completed (WebRTC). Asked about margin leverage up to 100x conditions.',
-    manager: 'Elena Smirnova (Desk 1)',
+    manager: 'Laura Bennett (Desk 1)',
     createdAt: '2026-08-09',
     comments: [
-      { id: 'c-2', author: 'Elena Smirnova', text: 'Call went well. Interested in futures. Send conditions + demo access.', date: '2026-08-10 15:40' },
+      { id: 'c-2', author: 'Laura Bennett', text: 'Call went well. Interested in futures. Send conditions + demo access.', date: '2026-08-10 15:40' },
       { id: 'c-3', author: 'Supervisor', text: 'VIP potential. Connect senior advisor on the next call.', date: '2026-08-11 09:05' }
     ]
   },
   {
     id: 'lead-04',
-    name: 'Anna Tikhonova',
-    phone: '+7 (915) 220-44-55',
+    name: 'Olivia Bennett',
+    phone: '+1 (206) 555-0142',
     potentialAmount: 30000,
     stage: 'contact',
     notes: 'Trader from IT. Tomorrow at 14:00 call about Binance quotes integration.',
-    manager: 'Artem Lebedev (Desk 2)',
+    manager: 'Daniel Foster (Desk 2)',
     createdAt: '2026-08-08',
     comments: []
   },
   {
     id: 'lead-05',
-    name: 'Grigory Potapov',
-    phone: '+7 (999) 887-66-55',
+    name: 'Andrew Sullivan',
+    phone: '+1 (702) 555-0187',
     potentialAmount: 75000,
     stage: 'kyc',
-    notes: 'Uploaded passport for KYC verification, waiting for compliance approval.',
-    manager: 'Elena Smirnova (Desk 1)',
+    notes: 'Uploaded government ID for KYC verification, waiting for compliance approval.',
+    manager: 'Laura Bennett (Desk 1)',
     createdAt: '2026-08-05',
     comments: [
-      { id: 'c-4', author: 'Elena Smirnova', text: 'Docs submitted. Sent to compliance.', date: '2026-08-06 12:30' }
+      { id: 'c-4', author: 'Laura Bennett', text: 'Docs submitted. Sent to compliance.', date: '2026-08-06 12:30' }
     ]
   },
   {
     id: 'lead-06',
-    name: 'Valeria Melnikova',
-    phone: '+7 (905) 123-99-88',
+    name: 'Hannah Foster',
+    phone: '+1 (480) 555-0193',
     potentialAmount: 15000,
     stage: 'kyc',
     notes: 'Pre-account opened for EUR/USD and SOL/USDT trading.',
-    manager: 'Artem Lebedev (Desk 2)',
+    manager: 'Daniel Foster (Desk 2)',
     createdAt: '2026-08-06',
     comments: []
   }
@@ -290,7 +290,7 @@ export const INITIAL_REQUESTS: TransactionRequest[] = [
   {
     id: 'req-204',
     investorId: 'inv-01',
-    investorName: 'Alexander Gromov (You)',
+    investorName: 'Michael Carter (You)',
     type: 'deposit',
     amount: 10000,
     status: 'approved',

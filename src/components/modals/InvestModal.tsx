@@ -27,7 +27,7 @@ export const InvestModal: React.FC<InvestModalProps> = ({
     if (val > userBalance) {
       setError('Not enough available funds on your balance');
     } else if (val < project.minCheck) {
-      setError(`Minimum investment: $${project.minCheck.toLocaleString()}`);
+      setError(`Minimum investment: $${project.minCheck.toLocaleString('en-US')}`);
     } else {
       setError('');
     }
@@ -42,7 +42,7 @@ export const InvestModal: React.FC<InvestModalProps> = ({
       return;
     }
     if (amount < project.minCheck) {
-      setError(`Minimum investment: $${project.minCheck.toLocaleString()}`);
+      setError(`Minimum investment: $${project.minCheck.toLocaleString('en-US')}`);
       return;
     }
     onConfirmInvest(project, amount);
@@ -50,10 +50,10 @@ export const InvestModal: React.FC<InvestModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-white/[.06]">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white relative">
+        <div className="bg-[#0f1116] border-b border-white/[.08] p-6 text-white relative">
           <button
             onClick={onClose}
             className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
@@ -71,14 +71,14 @@ export const InvestModal: React.FC<InvestModalProps> = ({
         {/* Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Balance comparison */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center justify-between text-sm">
-            <span className="text-slate-600">Your available balance:</span>
-            <span className="font-extrabold text-emerald-600">${userBalance.toLocaleString()}</span>
+          <div className="bg-[#1b1e26] p-4 rounded-xl border border-white/[.06] flex items-center justify-between text-sm">
+            <span className="text-slate-400">Your available balance:</span>
+            <span className="font-extrabold text-emerald-400">${userBalance.toLocaleString('en-US')}</span>
           </div>
 
           {/* Amount input */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide">
               Investment amount ($ USD)
             </label>
             <div className="relative">
@@ -90,7 +90,7 @@ export const InvestModal: React.FC<InvestModalProps> = ({
                 min={project.minCheck}
                 max={userBalance}
                 step={1000}
-                className="w-full pl-9 pr-4 py-3 bg-white border border-slate-300 rounded-xl font-bold text-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-4 py-3 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-lg focus:outline-none focus:ring-2 focus:ring-[#f5b400]/40"
               />
             </div>
             {error && (
@@ -107,27 +107,27 @@ export const InvestModal: React.FC<InvestModalProps> = ({
                   key={idx}
                   type="button"
                   onClick={() => handleAmountChange(Math.min(userBalance, val))}
-                  className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+                  className="px-3 py-1 rounded-lg text-xs font-semibold bg-white/[.06] hover:bg-white/[.12] text-slate-300 transition-colors"
                 >
-                  {val === userBalance ? 'Max' : `$${val.toLocaleString()}`}
+                  {val === userBalance ? 'Max' : `$${val.toLocaleString('en-US')}`}
                 </button>
               ))}
             </div>
           </div>
 
           {/* Calculation summary */}
-          <div className="bg-blue-50/70 p-4 rounded-xl border border-blue-100 space-y-2">
-            <div className="flex justify-between text-xs font-medium text-slate-600">
+          <div className="bg-[#f5b400]/10/70 p-4 rounded-xl border border-[#f5b400]/20 space-y-2">
+            <div className="flex justify-between text-xs font-medium text-slate-400">
               <span>Investment term</span>
-              <span className="font-bold text-slate-900">{project.termMonths} months</span>
+              <span className="font-bold text-white">{project.termMonths} months</span>
             </div>
-            <div className="flex justify-between text-xs font-medium text-slate-600">
+            <div className="flex justify-between text-xs font-medium text-slate-400">
               <span>Return (annual rate)</span>
-              <span className="font-bold text-emerald-600">{project.apr}% APR</span>
+              <span className="font-bold text-emerald-400">{project.apr}% APR</span>
             </div>
-            <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-blue-200/60">
+            <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-[#f5b400]/25/60">
               <span>Expected net profit</span>
-              <span className="text-emerald-600">+${expectedProfit.toLocaleString()} USD</span>
+              <span className="text-emerald-400">+${expectedProfit.toLocaleString('en-US')} USD</span>
             </div>
           </div>
 
@@ -141,14 +141,14 @@ export const InvestModal: React.FC<InvestModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition-colors"
+              className="px-5 py-2.5 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 text-sm font-semibold transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!!error || amount > userBalance || amount < project.minCheck}
-              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-bold transition-colors shadow-md shadow-blue-500/20 flex items-center gap-2 cursor-pointer"
+              className="px-6 py-2.5 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] disabled:opacity-40 text-white text-sm font-bold transition-colors shadow-md shadow-blue-500/20 flex items-center gap-2 cursor-pointer"
             >
               <span>Confirm investment</span>
               <ArrowRight className="w-4 h-4" />

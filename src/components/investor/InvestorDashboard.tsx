@@ -1,18 +1,35 @@
-import React from 'react';
-import { 
-  Wallet, 
-  ArrowUpRight, 
-  ShieldCheck, 
-  PieChart, 
-  Calendar, 
-  DollarSign, 
-  Briefcase, 
-  Sparkles,
-  ChevronRight
+// ============================================================
+//  CLIENT CABINET — built from the PDF presentation
+//  (pages 6-8 spot terminal & portfolio, page 17 statistics).
+//  Dark + gold theme, own left sidebar like in the PDF screens:
+//  Dashboard · Trading (Spot/Futures/P2P/AI) · Withdrawals ·
+//  Transactions · Support · Call manager · Profile · Statistics
+// ============================================================
+import React, { useState, useEffect } from 'react';
+import {
+  LayoutDashboard,
+  TrendingUp,
+  ArrowDownToLine,
+  Receipt,
+  LifeBuoy,
+  PhoneCall,
+  User,
+  BarChart3,
+  LogOut,
+  Wallet,
+  ArrowUpRight,
+  ShieldCheck,
+  Download,
+  Layers,
+  DollarSign,
+  Search,
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { ActiveInvestment } from '../../types';
-import { PORTFOLIO_HISTORY } from '../../data/mockData';
+import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
+import { VerifyIdentity } from './VerifyIdentity';
+import { AdvancedChart } from './TradingViewChart';
+import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
+import type { AssetCategory, Instrument } from '../../data/instruments';
 
 interface InvestorDashboardProps {
   investorBalance: number;
@@ -23,306 +40,682 @@ interface InvestorDashboardProps {
   onClaimDividends: (id: string, profit: number) => void;
 }
 
+type Tab = 'dashboard' | 'trading' | 'withdrawals' | 'transactions' | 'support' | 'call' | 'profile' | 'statistics';
+
+const NAV: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'trading', label: 'Trading', icon: TrendingUp },
+  { id: 'withdrawals', label: 'Withdrawals', icon: ArrowDownToLine },
+  { id: 'transactions', label: 'Transactions', icon: Receipt },
+  { id: 'support', label: 'Support', icon: LifeBuoy },
+  { id: 'call', label: 'Call manager', icon: PhoneCall },
+  { id: 'profile', label: 'Profile', icon: User },
+  { id: 'statistics', label: 'Statistics', icon: BarChart3 },
+];
+
+/* Wallets — PDF page 7 "Full portfolio control" */
+const WALLETS = [
+  { sym: 'BTC', name: 'Bitcoin', qty: 0.199916, price: 64400.61, avg: 49941.24, pnl: 2891.46, pct: 20.36 },
+  { sym: 'BNB', name: 'BNB', qty: 4.687804, price: 581.79, avg: 565.51, pnl: 76.32, pct: 2.88 },
+  { sym: 'LINK', name: 'Chainlink', qty: 46.318116, price: 8.05, avg: 7.63, pnl: 19.13, pct: 5.4 },
+  { sym: 'NEAR', name: 'NEAR Protocol', qty: 6145.891515, price: 1.91, avg: 1.86, pnl: 319.09, pct: 2.79 },
+];
+
 export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   investorBalance,
   myInvestments,
   onOpenCatalog,
   onOpenDepositModal,
   onOpenWithdrawModal,
-  onClaimDividends
+  onClaimDividends,
 }) => {
-  const totalInvested = myInvestments.reduce((sum, inv) => sum + inv.amount, 0);
-  const totalAccrued = myInvestments.reduce((sum, inv) => sum + inv.accruedProfit, 0);
-  const totalPortfolioValue = totalInvested + investorBalance + totalAccrued;
+  const [tab, setTab] = useState<Tab>('dashboard');
+  const [side, setSide] = useState<'buy' | 'sell'>('buy');
+  const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
+  const [amount, setAmount] = useState(500);
+  const [leverage, setLeverage] = useState(10);
+  const [category, setCategory] = useState<AssetCategory>('Crypto');
+  const [symbol, setSymbol] = useState<Instrument>(INSTRUMENTS[0]);
+  const [instrumentQuery, setInstrumentQuery] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
+  const [msg, setMsg] = useState('');
+  const [msgLog, setMsgLog] = useState<{ me: boolean; text: string }[]>([]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const totalInvested = myInvestments.reduce((s, i) => s + i.amount, 0);
+  const totalAccrued = myInvestments.reduce((s, i) => s + i.accruedProfit, 0);
+  const walletsValue = WALLETS.reduce((s, w) => s + w.qty * w.price, 0);
+  const portfolioValue = investorBalance + totalInvested + totalAccrued + walletsValue;
 
   return (
-    <div className="space-y-6">
-      {/* Welcome & Quick actions bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900">
-              Welcome back, Alexander!
+    <div className="flex min-h-screen bg-[#0a0b0e] text-slate-200">
+      {/* ============ SIDEBAR (as in PDF client screens) ============ */}
+      <aside className="w-[230px] shrink-0 bg-[#0f1116] border-r border-white/[.06] hidden lg:flex flex-col sticky top-0 h-screen">
+        <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/[.06]">
+          <div className="w-9 h-9 rounded-full bg-[#f5b400] flex items-center justify-center">
+            <TrendingUp className="w-5 h-5 text-[#17190f]" />
+          </div>
+          <div className="leading-tight">
+            <div className="text-[13px] font-extrabold text-white">TradeNation</div>
+            <div className="text-[9px] font-bold text-[#f5b400] tracking-widest">CLIENT</div>
+          </div>
+        </div>
+
+        <div className="px-4 py-4 flex items-center gap-3 border-b border-white/[.06]">
+          <div className="w-9 h-9 rounded-full bg-[#f5b400] text-[#17190f] font-extrabold flex items-center justify-center">A</div>
+          <div className="leading-tight">
+            <div className="text-[13px] font-bold text-white">Michael C.</div>
+            <div className="text-[9px] font-bold text-slate-500 tracking-widest">CLIENT</div>
+          </div>
+        </div>
+
+        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
+          {NAV.map(n => {
+            const Icon = n.icon;
+            return (
+              <button
+                key={n.id}
+                onClick={() => setTab(n.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all cursor-pointer ${
+                  tab === n.id ? 'bg-[#f5b400]/12 text-[#f5b400]' : 'text-slate-400 hover:text-white hover:bg-white/[.05]'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                {n.label}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] text-slate-500 hover:text-rose-400 hover:bg-white/[.05] cursor-pointer mt-2"
+          >
+            <LogOut className="w-4 h-4" /> Log out
+          </button>
+        </nav>
+      </aside>
+
+      {/* ============ CONTENT ============ */}
+      <div className="flex-1 min-w-0 p-5 space-y-5">
+        {/* header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-extrabold text-white tracking-tight">
+              {NAV.find(n => n.id === tab)?.label}
             </h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              KYC Verified
-            </span>
-          </div>
-          <p className="text-sm text-slate-500 mt-1">
-            Your trading portfolio is growing. Today <span className="text-emerald-600 font-semibold">+$420</span> in profit accrued.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onOpenDepositModal}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-sm transition-all flex items-center gap-2 shadow-sm shadow-blue-600/20 cursor-pointer"
-          >
-            <Wallet className="w-4 h-4" />
-            <span>Deposit</span>
-          </button>
-          <button
-            onClick={onOpenWithdrawModal}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl text-sm transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <span>Withdraw</span>
-          </button>
-          <button
-            onClick={onOpenCatalog}
-            className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium rounded-xl text-sm transition-all flex items-center gap-2 shadow-sm cursor-pointer"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Invest</span>
-          </button>
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 text-sm">
-            <span>Total portfolio value</span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <PieChart className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-slate-900 mt-2">
-            ${totalPortfolioValue.toLocaleString()}
-          </div>
-          <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-600 font-medium">
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            <span>+14.2% average annual return</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 text-sm">
-            <span>Invested in assets</span>
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <Briefcase className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-slate-900 mt-2">
-            ${totalInvested.toLocaleString()}
-          </div>
-          <div className="flex items-center gap-1 text-xs text-slate-500 mt-2">
-            <span>Active: {myInvestments.length} trading positions</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 text-sm">
-            <span>Available balance</span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <Wallet className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-emerald-600 mt-2">
-            ${investorBalance.toLocaleString()}
-          </div>
-          <div className="flex items-center gap-1 text-xs text-slate-500 mt-2">
-            <span>Available for new trades</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 text-sm">
-            <span>Accrued profit</span>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-slate-900 mt-2">
-            ${totalAccrued.toLocaleString()}
-          </div>
-          <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-600 font-medium">
-            <span>Next payout: September 1</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Chart Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Capital Growth ($)</h2>
-              <p className="text-xs text-slate-500">Portfolio value in 2026</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs font-semibold">
-              <span className="flex items-center gap-1 text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
-                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                Portfolio equity
-              </span>
-            </div>
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={PORTFOLIO_HISTORY} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorCapital" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} tickFormatter={(val) => `$${val/1000}k`} />
-                <Tooltip 
-                  formatter={(value: any) => [`$${Number(value).toLocaleString()}`, 'Balance']}
-                  contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                />
-                <Area type="monotone" dataKey="capital" stroke="#2563eb" strokeWidth={3} fillOpacity={1} fill="url(#colorCapital)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Right card - Portfolio structure */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Your Asset Allocation</h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Portfolio distribution by market and strategy
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700">BTC/USDT Spot & Futures</span>
-                  <span className="text-slate-900 font-bold">$35,000 (36%)</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-blue-600 h-full rounded-full" style={{ width: '36%' }}></div>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700">ETH/USDT Perpetual Futures</span>
-                  <span className="text-slate-900 font-bold">$38,000 (39%)</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-indigo-600 h-full rounded-full" style={{ width: '39%' }}></div>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700">XAU/USD Gold</span>
-                  <span className="text-slate-900 font-bold">$15,000 (15%)</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-emerald-600 h-full rounded-full" style={{ width: '15%' }}></div>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700">AI Quant Strategy Pool</span>
-                  <span className="text-slate-900 font-bold">$10,000 (10%)</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-purple-600 h-full rounded-full" style={{ width: '10%' }}></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 pt-4 border-t border-slate-100 bg-slate-50 p-4 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs font-bold text-slate-800">Your personal manager:</div>
-                <div className="text-xs text-slate-600 mt-0.5">Elena Smirnova (Senior Advisor)</div>
-              </div>
-              <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded-md font-medium">
-                Online
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Active Investments Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">My Active Trades</h2>
-            <p className="text-xs text-slate-500">
-              Open positions, performance and accrued profit
+            <p className="text-[12px] text-slate-500 mt-0.5 flex items-center gap-2">
+              Welcome back, Michael
+              <Badge tone="green">
+                <ShieldCheck className="w-3 h-3" /> KYC verified
+              </Badge>
             </p>
           </div>
-          <button 
-            onClick={onOpenCatalog}
-            className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
-          >
-            <span>New offers in the market</span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <Btn variant="gold" icon={Wallet} onClick={onOpenDepositModal}>
+              Deposit
+            </Btn>
+            <Btn variant="ghost" icon={ArrowUpRight} onClick={onOpenWithdrawModal}>
+              Withdraw
+            </Btn>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
-                <th className="py-3.5 px-6">Asset / Strategy</th>
-                <th className="py-3.5 px-6">Category</th>
-                <th className="py-3.5 px-6">Amount</th>
-                <th className="py-3.5 px-6">Return (APR)</th>
-                <th className="py-3.5 px-6">Accrued profit</th>
-                <th className="py-3.5 px-6">Next payout</th>
-                <th className="py-3.5 px-6 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
-              {myInvestments.map((inv) => (
-                <tr key={inv.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-4 px-6 font-semibold text-slate-900">
-                    {inv.projectTitle}
-                  </td>
-                  <td className="py-4 px-6">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-                      {inv.categoryLabel}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 font-bold text-slate-900">
-                    ${inv.amount.toLocaleString()}
-                  </td>
-                  <td className="py-4 px-6">
-                    <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                      {inv.apr}% p.a.
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 font-bold text-emerald-600">
-                    +${inv.accruedProfit.toLocaleString()}
-                  </td>
-                  <td className="py-4 px-6 text-slate-500 text-xs">
-                    <div className="flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{inv.nextPayoutDate}</span>
+        {/* ================= DASHBOARD ================= */}
+        {tab === 'dashboard' && (
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Kpi icon={Wallet} label="Available balance" value={`$${investorBalance.toLocaleString('en-US')}`} tone="green" />
+              <Kpi icon={Layers} label="Portfolio value" value={`$${portfolioValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`} />
+              <Kpi icon={TrendingUp} label="Invested" value={`$${totalInvested.toLocaleString('en-US')}`} tone="blue" />
+              <Kpi
+                icon={DollarSign}
+                label="Live P/L"
+                value={`${totalAccrued >= 0 ? '+' : '-'}$${Math.abs(totalAccrued).toLocaleString('en-US')}`}
+                tone={totalAccrued >= 0 ? 'green' : 'red'}
+              />
+            </div>
+
+            {/* Wallets — PDF p.7 */}
+            <Card
+              title="Wallets"
+              subtitle="Value, average price and PnL in one panel"
+              actions={
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 uppercase">Total portfolio</div>
+                  <div className="text-[17px] font-extrabold text-[#f5b400]">
+                    ${walletsValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+              }
+            >
+              <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {WALLETS.map(w => (
+                  <div key={w.sym} className="bg-[#1b1e26] border border-white/[.06] rounded-2xl p-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-[14px] font-extrabold text-white">{w.sym}</div>
+                        <div className="text-[11px] text-slate-500">{w.name}</div>
+                      </div>
+                      <Badge tone={w.pnl >= 0 ? 'green' : 'red'}>
+                        {w.pnl >= 0 ? '+' : ''}
+                        {w.pct.toFixed(2)}%
+                      </Badge>
                     </div>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    {inv.accruedProfit > 0 ? (
-                      <button
-                        onClick={() => onClaimDividends(inv.id, inv.accruedProfit)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition-colors shadow-sm cursor-pointer"
-                        title="Move accrued profit to available balance"
-                      >
-                        Claim profit
-                      </button>
-                    ) : (
-                      <span className="text-xs text-slate-400">Paid out</span>
+                    <div className="text-[17px] font-extrabold text-emerald-400 mt-3">{w.qty} {w.sym}</div>
+                    <div className="text-[12px] text-slate-400">≈ ${(w.qty * w.price).toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+                    <div className="flex justify-between text-[11px] text-slate-500 mt-2.5 pt-2.5 border-t border-white/[.05]">
+                      <span>Avg. price ${w.avg.toLocaleString('en-US')}</span>
+                      <span className={w.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        PnL {w.pnl >= 0 ? '+' : ''}${w.pnl.toLocaleString('en-US')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Active investments */}
+            <Card title="Active positions" subtitle="Your running investments and accruals">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-white/[.02] border-b border-white/[.06]">
+                    <tr>
+                      <Th>Asset</Th>
+                      <Th>Amount</Th>
+                      <Th>APR</Th>
+                      <Th>Next payout</Th>
+                      <Th>Accrued</Th>
+                      <Th className="text-right">Action</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[.05]">
+                    {myInvestments.length === 0 && (
+                      <tr>
+                        <Td className="py-10 text-center text-slate-600">
+                          No positions yet.{' '}
+                          <button onClick={onOpenCatalog} className="text-[#f5b400] cursor-pointer">
+                            Browse markets
+                          </button>
+                        </Td>
+                      </tr>
                     )}
-                  </td>
-                </tr>
+                    {myInvestments.map(inv => (
+                      <tr key={inv.id} className="hover:bg-white/[.02]">
+                        <Td>
+                          <div className="font-semibold text-white">{inv.projectTitle}</div>
+                          <div className="text-[11px] text-slate-500">{inv.categoryLabel}</div>
+                        </Td>
+                        <Td className="font-bold text-white">${inv.amount.toLocaleString('en-US')}</Td>
+                        <Td className="text-[#f5b400] font-bold">{inv.apr}%</Td>
+                        <Td className="text-[12px]">{inv.nextPayoutDate}</Td>
+                        <Td className="text-emerald-400 font-bold">+${inv.accruedProfit.toLocaleString('en-US')}</Td>
+                        <Td className="text-right">
+                          <Btn size="sm" variant="gold" onClick={() => onClaimDividends(inv.id, inv.accruedProfit)}>
+                            Claim profit
+                          </Btn>
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ================= TRADING TERMINAL (TradingView) ================= */}
+        {tab === 'trading' && (
+          <div className="space-y-4">
+            {/* Asset category switcher */}
+            <div className="flex flex-wrap gap-2">
+              {ASSET_CATEGORIES.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => {
+                    setCategory(cat);
+                    const first = INSTRUMENTS.find(i => i.category === cat);
+                    if (first) setSymbol(first);
+                  }}
+                  className={`px-4 py-2 rounded-xl text-[13px] font-bold transition-all cursor-pointer border ${
+                    category === cat
+                      ? 'bg-[#f5b400] text-[#17190f] border-[#f5b400]'
+                      : 'bg-white/[.04] text-slate-400 border-white/[.08] hover:text-white'
+                  }`}
+                >
+                  {cat}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+              {/* Instrument list */}
+              <Card title={category} subtitle="Select an instrument" className="xl:col-span-1">
+                <div className="p-3">
+                  <div className="relative mb-2">
+                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <Input
+                      placeholder="Search..."
+                      value={instrumentQuery}
+                      onChange={e => setInstrumentQuery(e.target.value)}
+                      className="w-full pl-9"
+                    />
+                  </div>
+                  <div className="space-y-1 max-h-[520px] overflow-y-auto">
+                    {INSTRUMENTS.filter(
+                      i =>
+                        i.category === category &&
+                        (i.symbol.toLowerCase().includes(instrumentQuery.toLowerCase()) ||
+                          i.name.toLowerCase().includes(instrumentQuery.toLowerCase())),
+                    ).map(i => (
+                      <button
+                        key={i.tv}
+                        onClick={() => setSymbol(i)}
+                        className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors cursor-pointer border ${
+                          symbol.tv === i.tv
+                            ? 'bg-[#f5b400]/[.1] border-[#f5b400]/30'
+                            : 'bg-transparent border-transparent hover:bg-white/[.04]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[13px] font-bold text-white">{i.symbol}</span>
+                          <span className="text-[9px] text-slate-600 uppercase">{i.exchange}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate">{i.name}</div>
+                        <div className="text-[9px] text-slate-600 mt-0.5">{i.kind}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+
+              {/* Live chart */}
+              <Card className="xl:col-span-3 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="text-[16px] font-extrabold text-white">{symbol.symbol}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {symbol.name} · {symbol.exchange}
+                    </div>
+                  </div>
+                  <Badge tone="gold">{symbol.kind}</Badge>
+                </div>
+                <AdvancedChart symbol={symbol.tv} height={470} />
+              </Card>
+            </div>
+
+            {/* Order ticket + open positions */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <Card title="New order" subtitle={symbol.symbol}>
+                <div className="p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setSide('buy')}
+                      className={`py-2 rounded-xl text-[12px] font-bold cursor-pointer ${
+                        side === 'buy' ? 'bg-emerald-500 text-white' : 'bg-white/[.05] text-slate-400'
+                      }`}
+                    >
+                      Buy / Long
+                    </button>
+                    <button
+                      onClick={() => setSide('sell')}
+                      className={`py-2 rounded-xl text-[12px] font-bold cursor-pointer ${
+                        side === 'sell' ? 'bg-rose-500 text-white' : 'bg-white/[.05] text-slate-400'
+                      }`}
+                    >
+                      Sell / Short
+                    </button>
+                  </div>
+
+                  <div className="flex gap-1.5">
+                    {(['market', 'limit', 'stop'] as const).map(t => (
+                      <button
+                        key={t}
+                        onClick={() => setOrderType(t)}
+                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold capitalize cursor-pointer ${
+                          orderType === t ? 'bg-[#f5b400]/20 text-[#f5b400]' : 'bg-white/[.05] text-slate-500'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+
+                  {orderType !== 'market' && (
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">Price</label>
+                      <Input type="number" placeholder="Order price" className="w-full mt-1" />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold">Amount, $</label>
+                    <Input
+                      type="number"
+                      value={amount}
+                      onChange={e => setAmount(Number(e.target.value))}
+                      className="w-full mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold">Leverage: {leverage}x</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={100}
+                      value={leverage}
+                      onChange={e => setLeverage(Number(e.target.value))}
+                      className="w-full accent-[#f5b400] cursor-pointer mt-1"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">Stop loss</label>
+                      <Input placeholder="—" className="w-full mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">Take profit</label>
+                      <Input placeholder="—" className="w-full mt-1" />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between text-[11px] text-slate-500 pt-1">
+                    <span>Position size</span>
+                    <span className="text-white font-bold">${(amount * leverage).toLocaleString('en-US')}</span>
+                  </div>
+
+                  <button
+                    onClick={() => setToast(`${side === 'buy' ? 'Long' : 'Short'} order placed on ${symbol.symbol}`)}
+                    className={`w-full py-2.5 rounded-xl text-[13px] font-bold text-white cursor-pointer ${
+                      side === 'buy' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-rose-500 hover:bg-rose-400'
+                    }`}
+                  >
+                    {side === 'buy' ? 'Open Long' : 'Open Short'}
+                  </button>
+                </div>
+              </Card>
+
+              <Card title="Open positions" className="xl:col-span-2">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-white/[.02] border-b border-white/[.06]">
+                      <tr>
+                        <Th>Pair</Th>
+                        <Th>Side</Th>
+                        <Th>Leverage</Th>
+                        <Th>Entry</Th>
+                        <Th>Mark</Th>
+                        <Th>P/L</Th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[.05]">
+                      {[
+                        { p: 'BTC/USDT', s: 'LONG', l: '10x', e: 61400, m: 64337, pnl: 1450 },
+                        { p: 'ETH/USDT', s: 'LONG', l: '20x', e: 2680, m: 2820, pnl: 2100 },
+                        { p: 'AUD/CAD', s: 'SHORT', l: '50x', e: 0.9862, m: 0.98435, pnl: 318 },
+                      ].map(r => (
+                        <tr key={r.p} className="hover:bg-white/[.02]">
+                          <Td className="font-semibold text-white">{r.p}</Td>
+                          <Td>
+                            <Badge tone={r.s === 'LONG' ? 'green' : 'red'}>{r.s}</Badge>
+                          </Td>
+                          <Td>{r.l}</Td>
+                          <Td className="font-mono text-[12px]">{r.e}</Td>
+                          <Td className="font-mono text-[12px]">{r.m}</Td>
+                          <Td className="text-emerald-400 font-bold">+${r.pnl}</Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+          </div>
+        )}
+
+
+        {/* ================= STATISTICS (PDF p.17) ================= */}
+        {tab === 'statistics' && (
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Kpi icon={TrendingUp} label="Total PnL" value="$907.43" tone="green" hint="Better than 84% of traders" />
+              <Kpi icon={BarChart3} label="Trading volume" value="$136,984.68" />
+              <Kpi icon={Layers} label="Trades" value="22" tone="blue" />
+              <Kpi icon={DollarSign} label="Win rate" value="45.5%" tone="gold" />
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card title="Profit / loss dynamics">
+                <div className="p-5">
+                  <svg viewBox="0 0 400 140" className="w-full h-44">
+                    <defs>
+                      <linearGradient id="pl" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f5b400" stopOpacity=".45" />
+                        <stop offset="100%" stopColor="#f5b400" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <path d="M0,120 L50,110 L100,118 L150,84 L200,92 L250,54 L300,62 L350,28 L400,16 L400,140 L0,140 Z" fill="url(#pl)" />
+                    <path d="M0,120 L50,110 L100,118 L150,84 L200,92 L250,54 L300,62 L350,28 L400,16" fill="none" stroke="#f5b400" strokeWidth="2.5" />
+                  </svg>
+                </div>
+              </Card>
+              <Card title="Distribution by markets">
+                <div className="p-5 space-y-3">
+                  {[
+                    { m: 'Crypto', v: 62, c: '#f5b400' },
+                    { m: 'Forex', v: 21, c: '#22c55e' },
+                    { m: 'Metals', v: 11, c: '#3b82f6' },
+                    { m: 'Indices', v: 6, c: '#a855f7' },
+                  ].map(r => (
+                    <div key={r.m}>
+                      <div className="flex justify-between text-[12px] mb-1">
+                        <span className="text-slate-300">{r.m}</span>
+                        <span className="text-slate-500">{r.v}%</span>
+                      </div>
+                      <div className="h-2 bg-white/[.06] rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${r.v}%`, background: r.c }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+            <Card title="PDF statement" subtitle="Download your trading report">
+              <div className="p-5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <Select defaultValue="Last month">
+                    <option>Last week</option>
+                    <option>Last month</option>
+                    <option>Last year</option>
+                  </Select>
+                  <span className="text-[12px] text-slate-500">12.06.2026 — 12.07.2026</span>
+                </div>
+                <Btn variant="gold" icon={Download} onClick={() => setToast('PDF statement is being generated…')}>
+                  Download PDF
+                </Btn>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ================= SIMPLE TABS ================= */}
+        {tab === 'withdrawals' && (
+          <Card title="Withdrawal request" subtitle="Funds are processed within 24 hours">
+            <div className="p-5 space-y-4 max-w-lg">
+              <div>
+                <label className="text-[11px] font-bold uppercase text-slate-500">Amount, $</label>
+                <Input type="number" defaultValue={1000} className="w-full mt-1.5" />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase text-slate-500">Method</label>
+                <Select className="w-full mt-1.5">
+                  <option>USDT TRC-20</option>
+                  <option>Bitcoin</option>
+                  <option>Visa / Mastercard</option>
+                  <option>SEPA transfer</option>
+                </Select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase text-slate-500">Wallet / account</label>
+                <Input placeholder="Enter destination address" className="w-full mt-1.5" />
+              </div>
+              <Btn variant="gold" onClick={onOpenWithdrawModal}>
+                Request withdrawal
+              </Btn>
+            </div>
+          </Card>
+        )}
+
+        {tab === 'transactions' && (
+          <Card title="Transaction history">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-white/[.02] border-b border-white/[.06]">
+                  <tr>
+                    <Th>Date</Th>
+                    <Th>Type</Th>
+                    <Th>Method</Th>
+                    <Th>Amount</Th>
+                    <Th>Status</Th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[.05]">
+                  {[
+                    { d: '2026-08-12', t: 'Deposit', m: 'USDT TRC-20', a: 10000, s: 'completed' },
+                    { d: '2026-08-05', t: 'Withdrawal', m: 'Visa', a: -2500, s: 'completed' },
+                    { d: '2026-07-28', t: 'Deposit', m: 'Bitcoin', a: 5000, s: 'completed' },
+                    { d: '2026-07-14', t: 'Bonus', m: 'Promo', a: 250, s: 'completed' },
+                  ].map(r => (
+                    <tr key={r.d} className="hover:bg-white/[.02]">
+                      <Td className="text-[12px]">{r.d}</Td>
+                      <Td className="font-semibold text-white">{r.t}</Td>
+                      <Td className="text-[12px]">{r.m}</Td>
+                      <Td className={r.a >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                        {r.a >= 0 ? '+' : ''}${Math.abs(r.a).toLocaleString('en-US')}
+                      </Td>
+                      <Td>
+                        <Badge tone="green">{r.s}</Badge>
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
+        {tab === 'support' && (
+          <Card title="Support chat" subtitle="Live chat with your personal manager">
+            <div className="p-5 space-y-3 h-72 overflow-y-auto">
+              <div className="max-w-[70%] bg-[#1b1e26] border border-white/[.06] rounded-2xl rounded-tl-sm px-4 py-2.5 text-[13px]">
+                Good afternoon! How can I help you today?
+                <div className="text-[10px] text-slate-600 mt-1">Manager · 11:02</div>
+              </div>
+              <div className="max-w-[70%] ml-auto bg-[#f5b400]/15 border border-[#f5b400]/25 rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13px] text-[#f9d571]">
+                Hi! I'd like to increase the leverage on my account.
+                <div className="text-[10px] text-[#f5b400]/60 mt-1">You · 11:04</div>
+              </div>
+              {msgLog.map((m, i) => (
+                <div
+                  key={i}
+                  className="max-w-[70%] ml-auto bg-[#f5b400]/15 border border-[#f5b400]/25 rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13px] text-[#f9d571]"
+                >
+                  {m.text}
+                  <div className="text-[10px] text-[#f5b400]/60 mt-1">You</div>
+                </div>
+              ))}
+            </div>
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                if (!msg.trim()) return;
+                setMsgLog(l => [...l, { me: true, text: msg.trim() }]);
+                setMsg('');
+              }}
+              className="p-4 border-t border-white/[.06] flex gap-2"
+            >
+              <Input className="flex-1" placeholder="Type a message..." value={msg} onChange={e => setMsg(e.target.value)} />
+              <Btn variant="gold" type="submit" disabled={!msg.trim()}>
+                Send
+              </Btn>
+            </form>
+          </Card>
+        )}
+
+        {tab === 'call' && (
+          <Card title="Call your manager" subtitle="Direct WebRTC voice connection — no third-party apps">
+            <div className="p-8 flex flex-col items-center text-center gap-4">
+              <div className="w-20 h-20 rounded-full bg-[#f5b400]/15 border border-[#f5b400]/30 flex items-center justify-center">
+                <PhoneCall className="w-9 h-9 text-[#f5b400]" />
+              </div>
+              <div>
+                <div className="text-[16px] font-bold text-white">Laura Bennett</div>
+                <div className="text-[12px] text-slate-500">Senior Advisor · online</div>
+              </div>
+              <Btn variant="gold" icon={PhoneCall} onClick={() => setToast('Calling Laura Bennett…')}>
+                Start call
+              </Btn>
+              <p className="text-[11px] text-slate-600 max-w-sm">
+                During the call your manager can share their screen to guide you through the platform.
+              </p>
+            </div>
+          </Card>
+        )}
+
+        {tab === 'profile' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card title="Personal information">
+              <div className="p-5 space-y-3.5 max-w-md">
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-slate-500">Full name</label>
+                  <Input defaultValue="Michael Carter" className="w-full mt-1.5" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-slate-500">E-mail</label>
+                  <Input defaultValue="m.carter@northbridge-cap.com" className="w-full mt-1.5" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-slate-500">Phone</label>
+                  <Input defaultValue="+1 (415) 555-0182" className="w-full mt-1.5" />
+                </div>
+                <Btn variant="gold" onClick={() => setToast('Profile updated successfully')}>
+                  Save changes
+                </Btn>
+              </div>
+            </Card>
+            <Card title="Security">
+              <div className="p-5 space-y-3.5 max-w-md">
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-slate-500">Current password</label>
+                  <Input type="password" defaultValue="********" className="w-full mt-1.5" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-slate-500">New password</label>
+                  <Input type="password" placeholder="Minimum 6 characters" className="w-full mt-1.5" />
+                </div>
+                <Btn variant="ghost" onClick={() => setToast('Password changed successfully')}>
+                  Change password
+                </Btn>
+
+              </div>
+            </Card>
+            <div className="lg:col-span-2">
+              <VerifyIdentity onNotify={setToast} />
+            </div>
+          </div>
+        )}
       </div>
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 bg-[#14161c] border border-[#f5b400]/40 rounded-xl px-4 py-3 shadow-2xl shadow-black/60">
+          <div className="w-2 h-2 rounded-full bg-[#f5b400]" />
+          <span className="text-[13px] text-slate-100">{toast}</span>
+        </div>
+      )}
     </div>
   );
 };

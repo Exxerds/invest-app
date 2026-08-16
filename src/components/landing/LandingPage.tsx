@@ -1,785 +1,705 @@
-import React, { useState } from 'react';
+// ============================================================
+//  TradeNation — LANDING
+//  Design taken 1:1 from the client's PDF presentation (page 1):
+//  dark surfaces (#0e0f13 / #16181f) + gold accent (#f5b400),
+//  gold-highlighted hero headline, pill nav, gold CTA buttons.
+//  Structure follows shorelinedirect.net-style trading landings:
+//  hero → live markets → platform → conditions → account types
+//  → why us → affiliate → documentation → news → contact.
+// ============================================================
+import React, { useState, useRef, useEffect } from 'react';
+import { TickerTape, MarketOverview, MiniChart, MARKET_TABS } from '../investor/TradingViewChart';
+import type { MarketTab } from '../investor/TradingViewChart';
 import {
+  TrendingUp,
+  ChevronDown,
+  ArrowRight,
   ShieldCheck,
-  Lock,
+  Zap,
+  Headphones,
+  BarChart3,
+  Wallet,
+  Users,
+  CheckCircle2,
+  Bell,
+  MonitorPlay,
   PhoneCall,
+  FileText,
   Mail,
   MapPin,
-  ArrowRight,
-  FileText,
-  Award,
-  Wallet,
-  Zap,
-  Globe,
-  TrendingUp,
-  MonitorPlay,
-  Headset,
-  CheckCircle2,
-  Sparkles,
-  Users,
-  Gift,
+  Phone,
+  Layers,
+  LineChart,
+  Lock,
   Star,
-  Eye,
-  ChevronRight
 } from 'lucide-react';
 
 interface LandingPageProps {
   onOpenLoginModal: () => void;
+  onOpenRegisterModal?: () => void;
 }
 
-type Section = 'home' | 'about' | 'accounts' | 'legal' | 'news' | 'contact';
-
-const NAV: { id: Section; label: string }[] = [
-  { id: 'home', label: 'Home' },
-  { id: 'about', label: 'About Us' },
-  { id: 'accounts', label: 'Account Types' },
-  { id: 'legal', label: 'Documentation' },
-  { id: 'news', label: 'News' },
-  { id: 'contact', label: 'Contact Us' }
+const ACCOUNTS = [
+  { name: 'Beginner', dep: '$250', spread: 'from 2.0', lev: '1:20', items: ['Personal manager', 'Basic education', 'Email support'] },
+  { name: 'Silver', dep: '$2,500', spread: 'from 1.5', lev: '1:50', items: ['Everything in Beginner', 'Market reviews', 'Priority support'] },
+  { name: 'Gold', dep: '$10,000', spread: 'from 1.0', lev: '1:100', items: ['Everything in Silver', 'Trading signals', 'Weekly strategy call'] },
+  { name: 'Platinum', dep: '$50,000', spread: 'from 0.6', lev: '1:200', items: ['Everything in Gold', 'Senior advisor', 'Custom risk profile'] },
+  { name: 'Diamond', dep: '$100,000+', spread: 'from 0.2', lev: '1:400', items: ['Everything in Platinum', 'VIP desk 24/7', 'Zero commission'] },
 ];
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal }) => {
-  const [activeSection, setActiveSection] = useState<Section>('home');
-  const [marketTab, setMarketTab] = useState<'Indices' | 'Futures' | 'Forex'>('Indices');
-  const [timeframe, setTimeframe] = useState('1h');
-  const [leverage, setLeverage] = useState('10x');
-  const [orderMsg, setOrderMsg] = useState<string | null>(null);
+/** Trading dropdown items — mirrors the product modules from the PDF deck */
+const TRADING_MENU: { label: string; hint: string; anchor: string; icon: React.ElementType }[] = [
+  { label: 'Spot trading', hint: 'Buy and sell at market price', anchor: 'markets', icon: LineChart },
+  { label: 'Futures', hint: 'Long & short with leverage', anchor: 'platform', icon: TrendingUp },
+  { label: 'P2P exchange', hint: 'Peer-to-peer deals', anchor: 'platform', icon: Users },
+  { label: 'Binary options', hint: 'Fixed-time contracts', anchor: 'platform', icon: Zap },
+  { label: 'AI trading & staking', hint: 'Automated strategies', anchor: 'about', icon: Layers },
+  { label: 'Account types', hint: 'Compare all five tiers', anchor: 'accounts', icon: Star },
+];
 
-  const showOrder = (side: 'BUY' | 'SELL') => {
-    setOrderMsg(`${side === 'BUY' ? '🟢 Buy / Long' : '🔴 Sell / Short'} order placed — BTC/USDT · ${leverage} · ${timeframe}`);
-    setTimeout(() => setOrderMsg(null), 3500);
-  };
+const Section: React.FC<{ id?: string; className?: string; children: React.ReactNode }> = ({ id, className = '', children }) => (
+  <section id={id} className={`py-20 px-5 ${className}`}>
+    <div className="max-w-6xl mx-auto">{children}</div>
+  </section>
+);
 
-  const MARKET_ROWS: Record<string, { s: string; n: string; p: string; c: string; pc: string }[]> = {
-    Indices: [
-      { s: 'SPXUSD', n: 'S&P 500 Index', p: '7,800.8', c: '-2.50', pc: '-0.03%' },
-      { s: 'NSXUSD', n: 'US 100 Cash CFD', p: '30,125.6', c: '+13.30', pc: '+0.04%' },
-      { s: 'DJI', n: 'Dow Jones Industrial Average', p: '53,757.3', c: '-109.70', pc: '-0.20%' },
-      { s: 'NKY', n: 'Japan 225', p: '68,713.80', c: '+405.21', pc: '+0.59%' },
-      { s: 'DEU40', n: 'DAX Index', p: '26,299.74', c: '-31.33', pc: '-0.12%' }
-    ],
-    Futures: [
-      { s: 'BTCUSDT', n: 'Bitcoin Perpetual', p: '64,280.5', c: '+1,510.2', pc: '+2.41%' },
-      { s: 'ETHUSDT', n: 'Ethereum Perpetual', p: '2,815.3', c: '+49.8', pc: '+1.80%' },
-      { s: 'SOLUSDT', n: 'Solana Perpetual', p: '148.62', c: '+3.15', pc: '+2.17%' },
-      { s: 'XAUUSD', n: 'Gold Futures', p: '2,415.20', c: '+14.30', pc: '+0.60%' },
-      { s: 'WTI', n: 'Crude Oil Futures', p: '78.42', c: '-0.95', pc: '-1.20%' }
-    ],
-    Forex: [
-      { s: 'EURUSD', n: 'Euro / US Dollar', p: '1.0942', c: '-0.0021', pc: '-0.19%' },
-      { s: 'GBPUSD', n: 'British Pound / US Dollar', p: '1.2875', c: '+0.0034', pc: '+0.26%' },
-      { s: 'USDJPY', n: 'US Dollar / Japanese Yen', p: '146.28', c: '+0.52', pc: '+0.36%' },
-      { s: 'AUDCAD', n: 'Australian / Canadian Dollar', p: '0.98435', c: '-0.0001', pc: '-0.01%' },
-      { s: 'USDCHF', n: 'US Dollar / Swiss Franc', p: '0.8590', c: '-0.0012', pc: '-0.14%' }
-    ]
-  };
+const Eyebrow: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="text-[11px] font-extrabold tracking-[0.2em] text-[#f5b400] uppercase mb-3">{children}</div>
+);
+
+const H2: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
+  <h2 className={`text-3xl md:text-[42px] leading-[1.1] font-extrabold text-white tracking-tight ${className}`}>{children}</h2>
+);
+
+export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOpenRegisterModal }) => {
+  const [tradingOpen, setTradingOpen] = useState(false);
+  const [marketTab, setMarketTab] = useState<MarketTab>('Indices');
+  const tradingRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (tradingRef.current && !tradingRef.current.contains(e.target as Node)) setTradingOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+  const [side, setSide] = useState<'buy' | 'sell'>('buy');
+  const [leverage, setLeverage] = useState(10);
+  const [amount, setAmount] = useState(1000);
+
 
   return (
-    <div className="pb-16">
-      {/* ===== Landing Navigation (like Shoreline Direct) ===== */}
-      <div className="bg-white border-b border-slate-200 sticky top-16 z-40">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <nav className="flex items-center gap-1 h-14 overflow-x-auto">
-            {NAV.map(item => (
+    <div className="bg-[#0e0f13] text-slate-200">
+      {/* ==================== NAVBAR ==================== */}
+      <header className="sticky top-0 z-50 bg-[#0e0f13]/95 backdrop-blur border-b border-white/[.06]">
+        <div className="max-w-6xl mx-auto px-5 h-[68px] flex items-center gap-8">
+          <a href="#top" className="flex items-center gap-2.5 shrink-0">
+            <div className="w-9 h-9 rounded-full bg-[#f5b400] flex items-center justify-center">
+              <TrendingUp className="w-5 h-5 text-[#17190f]" />
+            </div>
+            <span className="text-[19px] font-extrabold text-white tracking-tight">TradeNation</span>
+          </a>
+
+          <nav className="hidden lg:flex items-center gap-7 text-[14px] font-medium text-slate-300">
+            <a href="#top" className="hover:text-white transition-colors">Home</a>
+            <a href="#markets" className="hover:text-white transition-colors">Buy Crypto</a>
+            {/* Trading dropdown — the PDF mock-up shows a caret here, so it opens a real menu */}
+            <div className="relative" ref={tradingRef}>
               <button
-                key={item.id}
-                onClick={() => setActiveSection(item.id)}
-                className={`px-3.5 py-2 text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer border-b-2 ${
-                  activeSection === item.id
-                    ? 'text-blue-700 border-blue-600'
-                    : 'text-slate-600 hover:text-slate-900 border-transparent'
-                }`}
+                onClick={() => setTradingOpen(v => !v)}
+                className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
               >
-                {item.label}
+                Trading
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${tradingOpen ? 'rotate-180' : ''}`} />
               </button>
-            ))}
+
+              {tradingOpen && (
+                <div className="absolute left-0 top-full pt-3 z-50">
+                  <div className="w-60 bg-[#16181f] border border-white/[.08] rounded-xl shadow-2xl shadow-black/60 py-1.5">
+                    {TRADING_MENU.map(item => (
+                      <button
+                        key={item.label}
+                        onClick={() => {
+                          setTradingOpen(false);
+                          document.getElementById(item.anchor)?.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="w-full flex items-start gap-2.5 px-4 py-2.5 text-left hover:bg-white/[.06] cursor-pointer transition-colors group"
+                      >
+                        <item.icon className="w-4 h-4 text-[#f5b400] shrink-0 mt-0.5" />
+                        <span>
+                          <span className="block text-[13px] text-slate-200 group-hover:text-white font-semibold">
+                            {item.label}
+                          </span>
+                          <span className="block text-[11px] text-slate-500">{item.hint}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <a href="#platform" className="hover:text-white transition-colors">P2P</a>
+            <a href="#about" className="hover:text-white transition-colors">About Us</a>
           </nav>
-        </div>
-      </div>
 
-      {/* ===== HOME ===== */}
-      {activeSection === 'home' && (
-        <div>
-          {/* HERO */}
-          <section className="bg-gradient-to-br from-[#0b1b3f] via-[#0d2a5e] to-[#123a7d] text-white relative overflow-hidden">
-            <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-blue-500/20 blur-3xl" />
-            <div className="absolute -bottom-40 -left-24 w-96 h-96 rounded-full bg-indigo-500/20 blur-3xl" />
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24 relative z-10">
-              <div className="max-w-3xl space-y-6">
-                <div className="inline-flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white/10 border border-white/15 text-white/90 text-xs font-semibold">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    Online Forex & CFD Trading Platform
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-white/10 border border-white/15 text-xs font-bold">
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    Excellent · Trustify 5.0
-                  </span>
-                </div>
-
-                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]">
-                  Trade Global Markets
-                  <span className="block text-transparent bg-clip-text bg-gradient-to-r from-sky-300 to-blue-400">
-                    with Confidence
-                  </span>
-                </h1>
-
-                <p className="text-blue-100/90 text-base sm:text-lg leading-relaxed max-w-2xl">
-                  Dive into Forex, Indices, Commodities & Cryptos — All in One Platform.
-                  Seamless Trading. Advanced Tools. Personalized Support.
-                </p>
-
-                <div className="flex flex-wrap items-center gap-4 pt-2">
-                  <button
-                    onClick={onOpenLoginModal}
-                    className="px-7 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-blue-600/30 flex items-center gap-2 cursor-pointer"
-                  >
-                    Sign In to Your Account
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setActiveSection('accounts')}
-                    className="px-7 py-3.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold rounded-xl text-sm transition-all cursor-pointer"
-                  >
-                    View Account Types
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 pt-3 text-xs text-blue-200/80">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  Tight spreads & fast execution
-                  <span className="mx-1 text-white/20">•</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  Up to 1:500 leverage
-                  <span className="mx-1 text-white/20">•</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  24/7 support
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* MARKETS WIDGET */}
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 -mt-8 relative z-20">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/60 p-6 sm:p-8">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
-                <div>
-                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                    Browse the full range of Markets
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">World markets · live quotes</p>
-                </div>
-                <div className="sm:ml-auto flex items-center gap-2">
-                  {(['Indices', 'Futures', 'Forex'] as const).map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setMarketTab(t)}
-                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                        marketTab === t ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm min-w-[560px]">
-                  <thead>
-                    <tr className="text-[11px] text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                      <th className="py-2.5 pr-4 font-semibold">Instrument</th>
-                      <th className="py-2.5 pr-4 font-semibold">Price</th>
-                      <th className="py-2.5 pr-4 font-semibold">Change</th>
-                      <th className="py-2.5 pr-4 font-semibold">%</th>
-                      <th className="py-2.5 text-right font-semibold"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {MARKET_ROWS[marketTab].map(r => (
-                      <tr key={r.s} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3 pr-4">
-                          <span className="font-bold text-slate-900">{r.s}</span>
-                          <span className="text-xs text-slate-400 ml-2 hidden sm:inline">{r.n}</span>
-                        </td>
-                        <td className="py-3 pr-4 font-bold text-slate-900">{r.p}</td>
-                        <td className={`py-3 pr-4 font-semibold ${r.c.startsWith('+') ? 'text-emerald-600' : 'text-rose-600'}`}>{r.c}</td>
-                        <td className={`py-3 pr-4 font-semibold ${r.pc.startsWith('+') ? 'text-emerald-600' : 'text-rose-600'}`}>{r.pc}</td>
-                        <td className="py-3 text-right">
-                          <button
-                            onClick={onOpenLoginModal}
-                            className="text-xs font-bold text-blue-600 hover:text-blue-800 inline-flex items-center gap-0.5 cursor-pointer"
-                          >
-                            Trade <ChevronRight className="w-3 h-3" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-
-          {/* TRADING CONDITIONS */}
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16">
-            <div className="text-center mb-10">
-              <div className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Why choose us</div>
-              <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">Trading Conditions</h2>
-              <p className="text-sm text-slate-500 mt-2">Institutional-grade execution for every trader</p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              {[
-                { icon: Zap, title: 'Tight Spreads', desc: 'Benefit from RAW spreads to get the best out of your trades.' },
-                { icon: TrendingUp, title: 'Flexible Leverage', desc: 'Amplify your trades and increase your opportunities.' },
-                { icon: Wallet, title: 'Low Commission', desc: 'Trade with low commission fees to keep your costs down.' },
-                { icon: MonitorPlay, title: 'Instant Execution', desc: 'Fast, real-time trade execution with no delays.' }
-              ].map(c => (
-                <div
-                  key={c.title}
-                  className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all group"
-                >
-                  <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors flex items-center justify-center mb-4">
-                    <c.icon className="w-6 h-6" />
-                  </div>
-                  <h3 className="font-bold text-slate-900 mb-1.5">{c.title}</h3>
-                  <p className="text-sm text-slate-500 leading-relaxed">{c.desc}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* WEB PLATFORM */}
-          <section className="bg-gradient-to-r from-[#0d2a5e] to-[#123a7d] text-white">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 flex flex-col lg:flex-row lg:items-center gap-10">
-              <div className="flex-1 space-y-5">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-white/10 border border-white/15 text-xs font-semibold">
-                  <MonitorPlay className="w-4 h-4 text-sky-300" />
-                  TradeNation Web Platform
-                </div>
-                <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight">
-                  Trade Smarter, Anytime, Anywhere
-                </h2>
-                <p className="text-blue-100/90 text-sm sm:text-base leading-relaxed max-w-xl">
-                  A complete web trading experience without the need for specialized software.
-                  Charts, orders, balance and your personal manager — all in one browser tab.
-                </p>
-                <div className="flex flex-wrap gap-4 pt-1">
-                  <button
-                    onClick={onOpenLoginModal}
-                    className="px-6 py-3 bg-white text-blue-800 font-bold rounded-xl text-sm hover:bg-blue-50 transition-all cursor-pointer"
-                  >
-                    Start Trading
-                  </button>
-                  <button
-                    onClick={() => setActiveSection('about')}
-                    className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold rounded-xl text-sm transition-all cursor-pointer"
-                  >
-                    Learn More
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 grid grid-cols-2 gap-4">
-                {[
-                  { v: '100+', l: 'Countries served' },
-                  { v: '1:500', l: 'Max leverage' },
-                  { v: '<15 ms', l: 'Order execution' },
-                  { v: '24/7', l: 'Markets & support' }
-                ].map(s => (
-                  <div key={s.l} className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center backdrop-blur-sm">
-                    <div className="text-3xl font-extrabold text-sky-300">{s.v}</div>
-                    <div className="text-xs text-blue-100/80 font-medium mt-1">{s.l}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* PLATFORM PREVIEW (как в PDF: график + стакан + ордера) */}
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16">
-            <div className="text-center mb-10">
-              <div className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">The platform</div>
-              <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">One interface for everything</h2>
-              <p className="text-sm text-slate-500 mt-2">
-                Live charts, order book, positions and PnL — exactly like in the platform
-              </p>
-            </div>
-
-            <div className="bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden">
-              {/* window top bar */}
-              <div className="flex items-center justify-between px-5 py-3 bg-slate-800/80 border-b border-slate-700">
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-rose-500/80"></span>
-                    <span className="w-3 h-3 rounded-full bg-amber-400/80"></span>
-                    <span className="w-3 h-3 rounded-full bg-emerald-500/80"></span>
-                  </div>
-                  <span className="text-xs font-bold text-slate-300">BTC/USDT — Spot</span>
-                </div>
-                <div className="flex items-center gap-4 text-xs">
-                  <span className="text-slate-400">Balance: <strong className="text-emerald-400">$26,500</strong></span>
-                  <span className="text-slate-400">PnL: <strong className="text-emerald-400">+$4,810</strong></span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3">
-                {/* chart */}
-                <div className="lg:col-span-2 p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-2xl font-extrabold text-white">64,280.5 <span className="text-sm font-bold text-emerald-400 ml-2">+2.4%</span></div>
-                    <div className="flex items-center gap-1.5">
-                      {['1m', '5m', '15m', '1h', '4h', '1D'].map(t => (
-                        <button
-                          key={t}
-                          onClick={() => setTimeframe(t)}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
-                            timeframe === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                          }`}
-                        >
-                          {t}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {/* SVG chart */}
-                  <svg viewBox="0 0 600 220" className="w-full h-52" preserveAspectRatio="none">
-                    <defs>
-                      <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#2563eb" stopOpacity="0.35" />
-                        <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                    {[20, 55, 90, 125, 160, 195].map(y => (
-                      <line key={y} x1="0" y1={y} x2="600" y2={y} stroke="#1e293b" strokeWidth="1" />
-                    ))}
-                    <path
-                      d="M0,170 C40,160 60,140 90,145 C120,150 140,120 170,115 C200,110 220,128 250,118 C280,108 300,80 330,85 C360,90 380,70 410,62 C440,54 460,72 490,60 C520,48 550,55 580,40 L600,34 L600,220 L0,220 Z"
-                      fill="url(#chartFill)"
-                    />
-                    <path
-                      d="M0,170 C40,160 60,140 90,145 C120,150 140,120 170,115 C200,110 220,128 250,118 C280,108 300,80 330,85 C360,90 380,70 410,62 C440,54 460,72 490,60 C520,48 550,55 580,40 L600,34"
-                      fill="none" stroke="#3b82f6" strokeWidth="2.5"
-                    />
-                  </svg>
-                </div>
-
-                {/* order book + buy/sell */}
-                <div className="border-t lg:border-t-0 lg:border-l border-slate-700 p-5 space-y-4">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Order book</div>
-                  <div className="space-y-1 text-xs">
-                    {[
-                      ['64,310.0', '2.4 BTC'],
-                      ['64,295.5', '1.8 BTC'],
-                      ['64,285.0', '0.9 BTC']
-                    ].map(([p, v]) => (
-                      <div key={p} className="flex justify-between text-rose-400">
-                        <span className="font-mono font-bold">{p}</span>
-                        <span className="text-slate-500">{v}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between text-slate-500 border-y border-slate-700 py-1.5 my-1">
-                      <span className="font-mono font-bold text-white">64,280.5</span>
-                      <span>spread 0.8</span>
-                    </div>
-                    {[
-                      ['64,270.0', '1.2 BTC'],
-                      ['64,260.5', '3.1 BTC'],
-                      ['64,248.0', '1.7 BTC']
-                    ].map(([p, v]) => (
-                      <div key={p} className="flex justify-between text-emerald-400">
-                        <span className="font-mono font-bold">{p}</span>
-                        <span className="text-slate-500">{v}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <button
-                      onClick={() => showOrder('BUY')}
-                      className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-bold transition-all cursor-pointer"
-                    >
-                      Buy / Long
-                    </button>
-                    <button
-                      onClick={() => showOrder('SELL')}
-                      className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white text-sm font-bold transition-all cursor-pointer"
-                    >
-                      Sell / Short
-                    </button>
-                  </div>
-                  <div className="text-[11px] text-slate-500 flex items-center justify-between">
-                    <span>Leverage</span>
-                    <div className="flex gap-1">
-                      {['1x', '5x', '10x', '20x'].map(l => (
-                        <button
-                          key={l}
-                          onClick={() => setLeverage(l)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${
-                            leverage === l ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {orderMsg && (
-                    <div className="text-[11px] bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-emerald-300 font-semibold animate-pulse">
-                      {orderMsg}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* WHAT MAKES DIFFERENT */}
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16">
-            <div className="text-center mb-10">
-              <div className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Our edge</div>
-              <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">What Makes TradeNation Different?</h2>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {[
-                { icon: Globe, title: 'Global reach', desc: 'We partner with businesses and individuals in over 100 countries, providing reliable and efficient trading solutions.' },
-                { icon: Lock, title: 'Security first', desc: 'Your safety is our priority with strict security protocols. Data and transactions are protected with the highest industry standards.' },
-                { icon: Headset, title: 'Personalized support', desc: 'Dedicated account managers, built-in WebRTC calls and screen share sessions. Your advisor is one click away.' }
-              ].map(c => (
-                <div key={c.title} className="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-600/20 mb-4">
-                    <c.icon className="w-6 h-6" />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900 mb-2">{c.title}</h3>
-                  <p className="text-sm text-slate-500 leading-relaxed">{c.desc}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* AFFILIATE */}
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16">
-            <div className="bg-gradient-to-br from-slate-900 via-[#0d2a5e] to-blue-900 text-white rounded-3xl p-8 sm:p-12 shadow-2xl relative overflow-hidden">
-              <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-emerald-500/10 blur-3xl" />
-              <div className="max-w-2xl relative z-10 space-y-5">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs font-semibold">
-                  <Gift className="w-4 h-4" />
-                  Affiliate Program
-                </div>
-                <h2 className="text-3xl font-extrabold tracking-tight leading-tight">
-                  Join Our Affiliate Program to Maximize Earnings — Up to $12 per Lot Traded
-                </h2>
-                <p className="text-blue-100/90 text-sm sm:text-base leading-relaxed">
-                  Boost your customer base and join an active community of over 145,000 registered
-                  partners! Get live notifications and track & filter your performance.
-                </p>
-                <div className="flex flex-wrap gap-3 pt-1">
-                  <button
-                    onClick={onOpenLoginModal}
-                    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-sm transition-all cursor-pointer"
-                  >
-                    Become a Partner
-                  </button>
-                  <button
-                    onClick={onOpenLoginModal}
-                    className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold rounded-xl text-sm transition-all cursor-pointer"
-                  >
-                    Partner Dashboard
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {/* ===== ABOUT US ===== */}
-      {activeSection === 'about' && (
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14 space-y-12">
-          <section className="text-center max-w-3xl mx-auto">
-            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3">About Us</div>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
-              Transforming the landscape of online forex trading
-            </h2>
-            <p className="text-slate-600 text-sm sm:text-base leading-relaxed mt-5">
-              <strong className="text-slate-900">TradeNation is transforming the landscape of online forex
-              trading</strong> by providing traders with access to institutional-grade pricing.
-            </p>
-            <p className="text-slate-600 text-sm sm:text-base leading-relaxed mt-3">
-              Our leadership team draws on deep expertise across global Forex, CFD, and Equity
-              markets. This industry insight enables us to leverage cutting-edge technology and
-              partner with top-tier liquidity providers to deliver some of the most competitive
-              pricing available.
-            </p>
-            <p className="text-slate-600 text-sm sm:text-base leading-relaxed mt-3">
-              Our mission is to deliver the best and most transparent trading experience for both
-              retail and institutional clients.
-            </p>
-          </section>
-
-          <section>
-            <div className="text-center mb-8">
-              <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">Our Core Values</h3>
-              <p className="text-sm text-slate-500 mt-1">
-                Our Core Values define who we are and guide every decision we make
-              </p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              {[
-                { icon: ShieldCheck, title: 'Integrity & Trust', desc: 'We uphold integrity and trust in all our relationships.' },
-                { icon: Award, title: 'Honesty & Fairness', desc: 'We value honesty and fairness in our dealings with clients and partners.' },
-                { icon: Eye, title: 'Transparency', desc: 'We believe in transparency, ensuring our clients always know where they stand.' },
-                { icon: CheckCircle2, title: 'Commitment', desc: 'We take our commitments seriously, delivering on our promises.' },
-                { icon: Users, title: 'Reliability', desc: 'We strive to be reliable, offering consistent support and performance.' },
-                { icon: TrendingUp, title: 'Flexibility', desc: 'We embrace flexibility to adapt to our clients’ evolving needs.' },
-                { icon: Sparkles, title: 'Innovation', desc: 'We pursue constant innovation to stay at the forefront of trading technology.' },
-                { icon: Globe, title: 'Governance', desc: 'We maintain strong corporate governance to ensure ethical and sound business practices.' }
-              ].map(v => (
-                <div key={v.title} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all space-y-3">
-                  <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                    <v.icon className="w-5 h-5" />
-                  </div>
-                  <h4 className="font-bold text-slate-900">{v.title}</h4>
-                  <p className="text-sm text-slate-500 leading-relaxed">{v.desc}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {/* ===== ACCOUNT TYPES ===== */}
-      {activeSection === 'accounts' && (
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14">
-          <div className="text-center mb-10">
-            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Account Types</div>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
-              Choose the account that fits your goals
-            </h2>
-            <p className="text-sm text-slate-500 mt-2">
-              From entry-level accounts to elite VIP conditions — 5 tiers for every trader
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            {[
-              { tier: 'ENTRY LEVEL', name: 'Beginner', tagline: 'Best for new traders', minDeposit: '$200', features: ['Basic trading platform', 'Limited asset selection', 'Standard spreads', 'No leverage', 'Basic educational materials', 'Little advisor access'], featured: false },
-              { tier: 'BRONZE', name: 'Bronze', tagline: 'Build your foundation', minDeposit: '$5k', features: ['Slightly tighter spreads', 'More tradable assets', 'Intro market analysis', 'Occasional tutorials', 'Limited advisor access'], featured: false },
-              { tier: 'SILVER', name: 'Silver', tagline: 'Grow your portfolio', minDeposit: '$25k', features: ['Better spreads & lower fees', 'Advanced charts & indicators', 'Regular insights & signals', 'Some priority support', 'Trading advisor access', 'Faster withdrawals'], featured: true },
-              { tier: 'GOLD', name: 'Gold', tagline: 'Professional edge', minDeposit: '$100k', features: ['Much tighter spreads', 'Premium analysis & signals', 'Dedicated account manager', 'VIP strategy sessions', 'Higher leverage options', 'Faster execution'], featured: false },
-              { tier: 'DIAMOND', name: 'Diamond', tagline: 'Elite experience', minDeposit: '$500k', features: ['Best spreads & lowest fees', 'Full access to all assets', 'Personal account manager', 'Exclusive insights', 'Priority withdrawals', 'Private events'], featured: false }
-            ].map(acc => (
-              <div
-                key={acc.name}
-                className={`relative p-6 rounded-2xl border flex flex-col space-y-4 transition-all ${
-                  acc.featured
-                    ? 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-blue-600 shadow-xl shadow-blue-600/20 scale-[1.03]'
-                    : 'bg-white border-slate-200 shadow-sm hover:shadow-md'
-                }`}
-              >
-                {acc.featured && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-amber-400 text-slate-900 text-[10px] font-extrabold uppercase tracking-wide shadow">
-                    Most popular
-                  </span>
-                )}
-                <div className={`text-[10px] font-extrabold uppercase tracking-widest ${acc.featured ? 'text-blue-200' : 'text-slate-400'}`}>
-                  {acc.tier}
-                </div>
-                <div>
-                  <h3 className="text-xl font-extrabold">{acc.name}</h3>
-                  <p className={`text-xs mt-0.5 ${acc.featured ? 'text-blue-100' : 'text-slate-500'}`}>{acc.tagline}</p>
-                </div>
-                <div className={`flex items-end gap-1 ${acc.featured ? 'text-white' : 'text-slate-900'}`}>
-                  <span className="text-2xl font-extrabold">{acc.minDeposit}</span>
-                  <span className={`text-[10px] pb-1 ${acc.featured ? 'text-blue-200' : 'text-slate-400'}`}>min deposit</span>
-                </div>
-                <ul className={`space-y-2 text-xs flex-1 ${acc.featured ? 'text-blue-100' : 'text-slate-600'}`}>
-                  {acc.features.map(f => (
-                    <li key={f} className="flex items-start gap-2">
-                      <CheckCircle2 className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${acc.featured ? 'text-amber-300' : 'text-emerald-500'}`} />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  onClick={onOpenLoginModal}
-                  className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-                    acc.featured
-                      ? 'bg-white text-blue-700 hover:bg-blue-50'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
-                >
-                  Get Started
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-8 flex items-center justify-center gap-2 text-sm text-slate-500">
-            <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-            Rated «Excellent» on Trustify — verified reviews from real traders
-          </div>
-        </div>
-      )}
-
-      {/* ===== DOCUMENTATION ===== */}
-      {activeSection === 'legal' && (
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14 space-y-10">
-          <div className="text-center max-w-2xl mx-auto">
-            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Documentation</div>
-            <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">Legal Documents & Policies</h2>
-            <p className="text-sm text-slate-500 mt-2">
-              Terms, policies and disclosures governing the platform and client accounts
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[
-              { icon: FileText, title: 'Terms & Conditions', desc: 'This agreement defines the rights and obligations of the Client when using the web platform interface and the procedure for executing trading transactions.', color: 'text-blue-600 bg-blue-50' },
-              { icon: Lock, title: 'Privacy Policy', desc: 'Personal data is processed with encryption. We guarantee that your private information is never disclosed to third parties.', color: 'text-purple-600 bg-purple-50' },
-              { icon: ShieldCheck, title: 'AML Policy', desc: 'The platform complies with international AML standards and performs client identification. All transactions are screened.', color: 'text-emerald-600 bg-emerald-50' },
-              { icon: ShieldCheck, title: 'KYC Policy', desc: 'Identity verification (KYC) is mandatory for all clients before deposits and withdrawals. Documents are checked within 24 hours.', color: 'text-amber-600 bg-amber-50' },
-              { icon: Award, title: 'Risk Disclosure', desc: 'Transactions with financial instruments involve market risks. Clients make their own decisions regarding the management of their accounts.', color: 'text-rose-600 bg-rose-50' },
-              { icon: Wallet, title: 'Deposit & Withdrawal', desc: 'Deposits are credited instantly via crypto gateway, bank transfer or cards. Withdrawals are processed within 24 hours.', color: 'text-indigo-600 bg-indigo-50' }
-            ].map(doc => (
-              <div key={doc.title} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all space-y-3">
-                <div className={`w-11 h-11 rounded-xl ${doc.color.split(' ')[1]} ${doc.color.split(' ')[0]} flex items-center justify-center`}>
-                  <doc.icon className="w-5 h-5" />
-                </div>
-                <h3 className="font-bold text-slate-900">{doc.title}</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">{doc.desc}</p>
-                <div className="text-sm font-semibold text-blue-600 inline-flex items-center gap-1 cursor-pointer hover:gap-2 transition-all">
-                  Read the full document <ChevronRight className="w-3.5 h-3.5" />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 max-w-4xl mx-auto">
-            <div className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2">Risk Warning</div>
-            <p className="text-xs text-amber-800/80 leading-relaxed">
-              Leveraged products such as CFD's and Forex trading are complex instruments with a high
-              risk of losing money. The products offered are intended for professional and retail
-              clients. Please note that client accounts could sustain losses of deposited funds or
-              in some cases even exceeding their deposit amount. Since clients can lose more than
-              the deposit we advise you to trade responsibly so in case funds were lost in trading
-              it does not significantly affect your personal and financial well-being.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ===== NEWS ===== */}
-      {activeSection === 'news' && (
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14">
-          <div className="text-center mb-10">
-            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Market News</div>
-            <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">
-              Latest updates from the world of crypto and forex markets
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[
-              { src: 'Bitcoin.com', date: '14. Aug. 2026', title: 'Whale Places $203M Short Bet Against Tokenized SpaceX Stock' },
-              { src: 'CoinTelegraph', date: '14. Aug. 2026', title: 'RedotPay US IPO delayed amid regulatory, legal hurdles: Report' },
-              { src: 'Bitcoin.com', date: '14. Aug. 2026', title: 'SEC Delays Tokenization Exemption Again as CLARITY Act Stalls' },
-              { src: 'CoinTelegraph', date: '14. Aug. 2026', title: 'JPMorgan cut Polymarket banking ties over regulatory concerns' },
-              { src: 'Bitcoin.com', date: '14. Aug. 2026', title: 'JPMorgan Grows Bitcoin ETF Stake to $356M, Adds XRP Exposure' },
-              { src: 'CryptoDaily', date: '14. Aug. 2026', title: 'Crypto payments barely register among euro area merchants, ECB finds' }
-            ].map(n => (
-              <div key={n.title} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-[11px] font-bold">{n.src}</span>
-                  <span className="text-[11px] text-slate-400">{n.date}</span>
-                </div>
-                <h3 className="text-sm font-bold text-slate-900 leading-snug">{n.title}</h3>
-                <div className="text-xs font-semibold text-blue-600 inline-flex items-center gap-1">
-                  Read more <ChevronRight className="w-3 h-3" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ===== CONTACT ===== */}
-      {activeSection === 'contact' && (
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14 space-y-10">
-          <div className="text-center max-w-2xl mx-auto">
-            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Contact Us</div>
-            <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">Our Contact Information</h2>
-            <p className="text-sm text-slate-500 mt-2">
-              Our support team and account managers are available 24/7 for any technical or financial questions.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Mail className="w-6 h-6" />
-              </div>
-              <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Email Us</div>
-              <div className="font-bold text-slate-900">support@tradenation.io</div>
-              <div className="text-xs text-slate-500">Support answers within 15 minutes</div>
-            </div>
-
-            <div className="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <PhoneCall className="w-6 h-6" />
-              </div>
-              <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Call Us</div>
-              <div className="font-bold text-slate-900 text-sm">UK: +44 20 4586 2197</div>
-              <div className="text-xs text-slate-500">CH: +41 26 500 4302 · CA: +1 587 206 8901</div>
-            </div>
-
-            <div className="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                <MapPin className="w-6 h-6" />
-              </div>
-              <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Head Office</div>
-              <div className="font-bold text-slate-900">London, United Kingdom</div>
-              <div className="text-xs text-slate-500">By appointment only</div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 max-w-2xl mx-auto">
-            <h3 className="text-lg font-bold text-slate-900 mb-5">Send a message</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                { label: 'Full Name *', ph: 'Enter your name' },
-                { label: 'Working Email *', ph: 'Enter working email' },
-                { label: 'Phone Number *', ph: 'Your Contact Number...' },
-                { label: 'Company', ph: 'Enter company name' },
-                { label: 'Subject *', ph: 'Enter subject' },
-                { label: 'Position', ph: 'Enter position' }
-              ].map(f => (
-                <div key={f.label}>
-                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">{f.label}</label>
-                  <input
-                    type="text"
-                    placeholder={f.ph}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
-                  />
-                </div>
-              ))}
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">Message *</label>
-                <textarea
-                  rows={4}
-                  placeholder="Type your message here.."
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
-                ></textarea>
-              </div>
-            </div>
+          <div className="ml-auto flex items-center gap-2.5">
             <button
-              type="button"
-              className="mt-5 px-7 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-600/20 cursor-pointer"
+              onClick={onOpenLoginModal}
+              className="px-4 py-2 rounded-xl bg-white/[.05] border border-white/[.1] text-[13px] font-semibold text-white hover:bg-white/[.1] transition-colors cursor-pointer"
             >
-              Send Message
+              Log in
+            </button>
+            <button
+              onClick={onOpenRegisterModal || onOpenLoginModal}
+              className="px-4 py-2 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] text-[13px] font-bold transition-colors cursor-pointer shadow-[0_6px_20px_-6px_rgba(245,180,0,.7)]"
+            >
+              Register
             </button>
           </div>
         </div>
-      )}
+      </header>
+
+      {/* Live ticker strip (TradingView) */}
+      <div className="border-b border-white/[.06] bg-[#0b0c10]">
+        <TickerTape />
+      </div>
+
+      {/* ==================== HERO ==================== */}
+      <div id="top" className="relative overflow-hidden border-b border-white/[.06]">
+        <div
+          className="absolute inset-0 opacity-[0.25]"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 50% 0%, rgba(245,180,0,.28), transparent 55%), radial-gradient(circle at 10% 80%, rgba(245,180,0,.10), transparent 45%)',
+          }}
+        />
+        <div className="relative max-w-4xl mx-auto px-5 py-24 md:py-28 text-center">
+          <h1 className="text-[38px] md:text-[54px] leading-[1.08] font-extrabold tracking-tight">
+            <span className="text-[#f5b400]">Earn on financial markets</span>
+            <br />
+            <span className="text-white">with TradeNation</span>
+          </h1>
+          <p className="mt-5 text-[15px] md:text-[17px] text-slate-400 max-w-2xl mx-auto leading-relaxed">
+            A professional trading platform with access to global markets and a wide selection of instruments —
+            crypto, forex, metals and indices in one account.
+          </p>
+          <div className="mt-8 flex items-center justify-center gap-3">
+            <button
+              onClick={onOpenRegisterModal || onOpenLoginModal}
+              className="px-7 py-3 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold text-[15px] transition-all cursor-pointer shadow-[0_10px_30px_-8px_rgba(245,180,0,.8)]"
+            >
+              Start trading
+            </button>
+            <button
+              onClick={onOpenLoginModal}
+              className="px-7 py-3 rounded-xl bg-white/[.06] border border-white/[.12] text-white font-bold text-[15px] hover:bg-white/[.12] transition-all cursor-pointer"
+            >
+              Log in
+            </button>
+          </div>
+
+          <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
+            {[
+              { icon: Layers, t: '250+', s: 'Trading instruments' },
+              { icon: Zap, t: '0.01s', s: 'Order execution' },
+              { icon: Users, t: '48,000+', s: 'Active clients' },
+              { icon: Headphones, t: '24/7', s: 'Personal support' },
+            ].map(x => (
+              <div key={x.t} className="bg-[#16181f] border border-white/[.07] rounded-2xl p-4">
+                <x.icon className="w-5 h-5 text-[#f5b400]" />
+                <div className="text-xl font-extrabold text-white mt-2.5">{x.t}</div>
+                <div className="text-[11px] text-slate-500">{x.s}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ==================== LIVE MARKETS (TradingView) ==================== */}
+      <Section id="markets">
+        <div className="text-center max-w-2xl mx-auto mb-9">
+          <Eyebrow>Live quotes</Eyebrow>
+          <H2>Markets at a glance</H2>
+          <p className="text-slate-400 mt-3 text-[15px]">
+            Real-time prices across indices, crypto, forex and commodities — powered by live exchange data.
+          </p>
+        </div>
+
+        {/* Our own category tabs — the widget itself is read-only, so its
+            built-in tabs are replaced with real buttons we control */}
+        <div className="flex flex-wrap justify-center gap-2 mb-5">
+          {MARKET_TABS.map(t => (
+            <button
+              key={t}
+              onClick={() => setMarketTab(t)}
+              className={`px-4 py-2 rounded-xl text-[13px] font-bold transition-all cursor-pointer border ${
+                marketTab === t
+                  ? 'bg-[#f5b400] text-[#17190f] border-[#f5b400]'
+                  : 'bg-white/[.04] text-slate-400 border-white/[.08] hover:text-white'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div className="bg-[#16181f] border border-white/[.07] rounded-2xl p-3 shadow-2xl shadow-black/40">
+          <MarketOverview tab={marketTab} height={480} />
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            { tv: 'BITSTAMP:BTCUSD', label: 'Bitcoin' },
+            { tv: 'OANDA:XAUUSD', label: 'Gold' },
+            { tv: 'FX:EURUSD', label: 'EUR / USD' },
+          ].map(m => (
+            <div key={m.tv} className="bg-[#16181f] border border-white/[.07] rounded-2xl p-3">
+              <div className="text-[12px] font-bold text-slate-300 px-1.5 pb-1">{m.label}</div>
+              <MiniChart symbol={m.tv} height={190} />
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 text-center">
+          <button
+            onClick={onOpenRegisterModal || onOpenLoginModal}
+            className="px-7 py-3 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold text-[14px] cursor-pointer transition-colors"
+          >
+            Start trading these markets
+          </button>
+        </div>
+      </Section>
+
+      {/* ==================== WEB PLATFORM (PDF p.2, web only — no APK) ==================== */}
+      <Section id="platform" className="bg-[#0b0c10] border-y border-white/[.06]">
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div>
+            <Eyebrow>Web platform</Eyebrow>
+            <H2>The platform is always at hand</H2>
+            <p className="text-slate-400 mt-4 text-[15px] leading-relaxed">
+              A full-featured web terminal that works in any browser — no installation required. One account and the
+              entire functionality on every device.
+            </p>
+            <div className="mt-7 space-y-4">
+              {[
+                { icon: Layers, t: 'One account, every device', s: 'Desktop, tablet and mobile browser share the same balance and positions' },
+                { icon: Bell, t: 'Instant notifications', s: 'Price alerts, margin calls and manager messages in real time' },
+                { icon: ShieldCheck, t: 'Under your brand', s: 'Name, logo and colour scheme adapt to the project' },
+              ].map(f => (
+                <div key={f.t} className="flex gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#f5b400]/12 flex items-center justify-center shrink-0">
+                    <f.icon className="w-5 h-5 text-[#f5b400]" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-white text-[15px]">{f.t}</div>
+                    <div className="text-[13px] text-slate-500 mt-0.5">{f.s}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Interactive terminal preview — mirrors PDF page 6 */}
+          <div className="bg-[#16181f] border border-white/[.08] rounded-2xl p-4 shadow-2xl shadow-black/50">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-[#f5b400] flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4 text-[#17190f]" />
+                </div>
+                <span className="font-bold text-white text-[14px]">BTC/USDT</span>
+                <span className="text-emerald-400 text-[13px] font-mono">64,337.56</span>
+              </div>
+              <div className="flex gap-1">
+                {['1H', '1D', '1W', '1M'].map((p, i) => (
+                  <span
+                    key={p}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
+                      i === 3 ? 'bg-[#f5b400]/20 text-[#f5b400]' : 'bg-white/[.05] text-slate-500'
+                    }`}
+                  >
+                    {p}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* candles */}
+            <div className="bg-[#0e0f13] rounded-xl border border-white/[.06] p-3">
+              <svg viewBox="0 0 320 120" className="w-full h-32">
+                {Array.from({ length: 26 }).map((_, i) => {
+                  const up = Math.sin(i * 1.7) > 0;
+                  const h = 18 + Math.abs(Math.sin(i * 0.9)) * 46;
+                  const y = 60 - h / 2 + Math.sin(i * 0.5) * 14;
+                  return (
+                    <g key={i}>
+                      <line x1={i * 12 + 6} x2={i * 12 + 6} y1={y - 8} y2={y + h + 8} stroke={up ? '#22c55e' : '#ef4444'} strokeWidth="1" opacity=".65" />
+                      <rect x={i * 12 + 2} y={y} width="8" height={h} rx="1" fill={up ? '#22c55e' : '#ef4444'} />
+                    </g>
+                  );
+                })}
+                <line x1="0" x2="320" y1="52" y2="52" stroke="#22c55e" strokeWidth="1" strokeDasharray="4 3" opacity=".8" />
+              </svg>
+            </div>
+
+            {/* order book + ticket */}
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div className="bg-[#0e0f13] rounded-xl border border-white/[.06] p-3">
+                <div className="text-[10px] font-bold text-slate-500 uppercase mb-2">Order book</div>
+                {[
+                  [64339.69, 0.0001, 'r'],
+                  [64339.24, 0.0544, 'r'],
+                  [64338.89, 0.0008, 'r'],
+                  [64337.56, 1.18, 'g'],
+                  [64337.55, 2.06, 'g'],
+                  [64337.54, 0.0685, 'g'],
+                ].map(([p, v, c], i) => (
+                  <div key={i} className="flex justify-between text-[10px] font-mono py-0.5">
+                    <span className={c === 'r' ? 'text-rose-400' : 'text-emerald-400'}>{(p as number).toLocaleString('en-US')}</span>
+                    <span className="text-slate-500">{v as number}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-[#0e0f13] rounded-xl border border-white/[.06] p-3">
+                <div className="grid grid-cols-2 gap-1.5 mb-2.5">
+                  <button
+                    onClick={() => setSide('buy')}
+                    className={`py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${
+                      side === 'buy' ? 'bg-emerald-500 text-white' : 'bg-white/[.05] text-slate-500'
+                    }`}
+                  >
+                    Buy
+                  </button>
+                  <button
+                    onClick={() => setSide('sell')}
+                    className={`py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${
+                      side === 'sell' ? 'bg-rose-500 text-white' : 'bg-white/[.05] text-slate-500'
+                    }`}
+                  >
+                    Sell
+                  </button>
+                </div>
+                <label className="text-[10px] text-slate-500">Amount, $</label>
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={e => setAmount(Number(e.target.value))}
+                  className="w-full mt-1 px-2.5 py-1.5 bg-[#16181f] border border-white/[.08] rounded-lg text-[12px] text-white focus:outline-none focus:border-[#f5b400]/50"
+                />
+                <label className="text-[10px] text-slate-500 mt-2 block">Leverage: {leverage}x</label>
+                <input
+                  type="range"
+                  min={1}
+                  max={100}
+                  value={leverage}
+                  onChange={e => setLeverage(Number(e.target.value))}
+                  className="w-full accent-[#f5b400] mt-1 cursor-pointer"
+                />
+                <button
+                  onClick={onOpenLoginModal}
+                  className={`w-full mt-2.5 py-2 rounded-lg text-[12px] font-bold cursor-pointer ${
+                    side === 'buy' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-rose-500 hover:bg-rose-400'
+                  } text-white`}
+                >
+                  {side === 'buy' ? 'Open Long' : 'Open Short'} · ${(amount * leverage).toLocaleString('en-US')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* ==================== COMMUNICATION (PDF p.3) ==================== */}
+      <Section>
+        <div className="text-center max-w-2xl mx-auto mb-12">
+          <Eyebrow>Communication</Eyebrow>
+          <H2>All communication in one system</H2>
+          <p className="text-slate-400 mt-3 text-[15px]">
+            The main advantage of the platform is a developed communication layer with the client.
+          </p>
+        </div>
+        <div className="grid md:grid-cols-3 gap-5">
+          {[
+            { icon: Bell, t: 'Push notifications', s: 'Instant delivery of messages to the client device, even with the tab closed' },
+            { icon: Headphones, t: 'Online support', s: 'Live chat, file sharing and tickets inside the platform' },
+            { icon: PhoneCall, t: 'WebRTC calls', s: 'Direct voice connection with the client without third-party services' },
+          ].map(c => (
+            <div key={c.t} className="bg-[#16181f] border border-white/[.07] rounded-2xl p-6 hover:border-[#f5b400]/30 transition-colors">
+              <div className="w-12 h-12 rounded-2xl bg-[#f5b400]/12 flex items-center justify-center">
+                <c.icon className="w-6 h-6 text-[#f5b400]" />
+              </div>
+              <h3 className="text-[17px] font-bold text-white mt-4">{c.t}</h3>
+              <p className="text-[13.5px] text-slate-500 mt-2 leading-relaxed">{c.s}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* ==================== TRADING CONDITIONS ==================== */}
+      <Section className="bg-[#0b0c10] border-y border-white/[.06]">
+        <div className="text-center max-w-2xl mx-auto mb-12">
+          <Eyebrow>Trading conditions</Eyebrow>
+          <H2>Transparent and competitive</H2>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+          {[
+            { icon: LineChart, t: 'Spreads from 0.0', s: 'Raw market pricing on major pairs' },
+            { icon: Zap, t: 'Leverage up to 1:400', s: 'Flexible margin per instrument' },
+            { icon: Wallet, t: 'No deposit fees', s: 'Cards, SEPA, USDT and BTC' },
+            { icon: Lock, t: 'Segregated funds', s: 'Client money held separately' },
+          ].map(c => (
+            <div key={c.t} className="bg-[#16181f] border border-white/[.07] rounded-2xl p-5">
+              <c.icon className="w-6 h-6 text-[#f5b400]" />
+              <div className="text-[15px] font-bold text-white mt-3">{c.t}</div>
+              <div className="text-[12.5px] text-slate-500 mt-1">{c.s}</div>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* ==================== TRADING STATISTICS (PDF p.17-18) ==================== */}
+      <Section>
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div className="order-2 lg:order-1 bg-[#16181f] border border-white/[.08] rounded-2xl p-5">
+            <div className="text-[13px] font-bold text-white mb-3">Trading statistics</div>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { l: 'Total PnL', v: '$907.43', c: 'text-emerald-400' },
+                { l: 'Volume', v: '$136,984.68', c: 'text-white' },
+                { l: 'Trades', v: '22', c: 'text-white' },
+                { l: 'Win rate', v: '45.5%', c: 'text-[#f5b400]' },
+              ].map(k => (
+                <div key={k.l} className="bg-[#0e0f13] border border-white/[.06] rounded-xl p-3.5">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wide">{k.l}</div>
+                  <div className={`text-lg font-extrabold mt-1 ${k.c}`}>{k.v}</div>
+                </div>
+              ))}
+            </div>
+            <div className="bg-[#0e0f13] border border-white/[.06] rounded-xl p-3.5 mt-3">
+              <div className="text-[10px] text-slate-500 uppercase mb-2">Profit / loss dynamics</div>
+              <svg viewBox="0 0 300 70" className="w-full h-20">
+                <defs>
+                  <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#f5b400" stopOpacity=".5" />
+                    <stop offset="100%" stopColor="#f5b400" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path d="M0,58 L40,52 L80,55 L120,40 L160,44 L200,26 L240,30 L300,10 L300,70 L0,70 Z" fill="url(#g1)" />
+                <path d="M0,58 L40,52 L80,55 L120,40 L160,44 L200,26 L240,30 L300,10" fill="none" stroke="#f5b400" strokeWidth="2" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="order-1 lg:order-2">
+            <Eyebrow>Trading statistics</Eyebrow>
+            <H2>See every result of your trading</H2>
+            <p className="text-slate-400 mt-4 text-[15px] leading-relaxed">
+              The client sees the results of their trading and key metrics for the selected period.
+            </p>
+            <div className="mt-7 space-y-4">
+              {[
+                { icon: BarChart3, t: 'Full analytics', s: 'PnL, volume, number of trades, win rate and commissions in one place' },
+                { icon: LineChart, t: 'Clear charts', s: 'Profit dynamics and distribution by markets displayed visually' },
+                { icon: FileText, t: 'PDF report', s: 'Download a ready statement with your trading statistics in one click' },
+              ].map(f => (
+                <div key={f.t} className="flex gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#f5b400]/12 flex items-center justify-center shrink-0">
+                    <f.icon className="w-5 h-5 text-[#f5b400]" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-white text-[15px]">{f.t}</div>
+                    <div className="text-[13px] text-slate-500 mt-0.5">{f.s}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* ==================== ACCOUNT TYPES ==================== */}
+      <Section id="accounts" className="bg-[#0b0c10] border-y border-white/[.06]">
+        <div className="text-center max-w-2xl mx-auto mb-12">
+          <Eyebrow>Account types</Eyebrow>
+          <H2>Choose your level</H2>
+          <p className="text-slate-400 mt-3 text-[15px]">Five account tiers with growing conditions and service.</p>
+        </div>
+        <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {ACCOUNTS.map((a, i) => (
+            <div
+              key={a.name}
+              className={`rounded-2xl p-5 border transition-all ${
+                i === 2
+                  ? 'bg-[#f5b400]/[.07] border-[#f5b400]/40 shadow-[0_0_40px_-15px_rgba(245,180,0,.5)]'
+                  : 'bg-[#16181f] border-white/[.07]'
+              }`}
+            >
+              {i === 2 && (
+                <div className="inline-flex items-center gap-1 text-[9px] font-extrabold text-[#17190f] bg-[#f5b400] px-2 py-0.5 rounded-full mb-2">
+                  <Star className="w-2.5 h-2.5" /> POPULAR
+                </div>
+              )}
+              <div className="text-[17px] font-extrabold text-white">{a.name}</div>
+              <div className="text-2xl font-extrabold text-[#f5b400] mt-2">{a.dep}</div>
+              <div className="text-[11px] text-slate-500">minimum deposit</div>
+              <div className="mt-4 space-y-1.5 text-[12px] text-slate-400">
+                <div className="flex justify-between border-b border-white/[.05] pb-1.5">
+                  <span>Spread</span>
+                  <span className="text-slate-200 font-semibold">{a.spread}</span>
+                </div>
+                <div className="flex justify-between border-b border-white/[.05] pb-1.5">
+                  <span>Leverage</span>
+                  <span className="text-slate-200 font-semibold">{a.lev}</span>
+                </div>
+              </div>
+              <ul className="mt-3.5 space-y-1.5">
+                {a.items.map(it => (
+                  <li key={it} className="flex gap-2 text-[12px] text-slate-400">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#f5b400] shrink-0 mt-0.5" />
+                    {it}
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={onOpenRegisterModal || onOpenLoginModal}
+                className={`w-full mt-4 py-2 rounded-xl text-[12px] font-bold cursor-pointer transition-colors ${
+                  i === 2 ? 'bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f]' : 'bg-white/[.06] hover:bg-white/[.12] text-white'
+                }`}
+              >
+                Open account
+              </button>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* ==================== ABOUT / WHY US ==================== */}
+      <Section id="about">
+        <div className="text-center max-w-2xl mx-auto mb-12">
+          <Eyebrow>About us</Eyebrow>
+          <H2>What makes us different</H2>
+        </div>
+        <div className="grid md:grid-cols-3 gap-5">
+          {[
+            { icon: ShieldCheck, t: 'Security first', s: 'Segregated accounts, 2FA and encrypted data storage for every client.' },
+            { icon: Users, t: 'Personal approach', s: 'A dedicated advisor guides you from the first deposit onwards.' },
+            { icon: MonitorPlay, t: 'Live assistance', s: 'Screen sharing and voice calls right inside the platform.' },
+          ].map(c => (
+            <div key={c.t} className="bg-[#16181f] border border-white/[.07] rounded-2xl p-6">
+              <c.icon className="w-6 h-6 text-[#f5b400]" />
+              <h3 className="text-[16px] font-bold text-white mt-3.5">{c.t}</h3>
+              <p className="text-[13.5px] text-slate-500 mt-2 leading-relaxed">{c.s}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Affiliate */}
+        <div className="mt-6 bg-gradient-to-r from-[#f5b400]/[.12] to-transparent border border-[#f5b400]/25 rounded-2xl p-8 flex flex-col md:flex-row md:items-center gap-6">
+          <div className="flex-1">
+            <Eyebrow>Affiliate program</Eyebrow>
+            <h3 className="text-2xl font-extrabold text-white">Earn up to $12 per lot</h3>
+            <p className="text-slate-400 text-[14px] mt-2 max-w-xl">
+              Refer active traders and receive lifetime revenue share with transparent statistics and weekly payouts.
+            </p>
+          </div>
+          <button
+            onClick={onOpenRegisterModal || onOpenLoginModal}
+            className="px-6 py-3 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold text-[14px] flex items-center gap-2 cursor-pointer shrink-0"
+          >
+            Become a partner <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </Section>
+
+      {/* ==================== DOCUMENTATION ==================== */}
+      <Section id="docs" className="bg-[#0b0c10] border-y border-white/[.06]">
+        <div className="grid lg:grid-cols-2 gap-10">
+          <div>
+            <Eyebrow>Documentation</Eyebrow>
+            <H2>Legal information</H2>
+            <p className="text-slate-400 mt-3 text-[14px]">
+              All the documents governing the relationship between the client and the company.
+            </p>
+            <div className="mt-6 grid sm:grid-cols-2 gap-3">
+              {['Client Agreement', 'Privacy Policy', 'AML & KYC Policy', 'Risk Disclosure', 'Terms & Conditions', 'Payment Policy'].map(d => (
+                <a
+                  key={d}
+                  href="#docs"
+                  className="flex items-center gap-2.5 bg-[#16181f] border border-white/[.07] rounded-xl px-4 py-3 text-[13px] text-slate-300 hover:border-[#f5b400]/40 hover:text-white transition-colors"
+                >
+                  <FileText className="w-4 h-4 text-[#f5b400] shrink-0" />
+                  {d}
+                </a>
+              ))}
+            </div>
+          </div>
+          <div className="bg-[#16181f] border border-rose-500/25 rounded-2xl p-6">
+            <div className="flex items-center gap-2 text-rose-400 font-bold text-[14px]">
+              <ShieldCheck className="w-4.5 h-4.5" /> Risk warning
+            </div>
+            <p className="text-[13px] text-slate-400 mt-3 leading-relaxed">
+              Trading leveraged products such as CFDs and futures involves a high level of risk and may not be suitable
+              for all investors. You could sustain a loss of some or all of your invested capital; therefore, you should
+              not speculate with capital that you cannot afford to lose. Past performance is not indicative of future
+              results. Please ensure you fully understand the risks involved and seek independent advice if necessary.
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      {/* ==================== NEWS (temporarily hidden) ====================
+           Removed at the client's request pending approval.
+           To bring it back, restore this section from git history
+           (commit "hide news block, fix register arrow, TradingView redirects").
+      ==================================================================== */}
+
+      {/* ==================== CONTACT ==================== */}
+      <Section id="contact" className="bg-[#0b0c10] border-t border-white/[.06]">
+        <div className="grid lg:grid-cols-2 gap-12">
+          <div>
+            <Eyebrow>Contact us</Eyebrow>
+            <H2>We are here to help</H2>
+            <p className="text-slate-400 mt-3 text-[14px]">
+              Our support desk works around the clock — reach out any time.
+            </p>
+            <div className="mt-7 space-y-4">
+              {[
+                { icon: Mail, t: 'support@tradenation.io', s: 'Average reply time: 15 minutes' },
+                { icon: Phone, t: '+1 (888) 555-0140', s: '24/7 US-based support desk' },
+                { icon: MapPin, t: '200 Vesey Street, New York, NY 10281', s: 'Head office' },
+              ].map(c => (
+                <div key={c.t} className="flex gap-3.5 items-start">
+                  <div className="w-10 h-10 rounded-xl bg-[#f5b400]/12 flex items-center justify-center shrink-0">
+                    <c.icon className="w-5 h-5 text-[#f5b400]" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-white text-[14px]">{c.t}</div>
+                    <div className="text-[12.5px] text-slate-500">{c.s}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              alert('Thank you! Our manager will contact you shortly.');
+            }}
+            className="bg-[#16181f] border border-white/[.07] rounded-2xl p-6 space-y-3.5"
+          >
+            <div className="grid sm:grid-cols-2 gap-3.5">
+              <input required placeholder="Full name" className="px-4 py-2.5 bg-[#0e0f13] border border-white/[.08] rounded-xl text-[13px] text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f5b400]/50" />
+              <input required type="email" placeholder="E-mail" className="px-4 py-2.5 bg-[#0e0f13] border border-white/[.08] rounded-xl text-[13px] text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f5b400]/50" />
+            </div>
+            <input placeholder="Phone number" className="w-full px-4 py-2.5 bg-[#0e0f13] border border-white/[.08] rounded-xl text-[13px] text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f5b400]/50" />
+            <textarea rows={5} placeholder="Your message" className="w-full px-4 py-2.5 bg-[#0e0f13] border border-white/[.08] rounded-xl text-[13px] text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f5b400]/50 resize-none" />
+            <button className="w-full py-3 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold text-[14px] cursor-pointer transition-colors">
+              Send message
+            </button>
+          </form>
+        </div>
+      </Section>
     </div>
   );
 };

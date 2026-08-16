@@ -11,7 +11,8 @@ import { ForgotPasswordModal } from './components/modals/ForgotPasswordModal';
 import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
 import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser } from './api';
-import type { ApiUser } from './api';
+import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
+import { apiKycAll, apiKycReview, apiNotifications, apiMarkNotificationsRead } from './api';
 import { 
   DepositModal, 
   WithdrawModal, 
@@ -32,7 +33,8 @@ import type {
   TransactionRequest, 
   ActiveInvestment, 
   LeadStage,
-  CrmSettings
+  CrmSettings,
+  ClientNote
 } from './types';
 import type { AdminTrade } from './components/crm/CrmTradesManager';
 import { CheckCircle2, TrendingUp } from 'lucide-react';
@@ -53,6 +55,13 @@ export default function App() {
   // CRM users (from backend) + privacy settings
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [settings, setSettings] = useState<CrmSettings>({ hidePhonesFromAgents: false });
+
+  // Agent notes are append-only: no edit/delete handlers exist by design
+  const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
+  const [clientStatuses, setClientStatuses] = useState<Record<string, string>>({});
+
+  // KYC documents uploaded by clients, reviewed by admin/agent in the CRM
+  const [kycDocuments, setKycDocuments] = useState<ApiKycDoc[]>([]);
 
   // Admin Trades State (Priority feature for CRM!)
   const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([
@@ -155,6 +164,54 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Staff: pull KYC submissions + notification feed, then poll for new ones
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const isStaff = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+
+  useEffect(() => {
+    if (!isLoggedIn || !getToken()) {
+      setKycDocuments([]);
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+
+    const pull = async () => {
+      if (isStaff) {
+        try {
+          const res = await apiKycAll();
+          setKycDocuments(res.documents);
+        } catch {
+          /* ignore transient errors */
+        }
+      }
+      try {
+        const n = await apiNotifications();
+        setNotifications(n.notifications);
+        setUnreadCount(n.unread);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    pull();
+    const timer = setInterval(pull, 20000); // near real-time without websockets
+    return () => clearInterval(timer);
+  }, [isLoggedIn, isStaff]);
+
+  const handleMarkNotificationsRead = async (id?: number) => {
+    try {
+      await apiMarkNotificationsRead(id);
+      const n = await apiNotifications();
+      setNotifications(n.notifications);
+      setUnreadCount(n.unread);
+    } catch {
+      /* ignore */
+    }
+  };
+
   // Load users list when logged in as ADMIN
   useEffect(() => {
     if (isLoggedIn && currentUser?.role === 'ADMIN' && getToken()) {
@@ -241,7 +298,7 @@ export default function App() {
       return inv;
     }));
 
-    showToast(`✔ Opened a position of $${amount.toLocaleString()} in «${project.title}»! Trade saved in CRM.`);
+    showToast(`✔ Position of $${amount.toLocaleString('en-US')} opened in «${project.title}».`);
   };
 
   const handleConfirmDeposit = (amount: number, method: string) => {
@@ -250,7 +307,7 @@ export default function App() {
     const newReq: TransactionRequest = {
       id: `req-${Date.now().toString().slice(-4)}`,
       investorId: 'inv-01',
-      investorName: 'Alexander Gromov (You)',
+      investorName: 'Michael Carter (You)',
       type: 'deposit',
       amount: amount,
       status: 'approved',
@@ -269,7 +326,7 @@ export default function App() {
       return inv;
     }));
 
-    showToast(`✔ Balance topped up by $${amount.toLocaleString()}!`);
+    showToast(`✔ Balance topped up by $${amount.toLocaleString('en-US')}!`);
   };
 
   const handleConfirmWithdraw = (amount: number) => {
@@ -278,7 +335,7 @@ export default function App() {
     const newReq: TransactionRequest = {
       id: `req-${Date.now().toString().slice(-4)}`,
       investorId: 'inv-01',
-      investorName: 'Alexander Gromov (You)',
+      investorName: 'Michael Carter (You)',
       type: 'withdrawal',
       amount: amount,
       status: 'pending',
@@ -287,7 +344,7 @@ export default function App() {
     };
     setRequests(prev => [newReq, ...prev]);
 
-    showToast(`✔ Withdrawal request for $${amount.toLocaleString()} created and sent to CRM.`);
+    showToast(`✔ Withdrawal request for $${amount.toLocaleString('en-US')} is being processed by Finance and Compliance.`);
   };
 
   const handleClaimDividends = (invId: string, profit: number) => {
@@ -301,7 +358,7 @@ export default function App() {
       }
       return inv;
     }));
-    showToast(`✔ Profit +$${profit.toLocaleString()} moved to available balance!`);
+    showToast(`✔ Profit +$${profit.toLocaleString('en-US')} moved to available balance!`);
   };
 
   /* ========================================================
@@ -322,7 +379,7 @@ export default function App() {
       setInvestorBalance(newBalance);
     }
 
-    showToast(`✔ Client balance updated to $${newBalance.toLocaleString()}!`);
+    showToast(`✔ Client balance updated to $${newBalance.toLocaleString('en-US')}!`);
   };
 
   const handleCreateTrade = (newTradeData: Omit<AdminTrade, 'id' | 'status'>) => {
@@ -347,17 +404,9 @@ export default function App() {
     showToast(`✔ Opened trading position «${newTradeData.asset}» for the client!`);
   };
 
-  const handleUpdateTradePnl = (tradeId: string, newPnl: number) => {
-    setAdminTrades(prev => prev.map(t => {
-      if (t.id === tradeId) {
-        return {
-          ...t,
-          pnl: newPnl
-        };
-      }
-      return t;
-    }));
-    showToast(`✔ Trade PnL changed to $${newPnl.toLocaleString()}!`);
+  const handleUpdateTrade = (tradeId: string, patch: Partial<AdminTrade>) => {
+    setAdminTrades(prev => prev.map(t => (t.id === tradeId ? { ...t, ...patch } : t)));
+    showToast('✔ Position updated.');
   };
 
   const handleCloseTrade = (tradeId: string) => {
@@ -416,7 +465,7 @@ export default function App() {
               id: `c-${Date.now()}`,
               author: currentUser?.name || 'Manager',
               text,
-              date: new Date().toLocaleString()
+              date: new Date().toLocaleString('en-US')
             }
           ]
         };
@@ -491,6 +540,36 @@ export default function App() {
     showToast(`✔ User status updated: ${status}`);
   };
 
+  const handleAddClientNote = (clientId: string, text: string) => {
+    const note: ClientNote = {
+      id: `note-${Date.now()}`,
+      clientId,
+      author: currentUser?.name || 'Agent',
+      authorRole: currentUser?.role === 'ADMIN' ? 'ADMIN' : 'MANAGER',
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    setClientNotes(prev => [...prev, note]);
+    showToast('✔ Note saved to the client card.');
+  };
+
+  const handleSetClientStatus = (clientId: string, status: string) => {
+    setClientStatuses(prev => ({ ...prev, [clientId]: status }));
+    showToast(`✔ Client status set to «${status}».`);
+  };
+
+  /** Admin or agent approves / rejects a document — persisted on the server */
+  const handleReviewKyc = async (docId: number, status: 'approved' | 'rejected', reason?: string) => {
+    try {
+      await apiKycReview(docId, status, reason);
+      const res = await apiKycAll();
+      setKycDocuments(res.documents);
+      showToast(status === 'approved' ? '✔ Document approved.' : '✖ Document rejected.', status === 'approved' ? 'success' : 'info');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Review failed', 'info');
+    }
+  };
+
   const handleToggleHidePhones = () => {
     if (currentUser?.role !== 'ADMIN' && !isLoggedIn) return;
     setSettings(prev => ({ ...prev, hidePhonesFromAgents: !prev.hidePhonesFromAgents }));
@@ -500,8 +579,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-      {/* Top Header */}
+    <div className="min-h-screen flex flex-col bg-[#0e0f13] text-slate-200">
+      {/* Top Header (hidden on landing & CRM — they have their own navbars) */}
+      {activeTab !== 'crm' && activeTab !== 'landing' && activeTab !== 'investor' && (
       <Header
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -517,17 +597,18 @@ export default function App() {
           : undefined}
         userRole={currentUser?.role === 'CLIENT' ? 'Client' : currentUser?.role}
       />
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 w-full">
         {activeTab === 'landing' && (
           <LandingPage
             onOpenLoginModal={() => setIsLoginModalOpen(true)}
+            onOpenRegisterModal={() => setIsRegisterModalOpen(true)}
           />
         )}
 
         {activeTab === 'investor' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
           <InvestorDashboard
             investorBalance={investorBalance}
             myInvestments={myInvestments}
@@ -536,7 +617,6 @@ export default function App() {
             onOpenWithdrawModal={() => setIsWithdrawModalOpen(true)}
             onClaimDividends={handleClaimDividends}
           />
-          </div>
         )}
 
         {activeTab === 'catalog' && (
@@ -550,7 +630,6 @@ export default function App() {
         )}
 
         {activeTab === 'crm' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
           <CrmDashboard
             leads={leads}
             onMoveLeadStage={handleMoveLeadStage}
@@ -565,7 +644,7 @@ export default function App() {
             trades={adminTrades}
             onUpdateInvestorBalance={handleUpdateInvestorBalance}
             onCreateTrade={handleCreateTrade}
-            onUpdateTradePnl={handleUpdateTradePnl}
+            onUpdateTrade={handleUpdateTrade}
             onCloseTrade={handleCloseTrade}
             onAddLeadComment={handleAddLeadComment}
             users={users}
@@ -575,19 +654,29 @@ export default function App() {
             onUpdateUserStatus={handleUpdateUserStatus}
             settings={settings}
             onToggleHidePhones={handleToggleHidePhones}
+            onNotify={showToast}
+            notes={clientNotes}
+            onAddNote={handleAddClientNote}
+            clientStatuses={clientStatuses}
+            onSetClientStatus={handleSetClientStatus}
+            kycDocuments={kycDocuments}
+            onReviewKyc={handleReviewKyc}
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onMarkNotificationsRead={handleMarkNotificationsRead}
           />
-          </div>
         )}
       </main>
 
       {/* Footer (like Shoreline Direct: risk warning + payments + copyright) */}
-      <footer className="bg-slate-900 text-slate-400 mt-16">
+      {activeTab !== 'crm' && activeTab !== 'investor' && (
+      <footer className="bg-[#0b0c10] border-t border-white/[.06] text-slate-400">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
             <div className="max-w-sm">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-white" />
+                <div className="w-9 h-9 rounded-full bg-[#f5b400] flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5 text-[#17190f]" />
                 </div>
                 <span className="font-extrabold text-lg text-white">TradeNation</span>
               </div>
@@ -601,7 +690,7 @@ export default function App() {
               <div className="text-xs font-bold text-white uppercase tracking-wider mb-3">Payment methods</div>
               <div className="flex flex-wrap gap-2">
                 {['VISA', 'Mastercard', 'PayPal', 'USDT', 'BTC'].map(p => (
-                  <span key={p} className="px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300">
+                  <span key={p} className="px-3 py-1.5 rounded-md bg-white/[.05] border border-white/[.08] text-xs font-bold text-slate-300">
                     {p}
                   </span>
                 ))}
@@ -609,7 +698,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-slate-800">
+          <div className="mt-8 pt-6 border-t border-white/[.06]">
             <p className="text-[11px] text-slate-500 leading-relaxed">
               <strong className="text-slate-400">Risk Warning:</strong> Leveraged products such as
               CFD's and Forex trading are complex instruments with a high risk of losing money. The
@@ -621,7 +710,7 @@ export default function App() {
             </p>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="mt-6 pt-6 border-t border-white/[.06] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
             <span>© 2026 TradeNation. All Rights Reserved.</span>
             <div className="flex items-center gap-5">
               <button onClick={() => setActiveTab('landing')} className="hover:text-white transition-colors cursor-pointer">
@@ -634,6 +723,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      )}
 
       {/* Toast Notification Banner */}
       {toastMessage && (

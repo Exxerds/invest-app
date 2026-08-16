@@ -1,25 +1,25 @@
 // ============================================================
-//  Авторизация: регистрация, логин, подтверждение email,
-//  сброс пароля (письмо на почту)
-//  Хранилище — server/data.json (см. store.js)
+//  Authentication: registration, login, e-mail confirmation,
+//  password reset (via e-mail link)
+//  Storage: PostgreSQL in production, JSON file locally (see db.js)
 // ============================================================
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import * as store from '../store.js';
-import { sendMail, letterLayout, SITE_URL } from '../mailer.js';
+import * as store from '../db.js';
+import { sendMail, letterLayout, publicUrl } from '../mailer.js';
 
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 час
+const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // ---------- helpers ----------
 
-function createToken(userId, type) {
+async function createToken(userId, type) {
   const token = crypto.randomBytes(32).toString('hex');
-  store.insert('tokens', {
+  await store.insert('tokens', {
     user_id: userId,
     type,
     token,
@@ -29,7 +29,7 @@ function createToken(userId, type) {
   return token;
 }
 
-function findValidToken(token, type) {
+async function findValidToken(token, type) {
   const now = new Date().toISOString();
   return store.findOne(
     'tokens',
@@ -46,7 +46,7 @@ function signJwt(u) {
 }
 
 // ------------------------------------------------------------
-//  РЕГИСТРАЦИЯ
+//  REGISTRATION
 // ------------------------------------------------------------
 router.post('/register', async (req, res) => {
   try {
@@ -59,12 +59,12 @@ router.post('/register', async (req, res) => {
     }
 
     const lower = String(email).toLowerCase().trim();
-    if (store.findBy('users', 'email', lower)) {
+    if (await store.findBy('users', 'email', lower)) {
       return res.status(409).json({ error: 'A user with this email already exists' });
     }
 
     const hash = await bcrypt.hash(String(password), 10);
-    const user = store.insert('users', {
+    const user = await store.insert('users', {
       name: String(name).trim(),
       email: lower,
       password: hash,
@@ -73,20 +73,20 @@ router.post('/register', async (req, res) => {
       created_at: new Date().toISOString()
     });
 
-    const token = createToken(user.id, 'confirm_email');
-    const link = `${SITE_URL}/confirm-email?token=${token}`;
+    const token = await createToken(user.id, 'confirm_email');
+    const link = `${publicUrl(req)}/confirm-email?token=${token}`;
 
     await sendMail({
       to: user.email,
       subject: 'Confirm your email',
       html: letterLayout('Email confirmation', `
-        <p style="color:#334155;font-size:14px;line-height:1.6;">
+        <p style="color:#cbd5e1;font-size:14px;line-height:1.6;">
           Hello, <strong>${user.name}</strong>!<br>
           You registered on the TradeNation platform.
           Confirm your email to activate the account:
         </p>
         <p style="text-align:center;margin:24px 0;">
-          <a href="${link}" style="background:#1d4ed8;color:#ffffff;padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:14px;">
+          <a href="${link}" style="background:#f5b400;color:#17190f;padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:14px;">
             Confirm email
           </a>
         </p>
@@ -102,26 +102,26 @@ router.post('/register', async (req, res) => {
 });
 
 // ------------------------------------------------------------
-//  ПОДТВЕРЖДЕНИЕ EMAIL
+//  E-MAIL CONFIRMATION
 // ------------------------------------------------------------
-router.post('/confirm-email', (req, res) => {
+router.post('/confirm-email', async (req, res) => {
   const { token } = req.body || {};
-  const t = findValidToken(token, 'confirm_email');
+  const t = await findValidToken(token, 'confirm_email');
   if (!t) return res.status(400).json({ error: 'Link is invalid or expired' });
 
-  store.update('tokens', t.id, { used: 1 });
-  const user = store.update('users', t.user_id, { status: 'active' });
+  await store.update('tokens', t.id, { used: 1 });
+  const user = await store.update('users', t.user_id, { status: 'active' });
   if (!user) return res.status(400).json({ error: 'User not found' });
 
   res.json({ ok: true, token: signJwt(user), user: publicUser(user) });
 });
 
 // ------------------------------------------------------------
-//  ЛОГИН
+//  LOGIN
 // ------------------------------------------------------------
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
-  const user = store.findBy('users', 'email', String(email || '').toLowerCase().trim());
+  const user = await store.findBy('users', 'email', String(email || '').toLowerCase().trim());
 
   if (!user || !(await bcrypt.compare(String(password || ''), user.password))) {
     return res.status(401).json({ error: 'Invalid email or password' });
@@ -137,16 +137,16 @@ router.post('/login', async (req, res) => {
 });
 
 // ------------------------------------------------------------
-//  ТЕКУЩИЙ ПОЛЬЗОВАТЕЛЬ
+//  CURRENT USER
 // ------------------------------------------------------------
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Not authorized' });
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    const user = store.findBy('users', 'id', payload.userId);
+    const user = await store.findBy('users', 'id', payload.userId);
     if (!user) return res.status(401).json({ error: 'User not found' });
     res.json({ user: publicUser(user) });
   } catch {
@@ -155,25 +155,25 @@ router.get('/me', (req, res) => {
 });
 
 // ------------------------------------------------------------
-//  ЗАБЫЛИ ПАРОЛЬ
+//  FORGOT PASSWORD
 // ------------------------------------------------------------
 router.post('/forgot-password', async (req, res) => {
   const { email } = req.body || {};
-  const user = store.findBy('users', 'email', String(email || '').toLowerCase().trim());
+  const user = await store.findBy('users', 'email', String(email || '').toLowerCase().trim());
 
   if (user) {
-    const token = createToken(user.id, 'reset_password');
-    const link = `${SITE_URL}/reset-password?token=${token}`;
+    const token = await createToken(user.id, 'reset_password');
+    const link = `${publicUrl(req)}/reset-password?token=${token}`;
     await sendMail({
       to: user.email,
       subject: 'Password reset',
       html: letterLayout('Password reset', `
-        <p style="color:#334155;font-size:14px;line-height:1.6;">
+        <p style="color:#cbd5e1;font-size:14px;line-height:1.6;">
           Hello, <strong>${user.name}</strong>!<br>
           We received a password reset request. Click the button below to set a new password:
         </p>
         <p style="text-align:center;margin:24px 0;">
-          <a href="${link}" style="background:#1d4ed8;color:#ffffff;padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:14px;">
+          <a href="${link}" style="background:#f5b400;color:#17190f;padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:14px;">
             Reset password
           </a>
         </p>
@@ -186,7 +186,7 @@ router.post('/forgot-password', async (req, res) => {
 });
 
 // ------------------------------------------------------------
-//  УСТАНОВИТЬ НОВЫЙ ПАРОЛЬ
+//  SET A NEW PASSWORD
 // ------------------------------------------------------------
 router.post('/reset-password', async (req, res) => {
   const { token, newPassword } = req.body || {};
@@ -194,12 +194,12 @@ router.post('/reset-password', async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
 
-  const t = findValidToken(token, 'reset_password');
+  const t = await findValidToken(token, 'reset_password');
   if (!t) return res.status(400).json({ error: 'Link is invalid or expired' });
 
-  store.update('tokens', t.id, { used: 1 });
+  await store.update('tokens', t.id, { used: 1 });
   const hash = await bcrypt.hash(String(newPassword), 10);
-  store.update('users', t.user_id, { password: hash });
+  await store.update('users', t.user_id, { password: hash });
 
   res.json({ ok: true, message: 'Password updated. Now you can sign in.' });
 });

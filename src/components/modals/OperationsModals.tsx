@@ -30,8 +30,8 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-white/[.06]">
         <div className="bg-emerald-600 p-6 text-white relative">
           <button
             onClick={onClose}
@@ -49,7 +49,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
               Deposit amount ($ USD)
             </label>
             <input
@@ -58,7 +58,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
               onChange={(e) => setAmount(Number(e.target.value))}
               min={500}
               step={500}
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
             <div className="flex items-center gap-2 mt-2">
               {[5000, 10000, 25000, 50000].map((val) => (
@@ -66,22 +66,22 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                   key={val}
                   type="button"
                   onClick={() => setAmount(val)}
-                  className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700"
+                  className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/[.06] hover:bg-white/[.12] text-slate-300"
                 >
-                  +${val.toLocaleString()}
+                  +${val.toLocaleString('en-US')}
                 </button>
               ))}
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
               Deposit method
             </label>
             <select
               value={method}
               onChange={(e) => setMethod(e.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="Crypto gateway (USDT TRC20 / ERC20)">Crypto gateway (USDT TRC20 / ERC20)</option>
               <option value="Bank transfer (SWIFT / SEPA)">Bank transfer (SWIFT / SEPA)</option>
@@ -93,7 +93,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold"
+              className="px-4 py-2 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 text-sm font-semibold"
             >
               Cancel
             </button>
@@ -142,8 +142,8 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-white/[.06]">
         <div className="bg-slate-800 p-6 text-white relative">
           <button
             onClick={onClose}
@@ -157,13 +157,13 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
           </div>
           <h2 className="text-xl font-bold">Withdrawal request</h2>
           <p className="text-xs text-slate-300 mt-1">
-            Available balance: ${userBalance.toLocaleString()}
+            Available balance: ${userBalance.toLocaleString('en-US')}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
               Withdrawal amount ($ USD)
             </label>
             <input
@@ -173,19 +173,19 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
               max={userBalance}
               min={100}
               step={100}
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-lg"
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-lg"
             />
             {error && <p className="text-xs text-rose-600 mt-1">{error}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
               Payout details (USDT wallet / IBAN)
             </label>
             <input
               type="text"
               defaultValue="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (USDT TRC20)"
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-700"
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm text-slate-300"
             />
           </div>
 
@@ -193,14 +193,14 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold"
+              className="px-4 py-2 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 text-sm font-semibold"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={amount > userBalance || amount <= 0}
-              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md cursor-pointer"
+              className="px-5 py-2 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] text-sm font-bold shadow-md cursor-pointer"
             >
               Submit withdrawal request
             </button>
@@ -228,10 +228,10 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
   if (!isOpen) return null;
 
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('+7 (9');
+  const [phone, setPhone] = useState('+1 (');
   const [potentialAmount, setPotentialAmount] = useState(30000);
   const [notes, setNotes] = useState('');
-  const [manager, setManager] = useState('Elena Smirnova (Desk 1)');
+  const [manager, setManager] = useState('Laura Bennett (Desk 1)');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,9 +250,9 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200">
-        <div className="bg-blue-600 p-6 text-white relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-white/[.06]">
+        <div className="bg-[#f5b400] p-6 text-white relative">
           <button
             onClick={onClose}
             className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
@@ -269,7 +269,7 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-sm">
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
               Full name
             </label>
             <input
@@ -278,12 +278,12 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
               Phone
             </label>
             <input
@@ -291,12 +291,12 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               required
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
               Potential amount ($ USD)
             </label>
             <input
@@ -304,27 +304,27 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
               value={potentialAmount}
               onChange={(e) => setPotentialAmount(Number(e.target.value))}
               step={5000}
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
               Responsible manager
             </label>
             <select
               value={manager}
               onChange={(e) => setManager(e.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl"
             >
-              <option value="Elena Smirnova (Desk 1)">Elena Smirnova (Desk 1)</option>
-              <option value="Artem Lebedev (Desk 2)">Artem Lebedev (Desk 2)</option>
+              <option value="Laura Bennett (Desk 1)">Laura Bennett (Desk 1)</option>
+              <option value="Daniel Foster (Desk 2)">Daniel Foster (Desk 2)</option>
               <option value="Oleg Vasilyev (Desk 3)">Oleg Vasilyev (Desk 3)</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
               Manager notes
             </label>
             <textarea
@@ -332,7 +332,7 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
               placeholder="Interested in BTC/USDT futures trading..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+              className="w-full px-4 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl text-xs"
             ></textarea>
           </div>
 
@@ -340,13 +340,13 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold"
+              className="px-4 py-2 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 font-semibold"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md cursor-pointer"
+              className="px-5 py-2 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold shadow-md cursor-pointer"
             >
               Add to pipeline
             </button>
@@ -420,8 +420,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-white/[.06]">
         <div className="bg-purple-600 p-6 text-white relative">
           <button
             onClick={onClose}
@@ -439,7 +439,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-sm">
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
               Instrument name
             </label>
             <input
@@ -448,19 +448,19 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
                 Asset category
               </label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as AssetCategory)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl"
+                className="w-full px-3 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl"
               >
                 <option value="crypto">Crypto Spot / Futures</option>
                 <option value="forex">Forex & Metals (EUR/USD, Gold)</option>
@@ -470,7 +470,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
                 Return (APR %)
               </label>
               <input
@@ -478,14 +478,14 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 step={0.5}
                 value={apr}
                 onChange={(e) => setApr(Number(e.target.value))}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-emerald-600"
+                className="w-full px-3 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-emerald-400"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
                 Target ($)
               </label>
               <input
@@ -493,22 +493,22 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 step={10000}
                 value={targetAmount}
                 onChange={(e) => setTargetAmount(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl"
+                className="w-full px-3 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
                 Term (months)
               </label>
               <input
                 type="number"
                 value={termMonths}
                 onChange={(e) => setTermMonths(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl"
+                className="w-full px-3 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
                 Min amount ($)
               </label>
               <input
@@ -516,13 +516,13 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 step={500}
                 value={minCheck}
                 onChange={(e) => setMinCheck(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl"
+                className="w-full px-3 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
               Description for investors
             </label>
             <textarea
@@ -530,7 +530,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               placeholder="Describe the trading strategy and margin..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+              className="w-full px-4 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl text-xs"
             ></textarea>
           </div>
 
@@ -538,7 +538,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold"
+              className="px-4 py-2 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 font-semibold"
             >
               Cancel
             </button>

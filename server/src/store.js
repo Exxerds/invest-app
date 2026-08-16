@@ -1,11 +1,11 @@
 // ============================================================
-//  Хранилище данных на JSON-файле (БЕЗ СУБД).
+//  JSON-file data store (NO database engine).
 //
-//  Почему так: лучше-sqlite3 и sql.js на некоторых Windows
-//  установках не запускаются. JSON-файл — чистый JavaScript,
-//  работает абсолютно везде, без компиляции и WASM.
+//  Rationale: better-sqlite3 and sql.js fail to build on some
+//  Windows setups. A JSON file is pure JavaScript and works
+//  everywhere with no native compilation and no WASM.
 //
-//  Файл: server/data.json (создаётся автоматически)
+//  File: server/data.json (created automatically)
 // ============================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = path.join(__dirname, '..', 'data.json');
 
-let data = { users: [], tokens: [], _seq: 1 };
+let data = { users: [], tokens: [], kyc: [], notifications: [], _seq: 1 };
 
 function load() {
   try {
@@ -23,10 +23,12 @@ function load() {
       if (parsed && typeof parsed === 'object') data = parsed;
     }
   } catch (e) {
-    console.warn('[store] Не удалось прочитать data.json — создаю новую базу:', e.message);
+    console.warn('[store] Could not read data.json — creating a fresh database:', e.message);
   }
   if (!Array.isArray(data.users)) data.users = [];
   if (!Array.isArray(data.tokens)) data.tokens = [];
+  if (!Array.isArray(data.kyc)) data.kyc = [];
+  if (!Array.isArray(data.notifications)) data.notifications = [];
   if (typeof data._seq !== 'number') data._seq = 1;
 }
 
@@ -36,11 +38,25 @@ function save() {
     fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
     fs.renameSync(tmp, DATA_FILE);
   } catch (e) {
-    console.warn('[store] Ошибка сохранения data.json:', e.message);
+    console.warn('[store] Failed to save data.json:', e.message);
   }
 }
 
-/** Вставить запись, вернуть её с id */
+/** Every record with a given field value */
+export function allWhere(table, predicate) {
+  return data[table].filter(predicate);
+}
+
+/** Remove records matching the predicate; returns how many were deleted */
+export function removeWhere(table, predicate) {
+  const before = data[table].length;
+  data[table] = data[table].filter((r) => !predicate(r));
+  const deleted = before - data[table].length;
+  if (deleted) save();
+  return deleted;
+}
+
+/** Insert a record and return it with its id */
 export function insert(table, row) {
   const rec = { id: data._seq++, ...row };
   data[table].push(rec);
@@ -48,22 +64,22 @@ export function insert(table, row) {
   return rec;
 }
 
-/** Найти одну запись по условию */
+/** Find a single record by predicate */
 export function findOne(table, predicate) {
   return data[table].find(predicate);
 }
 
-/** Найти одну запись по полю = значение */
+/** Find a single record by field = value */
 export function findBy(table, field, value) {
   return data[table].find((r) => r[field] === value);
 }
 
-/** Все записи (копия) */
+/** All records (shallow copy) */
 export function all(table) {
   return data[table].slice();
 }
 
-/** Обновить запись по id, вернуть её или null */
+/** Update a record by id; returns the record or null */
 export function update(table, id, fields) {
   const rec = data[table].find((r) => r.id === id);
   if (!rec) return null;
@@ -72,7 +88,7 @@ export function update(table, id, fields) {
   return rec;
 }
 
-/** Обновить первую запись, подходящую под условие */
+/** Update the first record matching the predicate */
 export function updateWhere(table, predicate, fields) {
   const rec = data[table].find(predicate);
   if (!rec) return null;

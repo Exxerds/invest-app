@@ -12,10 +12,11 @@
     "preview": "vite preview",
     "postinstall": "npm install --prefix server --no-audit --no-fund",
     "setup": "npm install && npm install --prefix server",
-    "predev": "npm install --prefix server --no-audit --no-fund"
+    "predev": "node scripts/preflight.js",
+    "start": "node server/src/index.js",
+    "deploy": "npm install && npm run build && npm start"
   },
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",
