@@ -648,7 +648,11 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0e0f13] text-slate-200">
+    <div
+      className={`min-h-screen flex flex-col ${
+        activeTab === 'landing' ? 'bg-[#F5F2E9] text-[#213532]' : 'bg-[#0e0f13] text-slate-200'
+      }`}
+    >
       {/* Top Header (hidden on landing & CRM — they have their own navbars) */}
       {activeTab !== 'crm' && activeTab !== 'landing' && activeTab !== 'investor' && (
       <Header
@@ -739,19 +743,19 @@ export default function App() {
 
       {/* Footer (like Shoreline Direct: risk warning + payments + copyright) */}
       {activeTab !== 'crm' && activeTab !== 'investor' && (
-      <footer className="bg-[#0b0c10] border-t border-white/[.06] text-slate-400">
+      <footer className="bg-[#1C412C] border-t border-[#B08B48]/25 text-[#F5F2E9]/70">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
             <div className="max-w-sm">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-full bg-[#f5b400] flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-[#17190f]" />
+                <div className="w-9 h-9 rounded-full bg-[#B08B48] flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5 text-white" />
                 </div>
-                <span className="font-extrabold text-lg text-white">TradeNation</span>
+                <span className="font-serif font-bold text-lg text-white tracking-wide">OAK HAVEN <span className="text-[#B08B48] italic">YIELD</span></span>
               </div>
               <p className="text-xs leading-relaxed mt-3">
-                Online Forex & CFD trading platform. Forex, Indices, Commodities & Cryptos —
-                all in one platform.
+                Financial advisors since 2010. Stocks, commodities, indices and digital assets —
+                managed with risk first.
               </p>
             </div>
 
@@ -759,7 +763,7 @@ export default function App() {
               <div className="text-xs font-bold text-white uppercase tracking-wider mb-3">Payment methods</div>
               <div className="flex flex-wrap gap-2">
                 {['VISA', 'Mastercard', 'PayPal', 'USDT', 'BTC'].map(p => (
-                  <span key={p} className="px-3 py-1.5 rounded-md bg-white/[.05] border border-white/[.08] text-xs font-bold text-slate-300">
+                  <span key={p} className="px-3 py-1.5 rounded-md bg-white/10 border border-white/15 text-xs font-bold text-[#F5F2E9]">
                     {p}
                   </span>
                 ))}
@@ -767,9 +771,9 @@ export default function App() {
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-white/[.06]">
+          <div className="mt-8 pt-6 border-t border-white/15">
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              <strong className="text-slate-400">Risk Warning:</strong> Leveraged products such as
+              <strong className="text-[#B08B48]">Risk Warning:</strong> Leveraged products such as
               CFD's and Forex trading are complex instruments with a high risk of losing money. The
               products offered are intended for professional and retail clients. Please note that
               client accounts could sustain losses of deposited funds or in some cases even
@@ -779,8 +783,8 @@ export default function App() {
             </p>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-white/[.06] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            <span>© 2026 TradeNation. All Rights Reserved.</span>
+          <div className="mt-6 pt-6 border-t border-white/15 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <span>© 2026 Oak Haven Yield. All Rights Reserved.</span>
             <div className="flex items-center gap-5">
               <button onClick={() => setActiveTab('landing')} className="hover:text-white transition-colors cursor-pointer">
                 Privacy Policy

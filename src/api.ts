@@ -45,7 +45,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (res.status === 502 || res.status === 503 || res.status === 504) {
     throw new Error(
       'The API server is not running. Open a terminal in the project folder and run «npm run dev» — ' +
-        'wait for the line "TradeNation API server running", then try again.',
+        'wait for the line "Oak Haven Yield API server running", then try again.',
     );
   }
 
@@ -59,9 +59,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // ---------- auth ----------
 
 export const apiRegister = (name: string, email: string, password: string) =>
-  request<{ ok: true; message: string }>('/auth/register', {
+  request<{ ok: true; message: string; emailSent?: boolean }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify({ name, email, password }),
+  });
+
+export const apiResendConfirmation = (email: string) =>
+  request<{ ok: true; message: string }>('/auth/resend-confirmation', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
   });
 
 export const apiConfirmEmail = (token: string) =>
@@ -233,6 +239,8 @@ export interface ApiTrade {
   pnl: number;
   status: 'OPEN' | 'CLOSED';
   openedAt: string;
+  margin?: number;
+  liquidationPrice?: number;
   closedAt?: string;
   editedBy?: string;
   editedAt?: string;

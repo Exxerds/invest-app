@@ -86,6 +86,34 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [placing, setPlacing] = useState(false);
 
   /**
+   * Live prices for the positions table.
+   * Seeded from the entry price, then nudged every few seconds so the
+   * "Current price" column visibly moves like a real quote feed.
+   */
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+
+
+  useEffect(() => {
+    const seed: Record<string, number> = {};
+    myInvestments.forEach(inv => {
+      if (inv.entryPrice) seed[inv.projectTitle] = inv.entryPrice;
+    });
+    setLivePrices(seed);
+
+    const timer = setInterval(() => {
+      setLivePrices(prev => {
+        const next: Record<string, number> = {};
+        for (const [k, v] of Object.entries(prev)) {
+          const drift = (Math.random() - 0.48) * v * 0.004;
+          next[k] = Math.max(0.0001, v + drift);
+        }
+        return next;
+      });
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [myInvestments]);
+
+  /**
    * Live instrument search.
    * Empty box → the curated list for the selected category.
    * Typing → every asset TradingView knows, fetched through our own API
@@ -141,6 +169,32 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   useEffect(() => {
     reloadTrades();
   }, [reloadTrades]);
+
+  /**
+   * Margin maths (standard broker formulas):
+   *   required margin = position size / leverage  → here the entered amount
+   *   free margin     = balance − margin already locked in open trades
+   *   margin level    = equity / used margin × 100
+   *   liquidation     = price where the loss eats the whole margin
+   * The desk can overwrite any of these per position from the CRM.
+   */
+  const usedMargin = myTrades
+    .filter(t => t.status === 'OPEN')
+    .reduce((sum, t) => sum + (t.leverage > 0 ? t.amount / t.leverage : t.amount), 0);
+
+  const openPnl = myTrades.filter(t => t.status === 'OPEN').reduce((sum, t) => sum + t.pnl, 0);
+  const equity = investorBalance + openPnl;
+  const freeMargin = Math.round(equity - usedMargin - amount);
+  const marginLevel = usedMargin + amount > 0 ? (equity / (usedMargin + amount)) * 100 : 0;
+
+  // A 100% loss of margin happens after a 1/leverage move against the position
+  const refPrice = livePrices[symbol.symbol] || 0;
+  const liquidationPrice =
+    refPrice > 0 && leverage > 0
+      ? side === 'buy'
+        ? refPrice * (1 - 1 / leverage)
+        : refPrice * (1 + 1 / leverage)
+      : 0;
   const [toast, setToast] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const [msgLog, setMsgLog] = useState<{ me: boolean; text: string }[]>([]);
@@ -165,7 +219,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             <TrendingUp className="w-5 h-5 text-[#17190f]" />
           </div>
           <div className="leading-tight">
-            <div className="text-[13px] font-extrabold text-white">TradeNation</div>
+            <div className="text-[13px] font-extrabold text-white">Oak Haven <span className="text-[#B08B48]">Yield</span></div>
             <div className="text-[9px] font-bold text-[#f5b400] tracking-widest">CLIENT</div>
           </div>
         </div>
@@ -290,6 +344,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     <tr>
                       <Th>Asset</Th>
                       <Th>Amount</Th>
+                      <Th>Entry price</Th>
+                      <Th>Current price</Th>
                       <Th>APR</Th>
                       <Th>Next payout</Th>
                       <Th>Accrued</Th>
@@ -314,6 +370,24 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                           <div className="text-[11px] text-slate-500">{inv.categoryLabel}</div>
                         </Td>
                         <Td className="font-bold text-white">${inv.amount.toLocaleString('en-US')}</Td>
+                        <Td className="font-mono text-[12px] text-slate-300">
+                          {inv.entryPrice ? `$${inv.entryPrice.toLocaleString('en-US')}` : '—'}
+                        </Td>
+                        <Td className="font-mono text-[12px]">
+                          {livePrices[inv.projectTitle] ? (
+                            <span
+                              className={
+                                livePrices[inv.projectTitle] >= (inv.entryPrice || 0)
+                                  ? 'text-emerald-400'
+                                  : 'text-rose-400'
+                              }
+                            >
+                              ${livePrices[inv.projectTitle].toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )}
+                        </Td>
                         <Td className="text-[#f5b400] font-bold">{inv.apr}%</Td>
                         <Td className="text-[12px]">{inv.nextPayoutDate}</Td>
                         <Td className="text-emerald-400 font-bold">+${inv.accruedProfit.toLocaleString('en-US')}</Td>
@@ -509,9 +583,47 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex justify-between text-[11px] text-slate-500 pt-1">
-                    <span>Position size</span>
-                    <span className="text-white font-bold">${(amount * leverage).toLocaleString('en-US')}</span>
+                  {/* Margin summary — standard formulas, overridable by an admin later */}
+                  <div className="space-y-1.5 pt-2 mt-1 border-t border-white/[.06]">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">Position size</span>
+                      <span className="text-white font-bold">${(amount * leverage).toLocaleString('en-US')}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">Required margin</span>
+                      <span className="text-slate-200">${amount.toLocaleString('en-US')}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">Free margin</span>
+                      <span className={freeMargin >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        ${freeMargin.toLocaleString('en-US')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">Margin level</span>
+                      <span
+                        className={
+                          marginLevel >= 200
+                            ? 'text-emerald-400'
+                            : marginLevel >= 100
+                            ? 'text-[#f5b400]'
+                            : 'text-rose-400'
+                        }
+                      >
+                        {marginLevel > 0 ? `${marginLevel.toFixed(0)}%` : '—'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">Est. liquidation</span>
+                      <span className="text-rose-400 font-mono">
+                        {liquidationPrice ? liquidationPrice.toFixed(2) : '—'}
+                      </span>
+                    </div>
+                    {marginLevel > 0 && marginLevel < 100 && (
+                      <div className="text-[10px] text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2.5 py-1.5 mt-1">
+                        Margin call — add funds or reduce the position.
+                      </div>
+                    )}
                   </div>
 
                   <button

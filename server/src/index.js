@@ -1,5 +1,5 @@
 // ============================================================
-//  TradeNation platform API server
+//  Oak Haven Yield platform API server
 //  Start:   npm run dev   (from the project root — runs everything)
 //  Port:    4000
 //
@@ -158,7 +158,7 @@ if (HAS_BUILD) {
 app.get('/', (req, res, next) => {
   if (HAS_BUILD) return next(); // production: static index.html handles it
   res.type('html').send(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>TradeNation API</title>
+<html lang="en"><head><meta charset="utf-8"><title>Oak Haven Yield API</title>
 <style>
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
        background:#0a0b0e;color:#e2e8f0;font-family:system-ui,Segoe UI,Arial,sans-serif}
@@ -172,7 +172,7 @@ app.get('/', (req, res, next) => {
   code{background:#0f1116;padding:2px 7px;border-radius:5px;color:#cbd5e1;font-size:13px}
 </style></head>
 <body><div class="card">
-  <h1>TradeNation API</h1>
+  <h1>Oak Haven Yield API</h1>
   <p><span class="dot"></span>Server is running on port ${PORT}</p>
   <p>This address serves data only — there is no website here.<br>
      The website runs on <code>http://localhost:3000</code></p>
@@ -223,7 +223,7 @@ async function start() {
 
     // '::' accepts both IPv6 (::1) and IPv4 (127.0.0.1) on all platforms
     const server = app.listen(PORT, '::', () => {
-      console.log(`\n🚀 TradeNation API server running: http://localhost:${PORT}`);
+      console.log(`\n🚀 Oak Haven Yield API server running: http://localhost:${PORT}`);
       console.log(HAS_BUILD
         ? `   Serving the built site from /dist — open http://localhost:${PORT}\n`
         : `   Development mode — the site runs separately on http://localhost:3000\n`);

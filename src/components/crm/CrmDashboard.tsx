@@ -1,5 +1,5 @@
 // ============================================================
-//  TradeNation — CRM / Admin panel
+//  Oak Haven Yield — CRM / Admin panel
 //  Design 1:1 with the reference screenshots + PDF presentation:
 //  near-black surfaces (#0a0b0e / #14161c) + gold accent (#f5b400),
 //  dark sidebar with Platform / CRM switcher, collapsible groups,
@@ -8,7 +8,7 @@
 // ============================================================
 import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Investor, Lead, TransactionRequest, LeadStage, CrmSettings, ClientNote } from '../../types';
-import { CLIENT_STATUSES, KYC_DOC_LABELS } from '../../types';
+import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
 import type { ApiKycDoc, ApiNotification } from '../../api';
 import { fetchKycFile } from '../../api';
 import type { ApiUser } from '../../api';
@@ -168,7 +168,7 @@ const CRM_NAV: NavItem[] = [
 ];
 
 const TAB_TITLES: Record<CrmTab, { title: string; sub: string }> = {
-  dashboard: { title: 'Dashboard', sub: 'Welcome to the TradeNation admin panel' },
+  dashboard: { title: 'Dashboard', sub: 'Welcome to the Oak Haven Yield admin panel' },
   trading: { title: 'Trading', sub: 'Full control over client positions and balances' },
   users: { title: 'All users', sub: 'Platform accounts, roles and access' },
   'user-details': { title: 'User details', sub: 'Detailed information about the user' },
@@ -268,7 +268,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   // Happy letter
   const [letterSubject, setLetterSubject] = useState('Your weekly trading report is ready');
   const [letterBody, setLetterBody] = useState(
-    'Dear client,\n\nYour account statement for the current period is now available in your personal cabinet.\n\nBest regards,\nTradeNation',
+    'Dear client,\n\nYour account statement for the current period is now available in your personal cabinet.\n\nBest regards,\nOak Haven Yield',
   );
   const [letterAudience, setLetterAudience] = useState('All clients');
 
@@ -397,7 +397,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
             <TrendingUp className="w-5 h-5 text-[#17190f]" />
           </div>
           <div className="leading-tight">
-            <div className="text-[13px] font-extrabold text-white">TradeNation</div>
+            <div className="text-[13px] font-extrabold text-white">Oak Haven <span className="text-[#B08B48]">Yield</span></div>
             <div className="text-[9px] font-bold text-[#f5b400] tracking-widest">ADMIN</div>
           </div>
         </div>
@@ -1889,9 +1889,7 @@ const UserDetails: React.FC<{
             </Select>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-slate-500">Current:</span>
-              <Badge tone={status === 'Deposited' ? 'green' : status === 'Not interested' ? 'red' : 'gold'}>
-                {status}
-              </Badge>
+              <Badge tone={statusTone(status)}>{status}</Badge>
             </div>
             <p className="text-[11px] text-slate-600 leading-relaxed">
               The full status list will be supplied by the client and plugged in here.
@@ -2128,7 +2126,7 @@ const CallsPanel: React.FC<{ investors: Investor[]; phonesHidden: boolean }> = (
   const [screen, setScreen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [callerName, setCallerName] = useState('TradeNation Support');
+  const [callerName, setCallerName] = useState('Oak Haven Yield Support');
 
   useEffect(() => {
     if (!active) return;

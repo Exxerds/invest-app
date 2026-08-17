@@ -1,0 +1,133 @@
+OAK HAVEN YIELD — НАСТРОЙКА ПОЧТЫ (BREVO) И ДОМЕНОВ
+====================================================
+Дата: 18.08.2026
+
+
+ЧАСТЬ 1. ПОЧТА ЧЕРЕЗ BREVO
+--------------------------
+
+Что уже сделано в коде:
+- при регистрации создаётся аккаунт со статусом pending и уходит письмо
+  «Confirm your email address» в фирменном оформлении Oak Haven Yield;
+- на сайте после регистрации показывается окно «Verify your account» с адресом
+  почты, подсказкой про папку Spam и кнопкой «Resend email»;
+- если человек пытается войти в неподтверждённый аккаунт, под ошибкой
+  появляется ссылка «Resend confirmation email»;
+- письмо восстановления пароля тоже в фирменном оформлении.
+
+Осталось только вписать данные SMTP в Vercel. Порядок такой.
+
+ШАГ 1. Регистрация в Brevo
+  Открыть brevo.com, создать аккаунт на рабочую почту.
+  Тип использования — Transactional emails.
+  В профиле организации указать адрес заказчика:
+  300 Delaware Ave, Wilmington, DE 19801, USA.
+
+ШАГ 2. Подтвердить домен oakhavenyield.com
+  В Brevo: Senders, Domains & Dedicated IPs -> Domains -> Add a domain.
+  Ввести oakhavenyield.com. Brevo покажет 3-4 DNS-записи:
+    - запись TXT brevo-code (подтверждение владения)
+    - запись TXT для DKIM (mail._domainkey)
+    - запись TXT для SPF
+    - иногда CNAME для отслеживания
+  Эти записи надо добавить у регистратора домена (там, где домен куплен).
+  Через 15-60 минут нажать в Brevo Verify. Должны стать зелёные галочки
+  DKIM и SPF. Без них письма будут падать в спам или блокироваться Gmail.
+
+ШАГ 3. Создать отправителя
+  Senders -> Add a sender:
+    Name: Oak Haven Yield
+    Email: no-reply@oakhavenyield.com
+  Почтовый ящик заводить не обязательно — это адрес только для отправки.
+
+ШАГ 4. Взять SMTP-ключ
+  Меню SMTP & API -> вкладка SMTP.
+  Там будет:
+    SMTP server: smtp-relay.brevo.com
+    Port: 587
+    Login: что-то вроде 9a1b2c001@smtp-brevo.com
+    Кнопка Generate a new SMTP key -> скопировать ключ (показывается один раз).
+
+ШАГ 5. Вписать переменные в Vercel
+  Vercel -> проект invest-app -> Settings -> Environment Variables.
+  Добавить пять переменных (окружение Production):
+
+    SMTP_HOST    smtp-relay.brevo.com
+    SMTP_PORT    587
+    SMTP_SECURE  false
+    SMTP_USER    9a1b2c001@smtp-brevo.com   (свой логин из Brevo)
+    SMTP_PASS    xsmtpsib-...                (SMTP-ключ из Brevo)
+    SMTP_FROM    Oak Haven Yield <no-reply@oakhavenyield.com>
+
+  Важно: при порте 587 SMTP_SECURE обязательно false.
+  Если использовать порт 465 — тогда SMTP_SECURE=true.
+
+ШАГ 6. Передеплоить
+  Vercel -> Deployments -> у последнего деплоя ... -> Redeploy.
+  Переменные подхватываются только при новом деплое.
+
+ШАГ 7. Проверка
+  Открыть сайт, нажать Register, зарегистрироваться на свою настоящую почту.
+  Должно появиться окно «Verify your account», а в почте — письмо
+  «Confirm your email — Oak Haven Yield». Нажать «Confirm my email» —
+  аккаунт станет active и сразу выполнится вход.
+
+Локальная проверка (без Brevo)
+  Если SMTP_HOST пустой, письма не отправляются, а сохраняются в
+  server/mails/*.html и ссылка печатается в консоль сервера. Это режим
+  разработки, на бою так быть не должно.
+
+Незакрытый вопрос: аккаунт aoaloa@internet.ru висит в статусе pending
+(регистрировался, когда почта ещё не работала). После настройки Brevo его
+можно активировать вручную из CRM или попросить нажать «Resend email».
+
+
+ЧАСТЬ 2. ПОДКЛЮЧЕНИЕ ДОМЕНОВ К VERCEL
+-------------------------------------
+
+Есть два домена: oakhavenyield.com (основной) и oakhavenyield.net (запасной,
+будет просто перенаправлять на основной).
+
+ШАГ 1. Добавить домен в Vercel
+  Vercel -> проект -> Settings -> Domains -> Add.
+  Ввести oakhavenyield.com. Vercel сразу предложит добавить и www-версию —
+  согласиться.
+
+ШАГ 2. DNS у регистратора
+  Vercel покажет, что прописать. Стандартный вариант:
+
+    Тип A,     имя @,    значение 76.76.21.21
+    Тип CNAME, имя www,  значение cname.vercel-dns.com
+
+  Альтернатива — сменить NS-серверы домена на серверы Vercel
+  (ns1.vercel-dns.com / ns2.vercel-dns.com). Тогда всеми записями управляет
+  Vercel. Но если DNS используется и для Brevo (SPF/DKIM), проще оставить
+  DNS у регистратора и добавить только A и CNAME.
+
+ШАГ 3. Дождаться проверки
+  Обычно 10-30 минут, иногда до нескольких часов. В Vercel домен станет
+  Valid Configuration, SSL-сертификат выпустится автоматически.
+
+ШАГ 4. Выбрать основной адрес
+  В списке доменов отметить oakhavenyield.com как Primary,
+  а www.oakhavenyield.com настроить как Redirect на него.
+
+ШАГ 5. Второй домен
+  Добавить oakhavenyield.net так же, прописать те же A/CNAME,
+  а в Vercel выставить ему Redirect to oakhavenyield.com.
+
+ШАГ 6. Обновить SITE_URL
+  Settings -> Environment Variables -> SITE_URL изменить с
+  https://invest-app-six-livid.vercel.app на https://oakhavenyield.com
+  и передеплоить. Иначе ссылки в письмах будут вести на старый адрес.
+
+ШАГ 7. Если задан CORS_ORIGIN
+  Указать https://oakhavenyield.com,https://www.oakhavenyield.com
+
+
+ПОРЯДОК ДЕЙСТВИЙ ПО ВРЕМЕНИ
+---------------------------
+1. Сначала домены и DNS (A + CNAME) — они дольше всего распространяются.
+2. Параллельно в тот же DNS добавить записи Brevo (SPF/DKIM).
+3. Когда домен заработал — обновить SITE_URL и вписать SMTP-переменные.
+4. Redeploy и проверка регистрации на реальную почту.

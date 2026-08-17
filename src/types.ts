@@ -81,6 +81,10 @@ export interface ActiveInvestment {
   apr: number;
   nextPayoutDate: string;
   accruedProfit: number;
+  /** Asset price at the moment the position was opened */
+  entryPrice?: number;
+  /** TradingView symbol used to pull the live price */
+  tv?: string;
 }
 
 /** Extra client fields used by the CRM "User details" screen (reference design) */
@@ -133,12 +137,34 @@ export type ClientStatus = string;
 
 export const CLIENT_STATUSES: string[] = [
   'New',
-  'No answer',
-  'Callback',
-  'Interested',
-  'Deposited',
-  'Not interested',
+  'Call Back - Low Potential',
+  'Call Back - Middle Potential',
+  'Call Back - Top Potential',
+  'No Answer - Low Potential',
+  'No Answer - Middle Potential',
+  'No Answer - High Potential',
+  'Deposited - Low Potential',
+  'Deposited - Middle Potential',
+  'Deposited - High Potential',
 ];
+
+export type StatusTone = 'green' | 'red' | 'blue' | 'gold' | 'gray';
+
+/**
+ * Colour coding requested by the client:
+ *   Call Back  → green
+ *   No Answer  → red
+ *   Deposited  → blue
+ *   New        → gold (a fresh lead nobody has touched yet)
+ */
+export function statusTone(status: string): StatusTone {
+  const s = (status || '').toLowerCase();
+  if (s.startsWith('call back')) return 'green';
+  if (s.startsWith('no answer')) return 'red';
+  if (s.startsWith('deposited')) return 'blue';
+  if (s === 'new') return 'gold';
+  return 'gray';
+}
 
 /** KYC document slots the client must upload */
 export type KycDocType = 'front' | 'back' | 'address';

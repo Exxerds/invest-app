@@ -21,6 +21,10 @@ export interface AdminTrade {
   status: 'OPEN' | 'CLOSED';
   /** Trade open time (ISO string, editable by admin/agent) */
   openedAt?: string;
+  /** Margin locked for this position (auto or overridden by the desk) */
+  margin?: number;
+  /** Price at which the position gets liquidated */
+  liquidationPrice?: number;
 }
 
 interface CrmTradesManagerProps {
@@ -86,7 +90,19 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
     leverage: 1,
     pnl: 0,
     openedAt: '',
+    margin: 0,
+    liquidationPrice: 0,
   });
+  /** Off = values follow the formulas, On = the desk types them by hand */
+  const [marginManual, setMarginManual] = useState(false);
+
+  const autoMargin = editForm.leverage > 0 ? Math.round(editForm.amount / editForm.leverage) : editForm.amount;
+  const autoLiquidation =
+    editForm.entryPrice > 0 && editForm.leverage > 0
+      ? editForm.type === 'SHORT'
+        ? editForm.entryPrice * (1 + 1 / editForm.leverage)
+        : editForm.entryPrice * (1 - 1 / editForm.leverage)
+      : 0;
 
   /** datetime-local needs "YYYY-MM-DDTHH:mm" */
   const toLocalInput = (iso?: string) => {
@@ -105,7 +121,10 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
       leverage: t.leverage,
       pnl: t.pnl,
       openedAt: toLocalInput(t.openedAt),
+      margin: t.leverage > 0 ? Math.round(t.amount / t.leverage) : t.amount,
+      liquidationPrice: 0,
     });
+    setMarginManual(false);
   };
 
   const clientTrades = trades.filter(t => t.investorId === selectedInvestorId);
@@ -391,13 +410,56 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
               </div>
             </div>
 
-            {/* Margin readout */}
-            <div className="flex justify-between bg-[#0f1116] border border-white/[.06] rounded-xl px-3.5 py-2.5">
-              <span className="text-[11px] text-slate-500">Position size / margin</span>
-              <span className="text-[12px] text-white font-bold">
-                ${(editForm.amount * editForm.leverage).toLocaleString('en-US')} / $
-                {editForm.amount.toLocaleString('en-US')}
-              </span>
+            {/* Margin controls — calculated automatically, but the desk can override */}
+            <div className="bg-[#0f1116] border border-white/[.06] rounded-xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase text-slate-500">Margin</span>
+                <button
+                  type="button"
+                  onClick={() => setMarginManual(v => !v)}
+                  className={`text-[10px] px-2 py-1 rounded-lg cursor-pointer ${
+                    marginManual ? 'bg-[#f5b400]/20 text-[#f5b400]' : 'bg-white/[.06] text-slate-400'
+                  }`}
+                >
+                  {marginManual ? 'Manual' : 'Auto'}
+                </button>
+              </div>
+
+              <div className="flex justify-between text-[11px]">
+                <span className="text-slate-500">Position size</span>
+                <span className="text-white font-bold">
+                  ${(editForm.amount * editForm.leverage).toLocaleString('en-US')}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[10px] uppercase text-slate-500 mb-1">Required margin ($)</label>
+                  <Input
+                    type="number"
+                    value={marginManual ? editForm.margin : autoMargin}
+                    disabled={!marginManual}
+                    onChange={e => setEditForm(f => ({ ...f, margin: Number(e.target.value) }))}
+                    className="w-full disabled:opacity-60"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase text-slate-500 mb-1">Liquidation price</label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={marginManual ? editForm.liquidationPrice : autoLiquidation.toFixed(2)}
+                    disabled={!marginManual}
+                    onChange={e => setEditForm(f => ({ ...f, liquidationPrice: Number(e.target.value) }))}
+                    className="w-full disabled:opacity-60"
+                  />
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-600 leading-relaxed">
+                Auto mode uses the standard formulas (margin = size ÷ leverage, liquidation at a 1 ÷ leverage move).
+                Switch to Manual to type any value yourself.
+              </p>
             </div>
           </div>
 
@@ -417,6 +479,8 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                   leverage: editForm.leverage,
                   pnl: editForm.pnl,
                   openedAt: editForm.openedAt ? new Date(editForm.openedAt).toISOString() : undefined,
+                  margin: marginManual ? editForm.margin : autoMargin,
+                  liquidationPrice: marginManual ? editForm.liquidationPrice : autoLiquidation,
                 });
                 setEditingTrade(null);
               }}

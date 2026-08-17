@@ -85,6 +85,8 @@ router.post('/', auth, async (req, res) => {
     stopLoss: b.stopLoss ? num(b.stopLoss) : null,
     takeProfit: b.takeProfit ? num(b.takeProfit) : null,
     pnl: num(b.pnl),
+    margin: num(b.margin, Math.max(1, num(b.leverage, 1)) > 0 ? amount / Math.max(1, num(b.leverage, 1)) : amount),
+    liquidationPrice: num(b.liquidationPrice),
     status: 'OPEN',
     openedAt: b.openedAt || new Date().toISOString(),
     createdBy: req.user.name,
@@ -122,6 +124,8 @@ router.patch('/:id', auth, staffOnly, async (req, res) => {
   if (b.stopLoss !== undefined) patch.stopLoss = b.stopLoss === null ? null : num(b.stopLoss);
   if (b.takeProfit !== undefined) patch.takeProfit = b.takeProfit === null ? null : num(b.takeProfit);
   if (b.openedAt !== undefined) patch.openedAt = b.openedAt;
+  if (b.margin !== undefined) patch.margin = num(b.margin);
+  if (b.liquidationPrice !== undefined) patch.liquidationPrice = num(b.liquidationPrice);
   if (b.status !== undefined && ['OPEN', 'CLOSED'].includes(b.status)) patch.status = b.status;
 
   patch.editedBy = req.user.name;

@@ -45,19 +45,21 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
           >
             <X className="w-4 h-4" />
           </button>
-          <button
-            onClick={onBackToLogin}
-            className="absolute top-5 left-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-            title="Back to sign in"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-white text-xs font-semibold mb-2">
-            <Mail className="w-3.5 h-3.5" />
-            <span>Account recovery</span>
+          <div className="flex items-center gap-2.5 mb-2 pr-10">
+            <button
+              onClick={onBackToLogin}
+              className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors cursor-pointer"
+              title="Back to sign in"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-white text-xs font-semibold">
+              <Mail className="w-3.5 h-3.5" />
+              <span>Account recovery</span>
+            </div>
           </div>
           <h2 className="text-xl font-bold">Forgot your password?</h2>
-          <p className="text-xs text-blue-100 mt-1">We'll send you a password reset link</p>
+          <p className="text-xs text-slate-400 mt-1">We'll send you a password reset link</p>
         </div>
 
         {sent ? (
@@ -105,9 +107,9 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
               </div>
             )}
 
-            <div className="p-3 bg-[#f5b400]/10/70 rounded-xl border border-[#f5b400]/20 text-xs text-slate-400">
-              If the email doesn't arrive, check the «Spam» folder. In dev mode (no SMTP) the letter
-              is saved to <strong>server/mails/</strong> and the link is printed in the server console.
+            <div className="p-3 bg-[#f5b400]/10 rounded-xl border border-[#f5b400]/20 text-xs text-slate-400">
+              The link is valid for 1 hour. If the email doesn&rsquo;t arrive within a few minutes,
+              please check your <strong className="text-slate-300">Spam</strong> folder.
             </div>
 
             <button

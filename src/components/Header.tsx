@@ -50,8 +50,8 @@ export const Header: React.FC<HeaderProps> = ({
               <TrendingUp className="w-6 h-6 text-white" />
             </div>
             <div>
-              <span className="font-extrabold text-lg tracking-tight text-white">TradeNation</span>
-              <p className="text-[11px] text-slate-500 font-medium">Online Forex & CFD Trading Platform</p>
+              <span className="font-extrabold text-lg tracking-tight text-white">Oak Haven <span className="text-[#B08B48]">Yield</span></span>
+              <p className="text-[11px] text-slate-500 font-medium">Investment Advisory</p>
             </div>
           </div>
 

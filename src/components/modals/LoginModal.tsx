@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Lock, Mail, ArrowRight, ShieldCheck, Loader2, Sparkles, UserCog, KeyRound } from 'lucide-react';
-import { apiLogin } from '../../api';
+import { apiLogin, apiResendConfirmation, setToken } from '../../api';
 import type { ApiUser } from '../../api';
 
 interface LoginModalProps {
@@ -12,21 +12,34 @@ interface LoginModalProps {
 }
 
 /** Instant demo sign-in that works without the API server */
-const DEMO_USERS: { label: string; role: 'ADMIN' | 'MANAGER' | 'CLIENT'; user: ApiUser }[] = [
+const DEMO_USERS: {
+  label: string;
+  role: 'ADMIN' | 'MANAGER' | 'CLIENT';
+  /** Real seeded credentials — signing in properly issues a token */
+  email: string;
+  password: string;
+  user: ApiUser;
+}[] = [
   {
     label: 'Demo Admin (CRM)',
     role: 'ADMIN',
-    user: { id: 0, name: 'Admin', email: 'admin@demo.io', role: 'ADMIN', status: 'active' }
+    email: 'admin@trade.io',
+    password: 'admin123',
+    user: { id: 0, name: 'Admin', email: 'admin@trade.io', role: 'ADMIN', status: 'active' }
   },
   {
     label: 'Demo Manager',
     role: 'MANAGER',
-    user: { id: 0, name: 'Laura Bennett', email: 'manager@demo.io', role: 'MANAGER', status: 'active' }
+    email: 'manager@trade.io',
+    password: 'manager123',
+    user: { id: 0, name: 'Laura Bennett', email: 'manager@trade.io', role: 'MANAGER', status: 'active' }
   },
   {
     label: 'Demo Client',
     role: 'CLIENT',
-    user: { id: 0, name: 'Michael Carter', email: 'client@demo.io', role: 'CLIENT', status: 'active' }
+    email: 'client@trade.io',
+    password: 'client123',
+    user: { id: 0, name: 'Michael Carter', email: 'client@trade.io', role: 'CLIENT', status: 'active' }
   }
 ];
 
@@ -41,6 +54,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsConfirm, setNeedsConfirm] = useState(false);
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent'>('idle');
 
   if (!isOpen) return null;
 
@@ -54,15 +69,44 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       onLoginSuccess(res.user);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      const msg = err instanceof Error ? err.message : 'Login failed';
+      setError(msg);
+      setNeedsConfirm(/not activated|confirm your email/i.test(msg));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDemoLogin = (demo: typeof DEMO_USERS[number]) => {
-    onLoginSuccess(demo.user);
-    onClose();
+  const handleResend = async () => {
+    setResendState('sending');
+    try {
+      await apiResendConfirmation(email);
+    } catch {
+      /* the endpoint never reveals whether the address exists */
+    }
+    setResendState('sent');
+  };
+
+  /**
+   * Sign in with the seeded account so a real JWT is stored.
+   * Falls back to the offline stub only if the API is unreachable —
+   * otherwise trading, KYC and every other call would fail with
+   * "Session expired, sign in again".
+   */
+  const handleDemoLogin = async (demo: typeof DEMO_USERS[number]) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiLogin(demo.email, demo.password);
+      setToken(res.token);
+      onLoginSuccess(res.user);
+      onClose();
+    } catch {
+      onLoginSuccess(demo.user); // offline preview, read-only
+      onClose();
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -80,7 +124,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             <span>Authorization</span>
           </div>
           <h2 className="text-xl font-bold">Sign in to your account</h2>
-          <p className="text-xs text-blue-100 mt-1">Access your accounts, trading and balance</p>
+          <p className="text-xs text-slate-400 mt-1">Access your accounts, trading and balance</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -128,8 +172,24 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </div>
 
           {error && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl text-xs text-rose-400">
-              {error}
+            <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl text-xs text-rose-400 space-y-2">
+              <div>{error}</div>
+              {needsConfirm && (
+                resendState === 'sent' ? (
+                  <div className="text-emerald-400">
+                    A new confirmation link has been sent to {email}. Check your inbox and Spam folder.
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resendState === 'sending'}
+                    className="text-[#f5b400] font-semibold hover:underline cursor-pointer disabled:opacity-60"
+                  >
+                    {resendState === 'sending' ? 'Sending...' : 'Resend confirmation email'}
+                  </button>
+                )
+              )}
             </div>
           )}
 

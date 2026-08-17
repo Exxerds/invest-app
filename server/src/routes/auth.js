@@ -45,6 +45,43 @@ function signJwt(u) {
   return jwt.sign({ userId: u.id, role: u.role }, JWT_SECRET, { expiresIn: '7d' });
 }
 
+const BTN = 'background:#B08B48;color:#ffffff;padding:13px 30px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;display:inline-block;';
+const P = 'color:#213532;font-size:14px;line-height:1.65;margin:0 0 12px;';
+const SMALL = 'color:#7a8a82;font-size:12px;line-height:1.6;';
+
+function confirmLetter(user, link) {
+  return letterLayout('Confirm your email address', `
+    <p style="${P}">Hello, <strong>${user.name}</strong>,</p>
+    <p style="${P}">
+      Thank you for creating an account with <strong style="color:#1C412C;">Oak Haven Yield</strong>.
+      Please confirm your email address to activate your account and access your client portal.
+    </p>
+    <p style="text-align:center;margin:26px 0;">
+      <a href="${link}" style="${BTN}">Confirm my email</a>
+    </p>
+    <p style="${SMALL}">
+      Or paste this link into your browser:<br>
+      <a href="${link}" style="color:#B08B48;word-break:break-all;">${link}</a>
+    </p>
+    <p style="${SMALL}">This link is valid for 1 hour and can be used once. If you did not create this account, you can safely ignore this message.</p>
+  `);
+}
+
+function resetLetter(user, link) {
+  return letterLayout('Reset your password', `
+    <p style="${P}">Hello, <strong>${user.name}</strong>,</p>
+    <p style="${P}">We received a request to reset the password for your Oak Haven Yield account. Click the button below to choose a new one.</p>
+    <p style="text-align:center;margin:26px 0;">
+      <a href="${link}" style="${BTN}">Reset my password</a>
+    </p>
+    <p style="${SMALL}">
+      Or paste this link into your browser:<br>
+      <a href="${link}" style="color:#B08B48;word-break:break-all;">${link}</a>
+    </p>
+    <p style="${SMALL}">This link is valid for 1 hour and can be used once. If you did not request a password reset, no action is needed.</p>
+  `);
+}
+
 // ------------------------------------------------------------
 //  REGISTRATION
 // ------------------------------------------------------------
@@ -82,20 +119,8 @@ router.post('/register', async (req, res) => {
     let mailSent = true;
     await sendMail({
       to: user.email,
-      subject: 'Confirm your email',
-      html: letterLayout('Email confirmation', `
-        <p style="color:#cbd5e1;font-size:14px;line-height:1.6;">
-          Hello, <strong>${user.name}</strong>!<br>
-          You registered on the TradeNation platform.
-          Confirm your email to activate the account:
-        </p>
-        <p style="text-align:center;margin:24px 0;">
-          <a href="${link}" style="background:#f5b400;color:#17190f;padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:14px;">
-            Confirm email
-          </a>
-        </p>
-        <p style="color:#64748b;font-size:12px;">The link is valid for 1 hour. If you didn't register — ignore this email.</p>
-      `)
+      subject: 'Confirm your email — Oak Haven Yield',
+      html: confirmLetter(user, link)
     }).catch(err => {
       mailSent = false;
       console.error('[register] Could not send the confirmation e-mail:', err.message);
@@ -103,6 +128,8 @@ router.post('/register', async (req, res) => {
 
     res.json({
       ok: true,
+      emailSent: mailSent,
+      email: user.email,
       message: mailSent
         ? 'Account created. Check your email — we sent a confirmation link.'
         : 'Account created, but the confirmation e-mail could not be sent. Please contact support to activate it.',
@@ -178,19 +205,8 @@ router.post('/forgot-password', async (req, res) => {
     const link = `${publicUrl(req)}/reset-password?token=${token}`;
     await sendMail({
       to: user.email,
-      subject: 'Password reset',
-      html: letterLayout('Password reset', `
-        <p style="color:#cbd5e1;font-size:14px;line-height:1.6;">
-          Hello, <strong>${user.name}</strong>!<br>
-          We received a password reset request. Click the button below to set a new password:
-        </p>
-        <p style="text-align:center;margin:24px 0;">
-          <a href="${link}" style="background:#f5b400;color:#17190f;padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:14px;">
-            Reset password
-          </a>
-        </p>
-        <p style="color:#64748b;font-size:12px;">The link is valid for 1 hour. If you didn't request it — ignore this email.</p>
-      `)
+      subject: 'Reset your password — Oak Haven Yield',
+      html: resetLetter(user, link)
     }).catch(err => {
       // Never leak mail-server problems to the visitor
       console.error('[reset] Could not send the reset e-mail:', err.message);
@@ -217,6 +233,27 @@ router.post('/reset-password', async (req, res) => {
   await store.update('users', t.user_id, { password: hash });
 
   res.json({ ok: true, message: 'Password updated. Now you can sign in.' });
+});
+
+// ------------------------------------------------------------
+//  RESEND THE CONFIRMATION E-MAIL
+// ------------------------------------------------------------
+router.post('/resend-confirmation', async (req, res) => {
+  const { email } = req.body || {};
+  const user = await store.findBy('users', 'email', String(email || '').toLowerCase().trim());
+
+  if (user && user.status === 'pending') {
+    const token = await createToken(user.id, 'confirm_email');
+    const link = `${publicUrl(req)}/confirm-email?token=${token}`;
+    await sendMail({
+      to: user.email,
+      subject: 'Confirm your email — Oak Haven Yield',
+      html: confirmLetter(user, link)
+    }).catch(err => console.error('[resend] Could not send the confirmation e-mail:', err.message));
+  }
+
+  // Never reveal whether the address exists
+  res.json({ ok: true, message: 'If the account exists and is not confirmed yet, a new link is on its way.' });
 });
 
 export default router;

@@ -59,7 +59,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
             <span>New password</span>
           </div>
           <h2 className="text-xl font-bold">Set a new password</h2>
-          <p className="text-xs text-blue-100 mt-1">You followed the link from the email</p>
+          <p className="text-xs text-slate-400 mt-1">You followed the link from the email</p>
         </div>
 
         {done ? (

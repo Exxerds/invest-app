@@ -32,7 +32,7 @@ const transporter = hasSmtp
     })
   : null;
 
-export const FROM_EMAIL = process.env.SMTP_FROM || 'no-reply@tradenation.io';
+export const FROM_EMAIL = process.env.SMTP_FROM || 'Oak Haven Yield <no-reply@oakhavenyield.com>';
 export const SITE_URL = process.env.SITE_URL || 'http://localhost:3000';
 
 /**
@@ -83,23 +83,27 @@ export async function sendMail({ to, subject, html }) {
   console.log('');
 }
 
-/** Basic HTML e-mail layout (dark + gold brand styling) */
+/** Branded HTML e-mail layout (Oak Haven Yield: cream / forest green / warm gold) */
 export function letterLayout(title, contentHtml) {
   return `<!DOCTYPE html>
-<html lang="en"><body style="margin:0;padding:0;background:#0a0b0e;font-family:Arial,Helvetica,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0b0e;padding:32px 12px;">
+<html lang="en"><body style="margin:0;padding:0;background:#F5F2E9;font-family:Georgia,'Times New Roman',serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F2E9;padding:32px 12px;">
     <tr><td align="center">
-      <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="background:#14161c;border:1px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;">
-        <tr><td style="background:#0f1116;padding:22px 28px;border-bottom:1px solid rgba(255,255,255,.08);">
-          <span style="color:#f5b400;font-size:20px;font-weight:bold;">TradeNation</span>
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e0d2;border-radius:14px;overflow:hidden;">
+        <tr><td style="background:#1C412C;padding:24px 28px;">
+          <span style="color:#F5F2E9;font-size:22px;font-weight:bold;letter-spacing:1px;">OAK HAVEN</span>
+          <span style="color:#B08B48;font-size:22px;font-weight:bold;letter-spacing:1px;"> YIELD</span>
+          <div style="color:#cfd8d2;font-size:11px;letter-spacing:2px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">INVESTMENT ADVISORY</div>
         </td></tr>
-        <tr><td style="padding:28px;">
-          <h2 style="margin:0 0 12px;color:#ffffff;font-size:18px;">${title}</h2>
+        <tr><td style="height:3px;background:#B08B48;"></td></tr>
+        <tr><td style="padding:28px;font-family:Arial,Helvetica,sans-serif;">
+          <h2 style="margin:0 0 12px;color:#1C412C;font-size:19px;">${title}</h2>
           ${contentHtml}
         </td></tr>
-        <tr><td style="padding:16px 28px;background:#0f1116;color:#64748b;font-size:12px;border-top:1px solid rgba(255,255,255,.08);">
-          This message was generated automatically — please do not reply to it.<br>
-          &copy; ${new Date().getFullYear()} TradeNation. All rights reserved.
+        <tr><td style="padding:18px 28px;background:#F5F2E9;color:#6b7a72;font-size:12px;border-top:1px solid #e5e0d2;font-family:Arial,Helvetica,sans-serif;">
+          Oak Haven Yield &middot; 300 Delaware Ave, Wilmington, DE 19801, USA<br>
+          This message was generated automatically &mdash; please do not reply to it.<br>
+          &copy; ${new Date().getFullYear()} Oak Haven Yield. All rights reserved.
         </td></tr>
       </table>
     </td></tr>

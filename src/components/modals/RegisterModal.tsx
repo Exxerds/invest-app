@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, Mail, Lock, User, ArrowLeft, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
-import { apiRegister } from '../../api';
+import { X, Mail, Lock, User, ArrowLeft, MailCheck, Loader2, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
+import { apiRegister, apiResendConfirmation } from '../../api';
 
 interface RegisterModalProps {
   isOpen: boolean;
@@ -19,6 +19,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [emailSent, setEmailSent] = useState(true);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
 
   if (!isOpen) return null;
 
@@ -28,12 +31,25 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     setError(null);
     try {
       const res = await apiRegister(name, email, password);
+      setEmailSent(res.emailSent !== false);
       setDone(true);
-      console.log('[register]', res.message);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setResending(true);
+    setResent(false);
+    try {
+      await apiResendConfirmation(email);
+      setResent(true);
+    } catch {
+      setResent(true); // the endpoint never reveals whether the address exists
+    } finally {
+      setResending(false);
     }
   };
 
@@ -68,20 +84,62 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
         {done ? (
           <div className="p-6 space-y-4">
-            <div className="flex flex-col items-center text-center gap-3 py-4">
-              <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
-                <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+            <div className="flex flex-col items-center text-center gap-3 py-2">
+              <div className="w-16 h-16 rounded-full bg-[#f5b400]/15 border border-[#f5b400]/30 flex items-center justify-center">
+                <MailCheck className="w-8 h-8 text-[#f5b400]" />
               </div>
+              <div className="text-base font-bold text-white">Verify your account</div>
               <div className="text-sm text-slate-400 leading-relaxed">
-                <strong className="text-white">Account created!</strong>
+                We&rsquo;ve sent a confirmation email to
                 <br />
-                We sent an email to <strong className="text-[#f5b400]">{email}</strong>.
-                Follow the link in the email to confirm your address — then you can sign in.
+                <strong className="text-[#f5b400] break-all">{email}</strong>
+                <br />
+                <span className="block mt-2">
+                  Open it and click <strong className="text-slate-200">&laquo;Confirm my email&raquo;</strong> to
+                  activate your account. The link is valid for 1 hour.
+                </span>
               </div>
             </div>
+
+            {emailSent ? (
+              <div className="p-3 bg-[#1b1e26] border border-white/[.06] rounded-xl text-[11px] text-slate-500 leading-relaxed">
+                Didn&rsquo;t get it? Check the <strong className="text-slate-400">Spam</strong> or
+                <strong className="text-slate-400"> Promotions</strong> folder &mdash; delivery can take a couple of minutes.
+              </div>
+            ) : (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl text-[11px] text-amber-300 leading-relaxed flex gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  Your account was created, but the email could not be delivered right now.
+                  Use &laquo;Resend email&raquo; below or contact support to activate it.
+                </span>
+              </div>
+            )}
+
+            <button
+              onClick={handleResend}
+              disabled={resending}
+              className="w-full px-6 py-2.5 bg-[#1b1e26] hover:bg-[#22262f] disabled:opacity-60 border border-white/[.08] text-slate-200 font-semibold rounded-xl text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {resending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Sending...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" /> Resend email
+                </>
+              )}
+            </button>
+            {resent && (
+              <p className="text-center text-[11px] text-emerald-400">
+                A new confirmation link has been sent.
+              </p>
+            )}
+
             <button
               onClick={onClose}
-              className="w-full px-6 py-2.5 bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+              className="w-full px-6 py-2.5 bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold rounded-xl text-sm transition-all cursor-pointer"
             >
               Got it
             </button>

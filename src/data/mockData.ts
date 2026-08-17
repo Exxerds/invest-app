@@ -309,6 +309,7 @@ export const INITIAL_MY_INVESTMENTS: ActiveInvestment[] = [
     date: '2026-02-18',
     apr: 24.5,
     nextPayoutDate: '2026-09-01',
+    entryPrice: 64337.56,
     accruedProfit: 4810
   },
   {
@@ -320,6 +321,7 @@ export const INITIAL_MY_INVESTMENTS: ActiveInvestment[] = [
     date: '2026-03-10',
     apr: 32.0,
     nextPayoutDate: '2026-09-01',
+    entryPrice: 3182.4,
     accruedProfit: 5760
   },
   {
@@ -331,6 +333,7 @@ export const INITIAL_MY_INVESTMENTS: ActiveInvestment[] = [
     date: '2026-04-20',
     apr: 18.0,
     nextPayoutDate: '2026-09-01',
+    entryPrice: 2415.3,
     accruedProfit: 1480
   },
   {
@@ -342,6 +345,7 @@ export const INITIAL_MY_INVESTMENTS: ActiveInvestment[] = [
     date: '2026-06-15',
     apr: 28.4,
     nextPayoutDate: '2026-09-15',
+    entryPrice: 1.0,
     accruedProfit: 790
   }
 ];
