@@ -36,6 +36,10 @@ import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
 
 interface InvestorDashboardProps {
+  /** Signed-in account — the cabinet shows real data, never a demo persona */
+  user?: { name: string; email: string } | null;
+  /** True once an admin approved the client's KYC documents */
+  kycVerified?: boolean;
   investorBalance: number;
   myInvestments: ActiveInvestment[];
   onOpenCatalog: () => void;
@@ -57,15 +61,18 @@ const NAV: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'statistics', label: 'Statistics', icon: BarChart3 },
 ];
 
-/* Wallets — PDF page 7 "Full portfolio control" */
-const WALLETS = [
-  { sym: 'BTC', name: 'Bitcoin', qty: 0.199916, price: 64400.61, avg: 49941.24, pnl: 2891.46, pct: 20.36 },
-  { sym: 'BNB', name: 'BNB', qty: 4.687804, price: 581.79, avg: 565.51, pnl: 76.32, pct: 2.88 },
-  { sym: 'LINK', name: 'Chainlink', qty: 46.318116, price: 8.05, avg: 7.63, pnl: 19.13, pct: 5.4 },
-  { sym: 'NEAR', name: 'NEAR Protocol', qty: 6145.891515, price: 1.91, avg: 1.86, pnl: 319.09, pct: 2.79 },
-];
+/**
+ * Crypto wallets.
+ * Empty by design: balances must come from the back office, never from
+ * hard-coded sample data. A brand-new client sees an empty state instead of
+ * somebody else's holdings.
+ */
+type Wallet = { sym: string; name: string; qty: number; price: number; avg: number; pnl: number; pct: number };
+const WALLETS: Wallet[] = [];
 
 export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
+  user,
+  kycVerified = false,
   investorBalance,
   myInvestments,
   onOpenCatalog,
@@ -73,6 +80,17 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   onOpenWithdrawModal,
   onClaimDividends,
 }) => {
+  /* Display name derived from the signed-in account (no demo persona) */
+  const fullName = (user?.name || '').trim();
+  const nameParts = fullName.split(/\s+/).filter(Boolean);
+  const firstName = nameParts[0] || 'there';
+  const shortName = nameParts.length > 1
+    ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
+    : (nameParts[0] || 'Client');
+  const initials = (nameParts.length > 1
+    ? nameParts[0][0] + nameParts[nameParts.length - 1][0]
+    : (nameParts[0]?.slice(0, 2) || 'CL')).toUpperCase();
+
   const [tab, setTab] = useState<Tab>('dashboard');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
@@ -225,9 +243,9 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         </div>
 
         <div className="px-4 py-4 flex items-center gap-3 border-b border-white/[.06]">
-          <div className="w-9 h-9 rounded-full bg-[#f5b400] text-[#17190f] font-extrabold flex items-center justify-center">A</div>
+          <div className="w-9 h-9 rounded-full bg-[#f5b400] text-[#17190f] font-extrabold flex items-center justify-center">{initials}</div>
           <div className="leading-tight">
-            <div className="text-[13px] font-bold text-white">Michael C.</div>
+            <div className="text-[13px] font-bold text-white">{shortName}</div>
             <div className="text-[9px] font-bold text-slate-500 tracking-widest">CLIENT</div>
           </div>
         </div>
@@ -266,10 +284,16 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               {NAV.find(n => n.id === tab)?.label}
             </h1>
             <p className="text-[12px] text-slate-500 mt-0.5 flex items-center gap-2">
-              Welcome back, Michael
-              <Badge tone="green">
-                <ShieldCheck className="w-3 h-3" /> KYC verified
-              </Badge>
+              Welcome back, {firstName}
+              {kycVerified ? (
+                <Badge tone="green">
+                  <ShieldCheck className="w-3 h-3" /> KYC verified
+                </Badge>
+              ) : (
+                <Badge tone="gold">
+                  <ShieldCheck className="w-3 h-3" /> KYC not verified
+                </Badge>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -310,6 +334,19 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 </div>
               }
             >
+              {WALLETS.length === 0 && (
+                <div className="p-10 text-center">
+                  <div className="text-[13px] text-slate-500">No wallets yet</div>
+                  <div className="text-[12px] text-slate-600 mt-1">
+                    Your holdings appear here once your first deposit is credited.
+                  </div>
+                  <div className="mt-4">
+                    <Btn variant="gold" icon={Wallet} onClick={onOpenDepositModal}>
+                      Make a deposit
+                    </Btn>
+                  </div>
+                </div>
+              )}
               <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
                 {WALLETS.map(w => (
                   <div key={w.sym} className="bg-[#1b1e26] border border-white/[.06] rounded-2xl p-4">
@@ -914,15 +951,15 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               <div className="p-5 space-y-3.5 max-w-md">
                 <div>
                   <label className="text-[11px] font-bold uppercase text-slate-500">Full name</label>
-                  <Input defaultValue="Michael Carter" className="w-full mt-1.5" />
+                  <Input key={fullName} defaultValue={fullName} className="w-full mt-1.5" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold uppercase text-slate-500">E-mail</label>
-                  <Input defaultValue="m.carter@northbridge-cap.com" className="w-full mt-1.5" />
+                  <Input key={user?.email || 'email'} defaultValue={user?.email || ''} className="w-full mt-1.5" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold uppercase text-slate-500">Phone</label>
-                  <Input defaultValue="+1 (415) 555-0182" className="w-full mt-1.5" />
+                  <Input placeholder="+1 (555) 000-0000" className="w-full mt-1.5" />
                 </div>
                 <Btn variant="gold" onClick={() => setToast('Profile updated successfully')}>
                   Save changes

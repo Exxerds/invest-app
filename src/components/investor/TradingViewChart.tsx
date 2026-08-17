@@ -201,3 +201,117 @@ export const MarketOverview = memo(({ height = 460 }: { height?: number }) => {
   return <div ref={ref} style={{ minHeight: height }} className="w-full" />;
 });
 MarketOverview.displayName = 'MarketOverview';
+
+/* ============================================================
+   Real-Time Market Data — the large grouped quotes table from
+   the client's reference videos: sections (Indices, Bonds,
+   Forex, Commodities) with price, change and day range.
+   Light theme, because it lives on the landing page.
+   ============================================================ */
+export const MarketQuotes = memo(({ height = 620 }: { height?: number }) => {
+  const ref = useWidget(
+    'https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js',
+    {
+      width: '100%',
+      height,
+      symbolsGroups: [
+        {
+          name: 'Indices',
+          originalName: 'Indices',
+          symbols: [
+            { name: 'FOREXCOM:SPXUSD', displayName: 'S&P 500' },
+            { name: 'FOREXCOM:NSXUSD', displayName: 'Nasdaq 100' },
+            { name: 'FOREXCOM:DJI', displayName: 'Dow 30' },
+            { name: 'INDEX:NKY', displayName: 'Nikkei 225' },
+            { name: 'INDEX:DEU40', displayName: 'DAX Index' },
+            { name: 'FOREXCOM:UKXGBP', displayName: 'FTSE 100' },
+          ],
+        },
+        {
+          name: 'Bonds',
+          originalName: 'Bonds',
+          // Bond ETFs rather than futures or yield indices: those two feeds are
+          // permissioned and render as blank rows in the free widget, while the
+          // ETFs quote normally.
+          symbols: [
+            { name: 'NASDAQ:TLT', displayName: 'US 20+ Year Treasury' },
+            { name: 'NASDAQ:IEF', displayName: 'US 7-10 Year Treasury' },
+            { name: 'NASDAQ:SHY', displayName: 'US 1-3 Year Treasury' },
+            { name: 'AMEX:LQD', displayName: 'Investment Grade Corp' },
+            { name: 'AMEX:HYG', displayName: 'High Yield Corp' },
+          ],
+        },
+        {
+          name: 'Forex',
+          originalName: 'Forex',
+          symbols: [
+            { name: 'FX:EURUSD', displayName: 'EUR to USD' },
+            { name: 'FX:GBPUSD', displayName: 'GBP to USD' },
+            { name: 'FX:USDJPY', displayName: 'USD to JPY' },
+            { name: 'FX:USDCHF', displayName: 'USD to CHF' },
+            { name: 'FX:AUDUSD', displayName: 'AUD to USD' },
+            { name: 'FX:USDCAD', displayName: 'USD to CAD' },
+          ],
+        },
+        {
+          name: 'Commodities',
+          originalName: 'Commodities',
+          symbols: [
+            { name: 'OANDA:XAUUSD', displayName: 'Gold' },
+            { name: 'OANDA:XAGUSD', displayName: 'Silver' },
+            { name: 'TVC:USOIL', displayName: 'Crude Oil' },
+            { name: 'TVC:UKOIL', displayName: 'Brent Oil' },
+            { name: 'NYMEX:NG1!', displayName: 'Natural Gas' },
+          ],
+        },
+        {
+          name: 'Crypto',
+          originalName: 'Crypto',
+          symbols: [
+            { name: 'BITSTAMP:BTCUSD', displayName: 'Bitcoin' },
+            { name: 'BITSTAMP:ETHUSD', displayName: 'Ethereum' },
+            { name: 'BINANCE:SOLUSDT', displayName: 'Solana' },
+            { name: 'BINANCE:BNBUSDT', displayName: 'BNB' },
+          ],
+        },
+      ],
+      showSymbolLogo: true,
+      isTransparent: true,
+      colorTheme: 'light',
+      locale: 'en',
+      backgroundColor: '#ffffff',
+    },
+    [height],
+  );
+
+  return <div ref={ref} style={{ minHeight: height }} className="w-full" />;
+});
+MarketQuotes.displayName = 'MarketQuotes';
+
+/* Light-theme mini chart for the landing hero */
+export const MiniChartLight = memo(
+  ({ symbol, height = 170 }: { symbol: string; height?: number }) => {
+    const ref = useWidget(
+      'https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js',
+      {
+        symbol,
+        width: '100%',
+        height,
+        locale: 'en',
+        dateRange: '3M',
+        colorTheme: 'light',
+        isTransparent: true,
+        autosize: false,
+        largeChartUrl: '',
+        chartOnly: false,
+        noTimeScale: false,
+        trendLineColor: 'rgba(176, 139, 72, 1)',
+        underLineColor: 'rgba(176, 139, 72, 0.15)',
+        underLineBottomColor: 'rgba(176, 139, 72, 0)',
+      },
+      [symbol, height],
+    );
+    return <div ref={ref} style={{ minHeight: height }} className="w-full" />;
+  },
+);
+MiniChartLight.displayName = 'MiniChartLight';

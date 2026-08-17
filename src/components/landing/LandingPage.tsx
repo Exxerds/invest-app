@@ -8,7 +8,7 @@
 //  → why us → affiliate → documentation → news → contact.
 // ============================================================
 import React, { useState, useEffect } from 'react';
-import { TickerTape, MarketOverview, MiniChart } from '../investor/TradingViewChart';
+import { TickerTape, MarketOverview, MiniChart, MarketQuotes, MiniChartLight } from '../investor/TradingViewChart';
 import { OakLogo } from '../brand/Logo';
 import {
   TrendingUp,
@@ -162,6 +162,23 @@ const ActivityToast: React.FC = () => {
 };
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOpenRegisterModal }) => {
+  /* Reading-progress bar pinned to the very top of the page */
+  const [scrollPct, setScrollPct] = useState(0);
+  useEffect(() => {
+    const onScroll = () => {
+      const doc = document.documentElement;
+      const max = doc.scrollHeight - doc.clientHeight;
+      setScrollPct(max > 0 ? Math.min(100, (doc.scrollTop / max) * 100) : 0);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, []);
+
   const [faqOpen, setFaqOpen] = useState<number | null>(0);
 
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
@@ -172,6 +189,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
   return (
     <div className="bg-[#F5F2E9] text-[#213532]">
       {/* ==================== NAVBAR ==================== */}
+      {/* Reading progress — thin gold bar above everything */}
+      <div className="fixed top-0 left-0 right-0 z-[60] h-[3px] bg-transparent pointer-events-none">
+        <div
+          className="h-full bg-[#B08B48] transition-[width] duration-150 ease-out"
+          style={{ width: `${scrollPct}%` }}
+        />
+      </div>
+
       <header className="sticky top-0 z-50 bg-[#F5F2E9]/95 backdrop-blur border-b border-[#1C412C]/12">
         <div className="max-w-6xl mx-auto px-5 h-[68px] flex items-center gap-8">
           <a href="#top" className="flex items-center shrink-0">
@@ -220,17 +245,36 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               'radial-gradient(circle at 50% 0%, rgba(176,139,72,.18), transparent 55%), radial-gradient(circle at 10% 80%, rgba(28,65,44,.08), transparent 45%)',
           }}
         />
-        <div className="relative max-w-4xl mx-auto px-5 py-24 md:py-28 text-center">
+        <div className="relative max-w-6xl mx-auto px-5 py-20 md:py-24 grid lg:grid-cols-[1.05fr_.95fr] gap-12 items-center">
+          <div className="text-center lg:text-left">
           <h1 className="text-[38px] md:text-[54px] leading-[1.08] font-extrabold tracking-tight">
             <span className="text-[#B08B48]">Grow your wealth</span>
             <br />
             <span className="text-[#1C412C]">with Oak Haven Yield</span>
           </h1>
-          <p className="mt-5 text-[15px] md:text-[17px] text-[#213532]/75 max-w-2xl mx-auto leading-relaxed">
+          <p className="mt-5 text-[15px] md:text-[17px] text-[#213532]/75 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
             A professional trading platform with access to global markets and a wide selection of instruments —
             crypto, forex, metals and indices in one account.
           </p>
-          <div className="mt-8 flex items-center justify-center gap-3">
+
+          {/* Trust numbers — taken from the client's reference videos */}
+          <div className="mt-7 flex flex-wrap items-center justify-center lg:justify-start gap-x-8 gap-y-3">
+            {[
+              { v: '3.4M+', s: 'Investors' },
+              { v: '$188B', s: 'Assets traded' },
+              { v: '4.9', s: 'Client rating', star: true },
+            ].map(n => (
+              <div key={n.v}>
+                <div className="text-[22px] font-extrabold text-[#1C412C] flex items-center gap-1">
+                  {n.v}
+                  {n.star && <Star className="w-4 h-4 text-[#B08B48] fill-[#B08B48]" />}
+                </div>
+                <div className="text-[11px] text-[#213532]/60">{n.s}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex items-center justify-center lg:justify-start gap-3">
             <button
               onClick={onOpenRegisterModal || onOpenLoginModal}
               className="px-7 py-3 rounded-xl bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] font-bold text-[15px] transition-all cursor-pointer shadow-[0_10px_30px_-8px_rgba(176,139,72,.55)]"
@@ -244,8 +288,50 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               Log in
             </button>
           </div>
+          </div>
 
-          <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
+          {/* Portfolio snapshot card with a live mini chart */}
+          <div className="bg-white border border-[#1C412C]/12 rounded-3xl p-5 shadow-[0_30px_60px_-30px_rgba(28,65,44,.35)]">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-[11px] font-bold tracking-[0.16em] text-[#213532]/50 uppercase">
+                  Portfolio value
+                </div>
+                <div className="text-[30px] font-extrabold text-[#1C412C] leading-tight mt-1">
+                  $248,730.15
+                </div>
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
+                <TrendingUp className="w-3.5 h-3.5" />
+                +12.8%
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-[#1C412C]/10 overflow-hidden">
+              <MiniChartLight symbol="FOREXCOM:SPXUSD" height={170} />
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              {[
+                { l: 'Today', v: '+$1,284' },
+                { l: 'This month', v: '+$9,412' },
+                { l: 'All time', v: '+$54,908' },
+              ].map(x => (
+                <div key={x.l} className="rounded-xl bg-[#F5F2E9] border border-[#1C412C]/8 py-2.5">
+                  <div className="text-[10px] text-[#213532]/55 uppercase tracking-wide">{x.l}</div>
+                  <div className="text-[13px] font-extrabold text-[#1C412C] mt-0.5">{x.v}</div>
+                </div>
+              ))}
+            </div>
+
+            <p className="mt-3 text-[10px] text-[#213532]/45 text-center leading-relaxed">
+              Illustrative portfolio. Chart data is live from the market.
+            </p>
+          </div>
+        </div>
+
+        <div className="relative max-w-6xl mx-auto px-5 pb-16">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
             {[
               { icon: Layers, t: '250+', s: 'Trading instruments' },
               { icon: Zap, t: '0.01s', s: 'Order execution' },
@@ -261,6 +347,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
           </div>
         </div>
       </div>
+
+      {/* ============ REAL-TIME MARKET DATA (grouped quotes table) ============ */}
+      <Section id="quotes" className="bg-white border-b border-[#1C412C]/10">
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
+          <div>
+            <Eyebrow>Market data</Eyebrow>
+            <H2>Real-time market data</H2>
+            <p className="text-[#213532]/75 mt-3 text-[15px] max-w-2xl">
+              Indices, bonds, currencies, commodities and digital assets — streamed live from the
+              exchanges, with the day&rsquo;s change and trading range for every instrument.
+            </p>
+          </div>
+          <div className="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Live</span>
+          </div>
+        </div>
+
+        <div className="bg-white border border-[#1C412C]/12 rounded-2xl overflow-hidden shadow-[0_24px_60px_-40px_rgba(28,65,44,.5)]">
+          <MarketQuotes height={620} />
+        </div>
+      </Section>
 
       {/* ==================== LIVE MARKETS (TradingView) ==================== */}
       <Section id="markets">

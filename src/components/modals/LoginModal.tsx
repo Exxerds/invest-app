@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, ArrowRight, ShieldCheck, Loader2, Sparkles, UserCog, KeyRound } from 'lucide-react';
-import { apiLogin, apiResendConfirmation, setToken } from '../../api';
+import { X, Lock, Mail, ArrowRight, ShieldCheck, Loader2 } from 'lucide-react';
+import { apiLogin, apiResendConfirmation } from '../../api';
 import type { ApiUser } from '../../api';
 
 interface LoginModalProps {
@@ -10,38 +10,6 @@ interface LoginModalProps {
   onOpenForgotPassword: () => void;
   onOpenRegister: () => void;
 }
-
-/** Instant demo sign-in that works without the API server */
-const DEMO_USERS: {
-  label: string;
-  role: 'ADMIN' | 'MANAGER' | 'CLIENT';
-  /** Real seeded credentials — signing in properly issues a token */
-  email: string;
-  password: string;
-  user: ApiUser;
-}[] = [
-  {
-    label: 'Demo Admin (CRM)',
-    role: 'ADMIN',
-    email: 'admin@trade.io',
-    password: 'admin123',
-    user: { id: 0, name: 'Admin', email: 'admin@trade.io', role: 'ADMIN', status: 'active' }
-  },
-  {
-    label: 'Demo Manager',
-    role: 'MANAGER',
-    email: 'manager@trade.io',
-    password: 'manager123',
-    user: { id: 0, name: 'Laura Bennett', email: 'manager@trade.io', role: 'MANAGER', status: 'active' }
-  },
-  {
-    label: 'Demo Client',
-    role: 'CLIENT',
-    email: 'client@trade.io',
-    password: 'client123',
-    user: { id: 0, name: 'Michael Carter', email: 'client@trade.io', role: 'CLIENT', status: 'active' }
-  }
-];
 
 export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen,
@@ -85,28 +53,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       /* the endpoint never reveals whether the address exists */
     }
     setResendState('sent');
-  };
-
-  /**
-   * Sign in with the seeded account so a real JWT is stored.
-   * Falls back to the offline stub only if the API is unreachable —
-   * otherwise trading, KYC and every other call would fail with
-   * "Session expired, sign in again".
-   */
-  const handleDemoLogin = async (demo: typeof DEMO_USERS[number]) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiLogin(demo.email, demo.password);
-      setToken(res.token);
-      onLoginSuccess(res.user);
-      onClose();
-    } catch {
-      onLoginSuccess(demo.user); // offline preview, read-only
-      onClose();
-    } finally {
-      setLoading(false);
-    }
   };
 
   return (
@@ -211,45 +157,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             )}
           </button>
 
-          {/* Test credentials hint */}
-          <div className="p-3 bg-[#1b1e26] rounded-xl border border-white/[.06] text-[11px] text-slate-500 space-y-1">
-            <div className="font-bold text-slate-400 flex items-center gap-1.5">
-              <KeyRound className="w-3 h-3" /> Test accounts (server):
-            </div>
-            <div>Admin → <span className="font-mono font-bold text-slate-300">admin@trade.io / admin123</span></div>
-            <div>Manager → <span className="font-mono font-bold text-slate-300">manager@trade.io / manager123</span></div>
-            <div>Client → <span className="font-mono font-bold text-slate-300">client@trade.io / client123</span></div>
-          </div>
-
-          {/* Quick demo access (works even without server) */}
-          <div className="pt-1">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              Quick demo access (no server needed)
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {DEMO_USERS.map(d => (
-                <button
-                  key={d.role}
-                  type="button"
-                  onClick={() => handleDemoLogin(d)}
-                  className="px-2 py-2 rounded-xl border border-white/[.06] bg-[#1b1e26] hover:bg-[#f5b400]/10 hover:border-blue-300 text-slate-300 text-[11px] font-semibold flex flex-col items-center gap-1 transition-colors cursor-pointer"
-                  title={`Enter as ${d.label} without server`}
-                >
-                  {d.role === 'ADMIN' ? (
-                    <UserCog className="w-4 h-4 text-purple-600" />
-                  ) : d.role === 'MANAGER' ? (
-                    <UserCog className="w-4 h-4 text-[#f5b400]" />
-                  ) : (
-                    <Sparkles className="w-4 h-4 text-emerald-400" />
-                  )}
-                  <span className="text-center leading-tight">{d.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="p-3 bg-[#f5b400]/10/70 rounded-xl border border-[#f5b400]/20 text-xs text-slate-400 flex items-start gap-2">
+          <div className="p-3 bg-[#f5b400]/10 rounded-xl border border-[#f5b400]/20 text-xs text-slate-400 flex items-start gap-2">
             <ShieldCheck className="w-4 h-4 text-[#f5b400] shrink-0 mt-0.5" />
             <div>
               No account?{' '}

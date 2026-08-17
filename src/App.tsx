@@ -12,7 +12,7 @@ import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
 import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
-import { apiKycAll, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
+import { apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
 import type { ApiTrade } from './api';
 import { 
   DepositModal, 
@@ -24,8 +24,7 @@ import {
   INITIAL_PROJECTS, 
   INITIAL_INVESTORS, 
   INITIAL_LEADS, 
-  INITIAL_REQUESTS, 
-  INITIAL_MY_INVESTMENTS 
+  INITIAL_REQUESTS 
 } from './data/mockData';
 import type { 
   Project, 
@@ -47,8 +46,9 @@ export default function App() {
 
   // Core State
   const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
-  const [investorBalance, setInvestorBalance] = useState<number>(26500);
-  const [myInvestments, setMyInvestments] = useState<ActiveInvestment[]>(INITIAL_MY_INVESTMENTS);
+  // New accounts start empty — balances are credited by the back office
+  const [investorBalance, setInvestorBalance] = useState<number>(0);
+  const [myInvestments, setMyInvestments] = useState<ActiveInvestment[]>([]);
   const [investors, setInvestors] = useState<Investor[]>(INITIAL_INVESTORS);
   const [leads, setLeads] = useState<Lead[]>(INITIAL_LEADS);
   const [requests, setRequests] = useState<TransactionRequest[]>(INITIAL_REQUESTS);
@@ -196,6 +196,14 @@ export default function App() {
         } catch {
           /* ignore transient errors */
         }
+      } else {
+        // Clients pull their own documents so the KYC badge is truthful
+        try {
+          const mine = await apiKycMine();
+          setKycDocuments(mine.documents);
+        } catch {
+          /* ignore transient errors */
+        }
       }
       try {
         const n = await apiNotifications();
@@ -210,6 +218,16 @@ export default function App() {
     const timer = setInterval(pull, 20000); // near real-time without websockets
     return () => clearInterval(timer);
   }, [isLoggedIn, isStaff]);
+
+  /**
+   * The client counts as verified only when an admin approved the documents.
+   * Three of them are required: passport front, back and proof of address.
+   */
+  const kycApproved =
+    !isStaff &&
+    ['front', 'back', 'address'].every(t =>
+      kycDocuments.some(d => d.type === t && d.status === 'approved'),
+    );
 
   const handleMarkNotificationsRead = async (id?: number) => {
     try {
@@ -683,6 +701,8 @@ export default function App() {
 
         {activeTab === 'investor' && (
           <InvestorDashboard
+            user={currentUser}
+            kycVerified={kycApproved}
             investorBalance={investorBalance}
             myInvestments={myInvestments}
             onOpenCatalog={() => setActiveTab('catalog')}
