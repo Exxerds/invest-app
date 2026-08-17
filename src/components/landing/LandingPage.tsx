@@ -105,7 +105,9 @@ const Y: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 const Section: React.FC<{ id?: string; className?: string; children: React.ReactNode }> = ({ id, className = '', children }) => (
-  <section id={id} className={`py-20 px-5 ${className}`}>
+  // scroll-mt keeps the section heading clear of the sticky header
+  // when the visitor jumps here from the navigation
+  <section id={id} className={`py-20 px-5 scroll-mt-[80px] ${className}`}>
     <div className="max-w-6xl mx-auto">{children}</div>
   </section>
 );
@@ -179,9 +181,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
           <nav className="hidden lg:flex items-center gap-7 text-[14px] font-medium text-[#213532]">
             <a href="#top" className="hover:text-[#1C412C] transition-colors">Home</a>
             <a href="#markets" className="hover:text-[#1C412C] transition-colors">Markets</a>
-            {/* Plain link — the client asked to drop the dropdown and jump straight
-                to the live quotes table */}
-            <a href="#markets" className="hover:text-[#1C412C] transition-colors">
+            {/* Plain link — no dropdown. "Trading" jumps to the web-terminal
+                block ("The platform is always at hand"), "Markets" to the quotes */}
+            <a href="#platform" className="hover:text-[#1C412C] transition-colors">
               Trading
             </a>
             <a href="#about" className="hover:text-[#1C412C] transition-colors">About Us</a>
