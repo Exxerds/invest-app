@@ -773,6 +773,7 @@ export default function App() {
             onOpenDepositModal={() => setIsDepositModalOpen(true)}
             onOpenWithdrawModal={() => setIsWithdrawModalOpen(true)}
             onClaimDividends={handleClaimDividends}
+            onLogout={handleLogout}
           />
         )}
 
@@ -826,6 +827,7 @@ export default function App() {
                 showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not open the account', 'info');
               }
             }}
+            onLogout={handleLogout}
             onApproveRequest={handleApproveRequest}
             onRejectRequest={handleRejectRequest}
             projects={projects}

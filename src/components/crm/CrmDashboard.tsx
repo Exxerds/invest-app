@@ -10,7 +10,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Investor, Lead, TransactionRequest, LeadStage, CrmSettings, ClientNote } from '../../types';
 import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
 import type { ApiKycDoc, ApiNotification } from '../../api';
-import { fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets } from '../../api';
+import { fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets } from '../../api';
 import type { ApiUser } from '../../api';
 import {
   LayoutDashboard,
@@ -88,6 +88,8 @@ interface CrmDashboardProps {
   onApproveKyc: (investorId: string) => void;
   requests: TransactionRequest[];
   onApproveRequest: (requestId: string) => void;
+  /** Clears the session and returns to the public site */
+  onLogout: () => void;
   /** Admin: sign in as a client to see their cabinet */
   onImpersonateUser?: (user: ApiUser) => void;
   onRejectRequest: (requestId: string) => void;
@@ -191,6 +193,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onApproveKyc,
   requests,
   onApproveRequest,
+  onLogout,
   onImpersonateUser,
   onRejectRequest,
   onOpenNewProjectModal,
@@ -494,7 +497,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           })}
 
           <button
-            onClick={() => window.location.reload()}
+            onClick={onLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] text-slate-500 hover:text-rose-400 hover:bg-white/[.05] transition-colors cursor-pointer mt-2"
           >
             <LogOut className="w-4 h-4" /> Log out
@@ -634,7 +637,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     </button>
                   ))}
                   <button
-                    onClick={() => window.location.reload()}
+                    onClick={() => { setProfileOpen(false); onLogout(); }}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-[12.5px] text-rose-400 hover:bg-rose-500/10 cursor-pointer border-t border-white/[.06] mt-1"
                   >
                     <LogOut className="w-4 h-4" /> Log out
@@ -1566,6 +1569,21 @@ const UserDetails: React.FC<{
   const last = rest.join(' ') || '—';
 
   const shortName = user.name.replace(' (You)', '');
+
+  // Per-client deposit addresses (admin only)
+  const [clientWallets, setClientWallets] = useState<Record<string, string>>({ BTC: '', ETH: '', USDC: '' });
+  const [clientWalletDefaults, setClientWalletDefaults] = useState<Record<string, string>>({});
+  const [savingClientWallets, setSavingClientWallets] = useState(false);
+
+  useEffect(() => {
+    if (!account || !isAdmin) return;
+    apiClientWallets(account.id)
+      .then(r => {
+        setClientWallets(r.wallets);
+        setClientWalletDefaults(r.defaults);
+      })
+      .catch(() => undefined);
+  }, [account, isAdmin]);
   const moreItems = [
     {
       icon: FileText,
@@ -1715,6 +1733,47 @@ const UserDetails: React.FC<{
           </div>
         </div>
       </Card>
+
+      {/* Per-client deposit addresses */}
+      {account && isAdmin && (
+        <Card
+          title="Deposit wallet addresses"
+          subtitle={`Shown to ${shortName} when depositing — leave blank to use the shared address`}
+        >
+          <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(['BTC', 'ETH', 'USDC'] as const).map(t => (
+              <div key={t}>
+                <label className="text-[11px] font-bold uppercase text-slate-500">{t}</label>
+                <Input
+                  className="w-full mt-1.5 font-mono text-[11px]"
+                  placeholder={clientWalletDefaults[t] ? `Default: ${clientWalletDefaults[t]}` : `${t} address`}
+                  value={clientWallets[t] ?? ''}
+                  onChange={e => setClientWallets(w => ({ ...w, [t]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="px-5 pb-5">
+            <Btn
+              variant="gold"
+              disabled={savingClientWallets}
+              onClick={async () => {
+                setSavingClientWallets(true);
+                try {
+                  await apiSaveClientWallets(account.id, clientWallets);
+                  onNotify(`Deposit addresses saved for ${shortName}.`);
+                } catch (err) {
+                  onNotify(err instanceof Error ? err.message : 'Could not save the addresses');
+                } finally {
+                  setSavingClientWallets(false);
+                }
+              }}
+            >
+              {savingClientWallets ? 'Saving...' : 'Save addresses'}
+            </Btn>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Main information */}

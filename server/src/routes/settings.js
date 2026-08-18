@@ -37,36 +37,71 @@ function adminOnly(req, res, next) {
   next();
 }
 
-async function readWallets() {
+const empty = () => CRYPTO_TYPES.reduce((acc, t) => ({ ...acc, [t]: '' }), {});
+const normalise = (raw = {}) =>
+  CRYPTO_TYPES.reduce((acc, t) => ({ ...acc, [t]: String(raw[t] ?? '').trim().slice(0, 200) }), {});
+
+/** Fallback addresses used when a client has no personal ones. */
+async function readDefaults() {
   const rec = await store.byField('settings', 'key', 'depositWallets');
-  const saved = rec?.value || {};
-  // Always return every supported network so the UI can render the full list
-  return CRYPTO_TYPES.reduce((acc, t) => ({ ...acc, [t]: saved[t] || '' }), {});
+  return { ...empty(), ...normalise(rec?.value) };
 }
 
-router.get('/deposit-wallets', auth, async (req, res) => {
-  res.json({ wallets: await readWallets(), types: CRYPTO_TYPES });
-});
+/** Per-client addresses, keyed by user id. */
+async function readForUser(userId) {
+  const rec = await store.byField('settings', 'key', `depositWallets:${userId}`);
+  return { ...empty(), ...normalise(rec?.value) };
+}
 
-router.put('/deposit-wallets', auth, adminOnly, async (req, res) => {
-  const incoming = req.body?.wallets || {};
-  const value = CRYPTO_TYPES.reduce(
-    (acc, t) => ({ ...acc, [t]: String(incoming[t] ?? '').trim().slice(0, 200) }),
+async function writeSetting(key, value, adminName) {
+  const rec = await store.byField('settings', 'key', key);
+  const payload = { value, updatedBy: adminName, updatedAt: new Date().toISOString() };
+  if (rec) await store.update('settings', rec.id, payload);
+  else await store.insert('settings', { key, ...payload });
+}
+
+/**
+ * What the signed-in client should pay into.
+ * Personal address wins; otherwise the shared default is used, so a new
+ * client is never left without payment details.
+ */
+router.get('/deposit-wallets', auth, async (req, res) => {
+  const defaults = await readDefaults();
+  const personal = await readForUser(req.user.id);
+  const wallets = CRYPTO_TYPES.reduce(
+    (acc, t) => ({ ...acc, [t]: personal[t] || defaults[t] || '' }),
     {},
   );
+  res.json({ wallets, types: CRYPTO_TYPES });
+});
 
-  const rec = await store.byField('settings', 'key', 'depositWallets');
-  if (rec) {
-    await store.update('settings', rec.id, { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() });
-  } else {
-    await store.insert('settings', {
-      key: 'depositWallets',
-      value,
-      updatedBy: req.user.name,
-      updatedAt: new Date().toISOString(),
-    });
-  }
+/** Admin: shared fallback addresses. */
+router.put('/deposit-wallets', auth, adminOnly, async (req, res) => {
+  const value = normalise(req.body?.wallets);
+  await writeSetting('depositWallets', value, req.user.name);
+  res.json({ ok: true, wallets: value });
+});
 
+/** Admin: read one client's own addresses (empty string = falls back). */
+router.get('/deposit-wallets/:userId', auth, adminOnly, async (req, res) => {
+  const userId = Number(req.params.userId);
+  const user = await store.byId('users', userId);
+  if (!user) return res.status(404).json({ error: 'Client not found' });
+  res.json({
+    wallets: await readForUser(userId),
+    defaults: await readDefaults(),
+    types: CRYPTO_TYPES,
+  });
+});
+
+/** Admin: set one client's own addresses. */
+router.put('/deposit-wallets/:userId', auth, adminOnly, async (req, res) => {
+  const userId = Number(req.params.userId);
+  const user = await store.byId('users', userId);
+  if (!user) return res.status(404).json({ error: 'Client not found' });
+
+  const value = normalise(req.body?.wallets);
+  await writeSetting(`depositWallets:${userId}`, value, req.user.name);
   res.json({ ok: true, wallets: value });
 });
 

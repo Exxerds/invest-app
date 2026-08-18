@@ -103,49 +103,101 @@ router.get('/search', async (req, res) => {
 
 /* ============================================================
    LIVE QUOTES
-   Binance public API — no key required, generous rate limits.
-   Used to stamp the entry price when a position opens and to keep
-   the open-positions table (and its P/L) moving in real time.
+
+   Several providers are tried in order. Binance is intentionally
+   NOT used: it refuses requests from US IP ranges, which is where
+   Vercel runs, so it always answered with an eligibility error and
+   the entry price came back empty.
+
+   Order: Coinbase -> Kraken -> CoinGecko. Crypto only; other asset
+   classes return null and the UI keeps its last known value.
    ============================================================ */
 
 const quoteCache = new Map();
 const QUOTE_TTL = 4000; // ms — matches the UI refresh interval
 
-/** BTCUSD, BTC/USDT, BINANCE:BTCUSDT ... -> BTCUSDT */
-function toBinanceSymbol(raw) {
+/** BINANCE:BTCUSDT, BTC/USD, BTCUSD ... -> BTC */
+function baseAsset(raw) {
   let s = String(raw || '').toUpperCase().trim();
   if (s.includes(':')) s = s.split(':').pop();
   s = s.replace(/[^A-Z0-9]/g, '');
-  if (s.endsWith('USDT')) return s;
-  if (s.endsWith('USD')) return s.slice(0, -3) + 'USDT';
-  return s + 'USDT';
+  for (const quote of ['USDT', 'USDC', 'USD']) {
+    if (s.endsWith(quote) && s.length > quote.length) return s.slice(0, -quote.length);
+  }
+  return s;
+}
+
+const COINGECKO_IDS = {
+  BTC: 'bitcoin', XBT: 'bitcoin', ETH: 'ethereum', SOL: 'solana', BNB: 'binancecoin',
+  XRP: 'ripple', LINK: 'chainlink', ADA: 'cardano', DOGE: 'dogecoin', AVAX: 'avalanche-2',
+  MATIC: 'matic-network', DOT: 'polkadot', LTC: 'litecoin', TRX: 'tron', NEAR: 'near',
+};
+
+async function getJson(url, ms = 6000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchPrice(asset) {
+  // 1. Coinbase — reliable and unrestricted
+  const cb = await getJson(`https://api.coinbase.com/v2/prices/${asset}-USD/spot`);
+  const cbPrice = Number(cb?.data?.amount);
+  if (Number.isFinite(cbPrice) && cbPrice > 0) return cbPrice;
+
+  // 2. Kraken — uses XBT for bitcoin
+  const kr = await getJson(
+    `https://api.kraken.com/0/public/Ticker?pair=${asset === 'BTC' ? 'XBT' : asset}USD`,
+  );
+  const krPair = kr?.result && Object.values(kr.result)[0];
+  const krPrice = Number(krPair?.c?.[0]);
+  if (Number.isFinite(krPrice) && krPrice > 0) return krPrice;
+
+  // 3. CoinGecko — last resort, needs a slug rather than a ticker
+  const id = COINGECKO_IDS[asset];
+  if (id) {
+    const cg = await getJson(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
+    const cgPrice = Number(cg?.[id]?.usd);
+    if (Number.isFinite(cgPrice) && cgPrice > 0) return cgPrice;
+  }
+
+  return null;
+}
+
+/** Shared helper so other routes can stamp a price without an HTTP hop. */
+export async function livePrice(symbol) {
+  const asset = baseAsset(symbol);
+  const hit = quoteCache.get(asset);
+  if (hit && Date.now() - hit.at < QUOTE_TTL) return hit.price;
+  const price = await fetchPrice(asset);
+  if (price !== null) quoteCache.set(asset, { price, at: Date.now() });
+  return price;
 }
 
 router.get('/quote', async (req, res) => {
   const raw = String(req.query.symbol || '');
   if (!raw) return res.status(400).json({ error: 'symbol is required' });
 
-  const sym = toBinanceSymbol(raw);
-  const hit = quoteCache.get(sym);
+  const asset = baseAsset(raw);
+  const hit = quoteCache.get(asset);
   if (hit && Date.now() - hit.at < QUOTE_TTL) {
     return res.json({ symbol: raw, price: hit.price, cached: true });
   }
 
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 6000);
-    const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`, {
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
-    if (!r.ok) return res.json({ symbol: raw, price: null });
-
-    const data = await r.json();
-    const price = Number(data?.price);
-    if (!Number.isFinite(price)) return res.json({ symbol: raw, price: null });
+    const price = await fetchPrice(asset);
+    if (price === null) return res.json({ symbol: raw, price: null });
 
     if (quoteCache.size > 200) quoteCache.clear();
-    quoteCache.set(sym, { price, at: Date.now() });
+    quoteCache.set(asset, { price, at: Date.now() });
     res.json({ symbol: raw, price });
   } catch {
     // Never fail the page over a quote — the UI keeps the last known value

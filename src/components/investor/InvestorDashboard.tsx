@@ -48,6 +48,8 @@ interface InvestorDashboardProps {
   onOpenDepositModal: () => void;
   onOpenWithdrawModal: () => void;
   onClaimDividends: (id: string, profit: number) => void;
+  /** Clears the session and returns to the public site */
+  onLogout?: () => void;
 }
 
 type Tab = 'dashboard' | 'trading' | 'withdrawals' | 'transactions' | 'support' | 'call' | 'profile' | 'statistics';
@@ -70,6 +72,17 @@ const NAV: { id: Tab; label: string; icon: React.ElementType }[] = [
  * somebody else's holdings.
  */
 type Wallet = { sym: string; name: string; qty: number; price: number; avg: number; pnl: number; pct: number };
+
+/**
+ * Unrealised P/L for an open position, recomputed from the live quote.
+ * A 1% move on a 10x position changes the result by 10% of the stake.
+ */
+function livePnlOf(t: ApiTrade, live: number): number {
+  const entry = Number(t.entryPrice) || 0;
+  if (!(live > 0) || !(entry > 0)) return Number(t.pnl) || 0;
+  const dir = t.side === 'SHORT' ? -1 : 1;
+  return ((live - entry) / entry) * dir * Number(t.amount || 0) * Number(t.leverage || 1);
+}
 const WALLETS: Wallet[] = [];
 
 export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
@@ -82,6 +95,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   onOpenDepositModal,
   onOpenWithdrawModal,
   onClaimDividends,
+  onLogout,
 }) => {
   /* Display name derived from the signed-in account (no demo persona) */
   const fullName = (user?.name || '').trim();
@@ -226,7 +240,9 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     .filter(t => t.status === 'OPEN')
     .reduce((sum, t) => sum + (t.leverage > 0 ? t.amount / t.leverage : t.amount), 0);
 
-  const openPnl = myTrades.filter(t => t.status === 'OPEN').reduce((sum, t) => sum + t.pnl, 0);
+  const openPnl = myTrades
+    .filter(t => t.status === 'OPEN')
+    .reduce((sum, t) => sum + livePnlOf(t, livePrices[t.symbol] || 0), 0);
   const equity = investorBalance + openPnl;
   const freeMargin = Math.round(equity - usedMargin - amount);
   const marginLevel = usedMargin + amount > 0 ? (equity / (usedMargin + amount)) * 100 : 0;
@@ -293,7 +309,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             );
           })}
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => onLogout?.()}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] text-slate-500 hover:text-rose-400 hover:bg-white/[.05] cursor-pointer mt-2"
           >
             <LogOut className="w-4 h-4" /> Log out
@@ -758,15 +774,10 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       {myTrades
                         .filter(t => t.status === 'OPEN')
                         .map(t => {
-                          // Recompute P/L from the live quote instead of the
-                          // stored snapshot, so the number ticks on its own.
+                          // Recompute from the live quote so the number ticks
                           const live = livePrices[t.symbol] || 0;
                           const entry = Number(t.entryPrice) || 0;
-                          const dir = t.side === 'SHORT' ? -1 : 1;
-                          const livePnl =
-                            live > 0 && entry > 0
-                              ? ((live - entry) / entry) * dir * Number(t.amount || 0) * Number(t.leverage || 1)
-                              : Number(t.pnl) || 0;
+                          const livePnl = livePnlOf(t, live);
                           const fmt = (v: number) =>
                             v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toPrecision(6);
                           return (

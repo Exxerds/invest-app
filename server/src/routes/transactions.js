@@ -85,8 +85,11 @@ router.post('/deposit', auth, async (req, res) => {
   // desk can match the incoming transfer later.
   let walletAddress = '';
   if (cryptoType) {
-    const rec = await store.byField('settings', 'key', 'depositWallets');
-    walletAddress = String(rec?.value?.[cryptoType] || '');
+    // Personal address first, shared default second — must match what the
+    // client was actually shown in the deposit dialog.
+    const personal = await store.byField('settings', 'key', `depositWallets:${req.user.id}`);
+    const shared = await store.byField('settings', 'key', 'depositWallets');
+    walletAddress = String(personal?.value?.[cryptoType] || shared?.value?.[cryptoType] || '');
   }
 
   const tx = await store.insert('transactions', {

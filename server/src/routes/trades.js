@@ -12,6 +12,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
+import { livePrice } from './symbols.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -70,6 +71,14 @@ router.post('/', auth, async (req, res) => {
   const amount = num(b.amount);
   if (amount <= 0) return res.status(400).json({ error: 'Amount must be greater than zero' });
 
+  // The browser sends the price it can see, but if the quote had not loaded
+  // yet it arrives as 0 and the position would show an empty entry forever.
+  // Stamping it here guarantees every position has a real entry price.
+  let entryPrice = num(b.entryPrice);
+  if (entryPrice <= 0) {
+    entryPrice = num(await livePrice(b.symbol));
+  }
+
   const trade = await store.insert('trades', {
     userId: owner.id,
     userName: owner.name,
@@ -79,8 +88,8 @@ router.post('/', auth, async (req, res) => {
     name: String(b.name || '').slice(0, 120),
     side: ['LONG', 'SHORT', 'SPOT'].includes(b.side) ? b.side : 'LONG',
     amount,
-    entryPrice: num(b.entryPrice),
-    currentPrice: num(b.currentPrice, num(b.entryPrice)),
+    entryPrice,
+    currentPrice: num(b.currentPrice, entryPrice),
     leverage: Math.max(1, num(b.leverage, 1)),
     stopLoss: b.stopLoss ? num(b.stopLoss) : null,
     takeProfit: b.takeProfit ? num(b.takeProfit) : null,

@@ -398,6 +398,20 @@ export const apiDepositWallets = () =>
     headers: authHeader(),
   });
 
+/** Admin: one client's personal addresses (blank = use the shared default). */
+export const apiClientWallets = (userId: number) =>
+  request<{ wallets: Record<CryptoType, string>; defaults: Record<CryptoType, string>; types: CryptoType[] }>(
+    `/settings/deposit-wallets/${userId}`,
+    { headers: authHeader() },
+  );
+
+export const apiSaveClientWallets = (userId: number, wallets: Record<string, string>) =>
+  request<{ ok: true; wallets: Record<CryptoType, string> }>(`/settings/deposit-wallets/${userId}`, {
+    method: 'PUT',
+    headers: authHeader(),
+    body: JSON.stringify({ wallets }),
+  });
+
 export const apiSaveDepositWallets = (wallets: Record<string, string>) =>
   request<{ ok: true; wallets: Record<CryptoType, string> }>('/settings/deposit-wallets', {
     method: 'PUT',
