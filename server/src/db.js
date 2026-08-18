@@ -59,7 +59,7 @@ async function getPool() {
  * so both backends behave the same and no migration is needed when the
  * shape of a record changes.
  */
-const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactions'];
+const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactions', 'leads', 'settings'];
 
 async function ensureSchema() {
   if (g.__ohySchema) return g.__ohySchema;
@@ -157,7 +157,7 @@ const pgStore = {
 /* ============================================================
    JSON-FILE BACKEND (local development)
    ============================================================ */
-let data = { users: [], tokens: [], kyc: [], notifications: [], trades: [], transactions: [], _seq: 1 };
+let data = { users: [], tokens: [], kyc: [], notifications: [], trades: [], transactions: [], leads: [], settings: [], _seq: 1 };
 
 function loadFile() {
   try {

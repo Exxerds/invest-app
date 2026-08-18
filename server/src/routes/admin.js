@@ -92,4 +92,33 @@ router.patch('/users/:id', auth('ADMIN'), async (req, res) => {
   res.json({ ok: true, message: 'User updated' });
 });
 
+/* ------------------------------------------------------------
+   IMPERSONATION — "Login as user"
+   Issues a short-lived token for the client so support can see
+   exactly what the client sees. Admin only, and the token carries
+   an `impersonatedBy` claim so the action is traceable.
+   ------------------------------------------------------------ */
+router.post('/users/:id/impersonate', auth('ADMIN'), async (req, res) => {
+  const id = Number(req.params.id);
+  const target = await store.byId('users', id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.role !== 'CLIENT') {
+    return res.status(400).json({ error: 'Only client accounts can be viewed this way' });
+  }
+
+  const token = jwt.sign(
+    { userId: target.id, role: target.role, impersonatedBy: req.user.email },
+    JWT_SECRET,
+    { expiresIn: '1h' },
+  );
+
+  console.log(`[admin] ${req.user.email} signed in as ${target.email}`);
+
+  res.json({
+    ok: true,
+    token,
+    user: { id: target.id, name: target.name, email: target.email, role: target.role, status: target.status },
+  });
+});
+
 export default router;

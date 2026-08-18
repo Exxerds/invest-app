@@ -10,7 +10,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Investor, Lead, TransactionRequest, LeadStage, CrmSettings, ClientNote } from '../../types';
 import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
 import type { ApiKycDoc, ApiNotification } from '../../api';
-import { fetchKycFile } from '../../api';
+import { fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets } from '../../api';
 import type { ApiUser } from '../../api';
 import {
   LayoutDashboard,
@@ -88,6 +88,8 @@ interface CrmDashboardProps {
   onApproveKyc: (investorId: string) => void;
   requests: TransactionRequest[];
   onApproveRequest: (requestId: string) => void;
+  /** Admin: sign in as a client to see their cabinet */
+  onImpersonateUser?: (user: ApiUser) => void;
   onRejectRequest: (requestId: string) => void;
   projects: Project[];
   onOpenNewProjectModal: () => void;
@@ -137,9 +139,14 @@ type NavItem = {
 /** Sections that only an administrator may open (platform-wide configuration) */
 const ADMIN_ONLY_TABS: CrmTab[] = ['settings', 'banks'];
 
-const PLATFORM_NAV: NavItem[] = [
+/**
+ * A single flat menu. The Platform / CRM split was removed at the client's
+ * request: staff kept hunting for a section instead of a screen.
+ */
+const MAIN_NAV: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'trading', label: 'Trading', icon: TrendingUp },
+  { id: 'leads', label: 'Leads', icon: Kanban },
   {
     id: 'users',
     label: 'Users',
@@ -151,19 +158,11 @@ const PLATFORM_NAV: NavItem[] = [
     ],
   },
   { id: 'withdrawals', label: 'Withdrawals', icon: ArrowDownToLine },
-  { id: 'banks', label: 'Partner banks', icon: Landmark, adminOnly: true },
   { id: 'deposits', label: 'Deposits', icon: DollarSign },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'support', label: 'Support', icon: LifeBuoy },
   { id: 'calls', label: 'Calls', icon: PhoneCall },
-  { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
-];
-
-const CRM_NAV: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'leads', label: 'Leads', icon: Kanban },
-  { id: 'users', label: 'Client base', icon: Users },
-  { id: 'calls', label: 'Calls', icon: PhoneCall },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'banks', label: 'Partner banks', icon: Landmark, adminOnly: true },
   { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
 ];
 
@@ -192,6 +191,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onApproveKyc,
   requests,
   onApproveRequest,
+  onImpersonateUser,
   onRejectRequest,
   onOpenNewProjectModal,
   trades,
@@ -218,7 +218,6 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   unreadCount,
   onMarkNotificationsRead,
 }) => {
-  const [section, setSection] = useState<'platform' | 'crm'>('platform');
   const [activeTab, setActiveTab] = useState<CrmTab>('dashboard');
   const [openGroup, setOpenGroup] = useState<string | null>('Users');
   const [searchInvestor, setSearchInvestor] = useState('');
@@ -271,6 +270,26 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
     'Dear client,\n\nYour account statement for the current period is now available in your personal cabinet.\n\nBest regards,\nOak Haven Yield',
   );
   const [letterAudience, setLetterAudience] = useState('All clients');
+  const [sendingLetter, setSendingLetter] = useState(false);
+  const [walletDraft, setWalletDraft] = useState<Record<string, string>>({ BTC: '', ETH: '', USDC: '' });
+  const [savingWallets, setSavingWallets] = useState(false);
+
+  // Load the configured deposit addresses when Settings opens
+  useEffect(() => {
+    if (activeTab !== 'settings') return;
+    apiDepositWallets()
+      .then(r => setWalletDraft(r.wallets))
+      .catch(() => undefined);
+  }, [activeTab]);
+  const [mailAudience, setMailAudience] = useState({ all: 0, active: 0, noDeposit: 0 });
+
+  // Live recipient counts straight from the database
+  useEffect(() => {
+    if (activeTab !== 'happy-letter') return;
+    apiMailAudience()
+      .then(setMailAudience)
+      .catch(() => setMailAudience({ all: 0, active: 0, noDeposit: 0 }));
+  }, [activeTab]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -288,7 +307,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const roleLabel = isAdmin ? 'ADMIN' : currentUserRole || 'MANAGER';
 
   // Managers/agents must not see platform configuration sections
-  const nav = (section === 'platform' ? PLATFORM_NAV : CRM_NAV).filter(item => !item.adminOnly || isAdmin);
+  const nav = MAIN_NAV.filter(item => !item.adminOnly || isAdmin);
 
   // Hard guard: a non-admin can never stay on an admin-only screen
   useEffect(() => {
@@ -411,27 +430,6 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           </div>
         </div>
 
-        {/* Platform / CRM switcher */}
-        <div className="px-3 pb-3 grid grid-cols-2 gap-2">
-          {(['platform', 'crm'] as const).map(s => (
-            <button
-              key={s}
-              onClick={() => {
-                setSection(s);
-                setActiveTab('dashboard');
-              }}
-              className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer border ${
-                section === s
-                  ? 'bg-[#f5b400]/15 text-[#f5b400] border-[#f5b400]/40'
-                  : 'bg-white/[.03] text-slate-500 border-white/[.06] hover:text-slate-300'
-              }`}
-            >
-              {s === 'platform' ? <LayoutDashboard className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
-              {s === 'platform' ? 'Platform' : 'CRM'}
-            </button>
-          ))}
-        </div>
-
         {/* Menu */}
         <nav className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
           {nav.map(item => {
@@ -513,7 +511,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               onClick={() => setActiveTab('dashboard')}
               className="hover:text-slate-300 cursor-pointer"
             >
-              {section === 'platform' ? 'Platform' : 'CRM'}
+              Home
             </button>
             <ChevronRight className="w-3 h-3" />
             <span className="px-2 py-1 rounded-lg bg-white/[.05] text-slate-300">{header.title}</span>
@@ -936,6 +934,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               onReviewKyc={onReviewKyc}
               account={users.find(u => u.email.toLowerCase() === selectedUser.email.toLowerCase())}
               onChangePassword={openPwdModal}
+              onImpersonate={onImpersonateUser}
               onUpdateUserStatus={onUpdateUserStatus}
               isAdmin={isAdmin}
             />
@@ -975,15 +974,24 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {activeTab === 'happy-letter' && (
             <Card title="Happy letter" subtitle="Mass e-mail to the selected base">
               <form
-                onSubmit={e => {
+                onSubmit={async e => {
                   e.preventDefault();
-                  const count =
-                    letterAudience === 'Active only'
-                      ? investors.filter(i => i.kycStatus === 'verified').length
-                      : letterAudience === 'No deposit'
-                      ? investors.filter(i => i.invested === 0).length
-                      : investors.length;
-                  onNotify(`Letter "${letterSubject}" queued for ${count} recipient(s)`);
+                  if (sendingLetter) return;
+                  setSendingLetter(true);
+                  try {
+                    const audience =
+                      letterAudience === 'Active only'
+                        ? 'active'
+                        : letterAudience === 'No deposit'
+                        ? 'noDeposit'
+                        : 'all';
+                    const r = await apiSendMailing(letterSubject, letterBody, audience);
+                    onNotify(r.message);
+                  } catch (err) {
+                    onNotify(err instanceof Error ? err.message : 'Could not send the letter');
+                  } finally {
+                    setSendingLetter(false);
+                  }
                 }}
                 className="p-5 space-y-4 max-w-2xl"
               >
@@ -996,10 +1004,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   </Select>
                   <div className="text-[11px] text-slate-600 mt-1">
                     {letterAudience === 'Active only'
-                      ? investors.filter(i => i.kycStatus === 'verified').length
+                      ? mailAudience.active
                       : letterAudience === 'No deposit'
-                      ? investors.filter(i => i.invested === 0).length
-                      : investors.length}{' '}
+                      ? mailAudience.noDeposit
+                      : mailAudience.all}{' '}
                     recipient(s) selected
                   </div>
                 </div>
@@ -1016,9 +1024,17 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     className="w-full mt-1.5 px-3.5 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-[13px] text-slate-100 focus:outline-none focus:border-[#f5b400]/50 resize-none"
                   />
                 </div>
-                <Btn variant="gold" icon={Mail} type="submit" disabled={!letterSubject.trim()}>
-                  Send letter
+                <Btn
+                  variant="gold"
+                  icon={Mail}
+                  type="submit"
+                  disabled={!letterSubject.trim() || !letterBody.trim() || sendingLetter}
+                >
+                  {sendingLetter ? 'Sending...' : 'Send letter'}
                 </Btn>
+                <p className="text-[11px] text-slate-600">
+                  Letters go out through the platform mail server to real client inboxes.
+                </p>
               </form>
             </Card>
           )}
@@ -1245,6 +1261,49 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {/* ===================== SETTINGS ===================== */}
           {activeTab === 'settings' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card
+                title="Deposit wallet addresses"
+                subtitle="Shown to clients when they choose a crypto deposit"
+                className="lg:col-span-2"
+              >
+                <div className="p-5 space-y-3 max-w-2xl">
+                  <p className="text-[12px] text-slate-500">
+                    Clients see the address for the network they pick. Leave a field empty to hide
+                    that option — they will be asked to contact their advisor instead.
+                  </p>
+                  {(['BTC', 'ETH', 'USDC'] as const).map(t => (
+                    <div key={t}>
+                      <label className="text-[11px] font-bold uppercase text-slate-500">
+                        {t} address
+                      </label>
+                      <Input
+                        className="w-full mt-1.5 font-mono text-[12px]"
+                        placeholder={`Your ${t} receiving address`}
+                        value={walletDraft[t] ?? ''}
+                        onChange={e => setWalletDraft(w => ({ ...w, [t]: e.target.value }))}
+                      />
+                    </div>
+                  ))}
+                  <Btn
+                    variant="gold"
+                    disabled={savingWallets}
+                    onClick={async () => {
+                      setSavingWallets(true);
+                      try {
+                        await apiSaveDepositWallets(walletDraft);
+                        onNotify('Deposit addresses saved — clients see them immediately.');
+                      } catch (err) {
+                        onNotify(err instanceof Error ? err.message : 'Could not save the addresses');
+                      } finally {
+                        setSavingWallets(false);
+                      }
+                    }}
+                  >
+                    {savingWallets ? 'Saving...' : 'Save addresses'}
+                  </Btn>
+                </div>
+              </Card>
+
               <Card title="Privacy & access" subtitle="Personal rules for agents">
                 <div className="p-5 space-y-3">
                   <div className="flex items-center justify-between bg-[#1b1e26] border border-white/[.06] rounded-xl p-4">
@@ -1419,6 +1478,8 @@ const UserDetails: React.FC<{
   /** Real platform account behind this client card (matched by e-mail) */
   account?: ApiUser;
   onChangePassword: (user: ApiUser) => void;
+  /** Admin: open the client's cabinet in a support session */
+  onImpersonate?: (user: ApiUser) => void;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
   isAdmin: boolean;
 }> = ({
@@ -1440,6 +1501,7 @@ const UserDetails: React.FC<{
   onReviewKyc,
   account,
   onChangePassword,
+  onImpersonate,
   onUpdateUserStatus,
   isAdmin,
 }) => {
@@ -1601,13 +1663,11 @@ const UserDetails: React.FC<{
           <Btn
             variant="ghost"
             icon={LogIn}
-            onClick={() =>
-              onNotify(
-                account
-                  ? `Secure sign-in as ${shortName} requires supervisor approval.`
-                  : 'This client does not have a platform account.',
-              )
-            }
+            onClick={() => {
+              if (!account) return onNotify('This client does not have a platform account.');
+              if (!isAdmin) return onNotify('Only an administrator can sign in as a client.');
+              onImpersonate?.(account);
+            }}
           >
             Login as user
           </Btn>

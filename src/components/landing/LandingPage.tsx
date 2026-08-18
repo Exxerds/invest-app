@@ -444,7 +444,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
                   <TrendingUp className="w-4 h-4 text-[#17190f]" />
                 </div>
                 <span className="font-bold text-[#1C412C] text-[14px]">BTC/USDT</span>
-                <span className="text-emerald-400 text-[13px] font-mono">64,337.56</span>
+                <span className="text-emerald-700 text-[13px] font-mono">64,337.56</span>
               </div>
               <div className="flex gap-1">
                 {['1H', '1D', '1W', '1M'].map((p, i) => (
@@ -461,7 +461,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
             </div>
 
             {/* candles */}
-            <div className="bg-[#0e0f13] rounded-xl border border-[#1C412C]/10 p-3">
+            <div className="bg-[#F5F2E9] rounded-xl border border-[#1C412C]/12 p-3">
               <svg viewBox="0 0 320 120" className="w-full h-32">
                 {Array.from({ length: 26 }).map((_, i) => {
                   const up = Math.sin(i * 1.7) > 0;
@@ -480,8 +480,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
 
             {/* order book + ticket */}
             <div className="grid grid-cols-2 gap-3 mt-3">
-              <div className="bg-[#0e0f13] rounded-xl border border-[#1C412C]/10 p-3">
-                <div className="text-[10px] font-bold text-[#213532]/60 uppercase mb-2">Order book</div>
+              <div className="bg-[#F5F2E9] rounded-xl border border-[#1C412C]/12 p-3">
+                <div className="text-[10px] font-bold text-[#213532]/75 uppercase mb-2">Order book</div>
                 {[
                   [64339.69, 0.0001, 'r'],
                   [64339.24, 0.0544, 'r'],
@@ -491,13 +491,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
                   [64337.54, 0.0685, 'g'],
                 ].map(([p, v, c], i) => (
                   <div key={i} className="flex justify-between text-[10px] font-mono py-0.5">
-                    <span className={c === 'r' ? 'text-rose-400' : 'text-emerald-400'}>{(p as number).toLocaleString('en-US')}</span>
-                    <span className="text-[#213532]/60">{v as number}</span>
+                    <span className={c === 'r' ? 'text-rose-600' : 'text-emerald-700'}>{(p as number).toLocaleString('en-US')}</span>
+                    <span className="text-[#213532]/75">{v as number}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="bg-[#0e0f13] rounded-xl border border-[#1C412C]/10 p-3">
+              <div className="bg-[#F5F2E9] rounded-xl border border-[#1C412C]/12 p-3">
                 <div className="grid grid-cols-2 gap-1.5 mb-2.5">
                   <button
                     onClick={() => setSide('buy')}
@@ -601,19 +601,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
             <div className="text-[13px] font-bold text-[#1C412C] mb-3">Trading statistics</div>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { l: 'Total PnL', v: '$907.43', c: 'text-emerald-400' },
+                { l: 'Total PnL', v: '$907.43', c: 'text-emerald-700' },
                 { l: 'Volume', v: '$136,984.68', c: 'text-[#1C412C]' },
                 { l: 'Trades', v: '22', c: 'text-[#1C412C]' },
-                { l: 'Win rate', v: '45.5%', c: 'text-[#B08B48]' },
+                { l: 'Win rate', v: '45.5%', c: 'text-[#8a6a2f]' },
               ].map(k => (
-                <div key={k.l} className="bg-[#0e0f13] border border-[#1C412C]/10 rounded-xl p-3.5">
-                  <div className="text-[10px] text-[#213532]/60 uppercase tracking-wide">{k.l}</div>
+                <div key={k.l} className="bg-[#F5F2E9] border border-[#1C412C]/12 rounded-xl p-3.5">
+                  <div className="text-[10px] text-[#213532]/75 uppercase tracking-wide">{k.l}</div>
                   <div className={`text-lg font-extrabold mt-1 ${k.c}`}>{k.v}</div>
                 </div>
               ))}
             </div>
-            <div className="bg-[#0e0f13] border border-[#1C412C]/10 rounded-xl p-3.5 mt-3">
-              <div className="text-[10px] text-[#213532]/60 uppercase mb-2">Profit / loss dynamics</div>
+            <div className="bg-[#F5F2E9] border border-[#1C412C]/12 rounded-xl p-3.5 mt-3">
+              <div className="text-[10px] text-[#213532]/75 uppercase mb-2">Profit / loss dynamics</div>
               <svg viewBox="0 0 300 70" className="w-full h-20">
                 <defs>
                   <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
@@ -879,7 +879,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
             </div>
           </div>
           <div className="bg-white border border-rose-500/25 rounded-2xl p-6">
-            <div className="flex items-center gap-2 text-rose-400 font-bold text-[14px]">
+            <div className="flex items-center gap-2 text-rose-600 font-bold text-[14px]">
               <ShieldCheck className="w-4.5 h-4.5" /> Risk warning
             </div>
             <p className="text-[13px] text-[#213532]/75 mt-3 leading-relaxed">
@@ -973,11 +973,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
             className="bg-white border border-[#1C412C]/12 shadow-sm rounded-2xl p-6 space-y-3.5"
           >
             <div className="grid sm:grid-cols-2 gap-3.5">
-              <input required placeholder="Full name" className="px-4 py-2.5 bg-[#0e0f13] border border-[#1C412C]/15 rounded-xl text-[13px] text-[#1C412C] placeholder:text-[#213532]/45 focus:outline-none focus:border-[#B08B48]/50" />
-              <input required type="email" placeholder="E-mail" className="px-4 py-2.5 bg-[#0e0f13] border border-[#1C412C]/15 rounded-xl text-[13px] text-[#1C412C] placeholder:text-[#213532]/45 focus:outline-none focus:border-[#B08B48]/50" />
+              <input required placeholder="Full name" className="px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
+              <input required type="email" placeholder="E-mail" className="px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
             </div>
-            <input placeholder="Phone number" className="w-full px-4 py-2.5 bg-[#0e0f13] border border-[#1C412C]/15 rounded-xl text-[13px] text-[#1C412C] placeholder:text-[#213532]/45 focus:outline-none focus:border-[#B08B48]/50" />
-            <textarea rows={5} placeholder="Your message" className="w-full px-4 py-2.5 bg-[#0e0f13] border border-[#1C412C]/15 rounded-xl text-[13px] text-[#1C412C] placeholder:text-[#213532]/45 focus:outline-none focus:border-[#B08B48]/50 resize-none" />
+            <input placeholder="Phone number" className="w-full px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
+            <textarea rows={5} placeholder="Your message" className="w-full px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20 resize-none" />
             <button className="w-full py-3 rounded-xl bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] font-bold text-[14px] cursor-pointer transition-colors">
               Send message
             </button>

@@ -30,7 +30,7 @@ import type { ActiveInvestment } from '../../types';
 import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
-import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade } from '../../api';
+import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote } from '../../api';
 import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
@@ -114,26 +114,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
 
 
-  useEffect(() => {
-    const seed: Record<string, number> = {};
-    myInvestments.forEach(inv => {
-      if (inv.entryPrice) seed[inv.projectTitle] = inv.entryPrice;
-    });
-    setLivePrices(seed);
-
-    const timer = setInterval(() => {
-      setLivePrices(prev => {
-        const next: Record<string, number> = {};
-        for (const [k, v] of Object.entries(prev)) {
-          const drift = (Math.random() - 0.48) * v * 0.004;
-          next[k] = Math.max(0.0001, v + drift);
-        }
-        return next;
-      });
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [myInvestments]);
-
   /**
    * Live instrument search.
    * Empty box → the curated list for the selected category.
@@ -177,6 +157,49 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
   /* ---- positions live on the server ---- */
   const [myTrades, setMyTrades] = useState<ApiTrade[]>([]);
+
+  /**
+   * Real quotes for the selected instrument and for every open position,
+   * pulled from the exchange through our own API and refreshed every 4s.
+   * This is what makes the P/L column move on its own.
+   */
+  useEffect(() => {
+    let stopped = false;
+
+    const pull = async () => {
+      const wanted = new Set<string>();
+      wanted.add(symbol.symbol);
+      myTrades.filter(t => t.status === 'OPEN').forEach(t => wanted.add(t.symbol));
+      myInvestments.forEach(inv => wanted.add(inv.projectTitle));
+
+      const results = await Promise.all(
+        [...wanted].map(async sym => {
+          try {
+            const r = await apiQuote(sym);
+            return [sym, r.price] as const;
+          } catch {
+            return [sym, null] as const;
+          }
+        }),
+      );
+      if (stopped) return;
+      setLivePrices(prev => {
+        const next = { ...prev };
+        results.forEach(([sym, price]) => {
+          if (price !== null && Number.isFinite(price)) next[sym] = price;
+        });
+        return next;
+      });
+    };
+
+    pull();
+    const timer = setInterval(pull, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [symbol.symbol, myTrades, myInvestments]);
+
 
   const reloadTrades = useCallback(async () => {
     try {
@@ -671,6 +694,16 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     onClick={async () => {
                       setPlacing(true);
                       try {
+                        // Stamp the live market price so "Entry" is never empty
+                        let entry = livePrices[symbol.symbol] || 0;
+                        if (!entry) {
+                          try {
+                            const q = await apiQuote(symbol.symbol);
+                            entry = q.price || 0;
+                          } catch {
+                            entry = 0;
+                          }
+                        }
                         await apiOpenTrade({
                           symbol: symbol.symbol,
                           tv: symbol.tv,
@@ -678,7 +711,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                           side: side === 'buy' ? 'LONG' : 'SHORT',
                           amount,
                           leverage,
-                          entryPrice: 0,
+                          entryPrice: entry,
+                          openedAt: new Date().toISOString(),
                           pnl: 0,
                         });
                         await reloadTrades();
@@ -708,7 +742,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         <Th>Side</Th>
                         <Th>Leverage</Th>
                         <Th>Entry</Th>
-                        <Th>Mark</Th>
+                        <Th>Opened</Th>
                         <Th>P/L</Th>
                         <Th className="text-right">Action</Th>
                       </tr>
@@ -723,7 +757,19 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       )}
                       {myTrades
                         .filter(t => t.status === 'OPEN')
-                        .map(t => (
+                        .map(t => {
+                          // Recompute P/L from the live quote instead of the
+                          // stored snapshot, so the number ticks on its own.
+                          const live = livePrices[t.symbol] || 0;
+                          const entry = Number(t.entryPrice) || 0;
+                          const dir = t.side === 'SHORT' ? -1 : 1;
+                          const livePnl =
+                            live > 0 && entry > 0
+                              ? ((live - entry) / entry) * dir * Number(t.amount || 0) * Number(t.leverage || 1)
+                              : Number(t.pnl) || 0;
+                          const fmt = (v: number) =>
+                            v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toPrecision(6);
+                          return (
                           <tr key={t.id} className="hover:bg-white/[.02]">
                             <Td className="font-semibold text-white">{t.symbol}</Td>
                             <Td>
@@ -732,10 +778,19 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                               </Badge>
                             </Td>
                             <Td>{t.leverage}x</Td>
-                            <Td className="font-mono text-[12px]">{t.entryPrice || '—'}</Td>
-                            <Td className="font-mono text-[12px]">{t.currentPrice || '—'}</Td>
-                            <Td className={t.pnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                              {t.pnl >= 0 ? '+' : ''}${Math.abs(t.pnl).toLocaleString('en-US')}
+                            <Td className="font-mono text-[12px]">{entry > 0 ? fmt(entry) : '—'}</Td>
+                            <Td className="text-[12px] text-slate-400">
+                              {t.openedAt
+                                ? new Date(t.openedAt).toLocaleString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })
+                                : '—'}
+                            </Td>
+                            <Td className={livePnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                              {livePnl >= 0 ? '+' : '-'}${Math.abs(livePnl).toLocaleString('en-US', { maximumFractionDigits: 2 })}
                             </Td>
                             <Td className="text-right">
                               <Btn
@@ -751,7 +806,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                               </Btn>
                             </Td>
                           </tr>
-                        ))}
+                          );
+                        })}
                     </tbody>
                   </table>
                 </div>

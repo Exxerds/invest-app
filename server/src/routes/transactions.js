@@ -72,12 +72,21 @@ router.get('/mine', auth, async (req, res) => {
 router.post('/deposit', auth, async (req, res) => {
   const amount = money(req.body?.amount);
   const method = String(req.body?.method || 'Bank transfer').slice(0, 80);
+  const cryptoType = String(req.body?.cryptoType || '').slice(0, 10);
 
   if (!Number.isFinite(amount) || amount <= 0) {
     return res.status(400).json({ error: 'Enter a valid amount' });
   }
   if (amount > 10_000_000) {
     return res.status(400).json({ error: 'Amount is too large — please contact your advisor' });
+  }
+
+  // Record which address the client was told to pay into, so the finance
+  // desk can match the incoming transfer later.
+  let walletAddress = '';
+  if (cryptoType) {
+    const rec = await store.byField('settings', 'key', 'depositWallets');
+    walletAddress = String(rec?.value?.[cryptoType] || '');
   }
 
   const tx = await store.insert('transactions', {
@@ -87,6 +96,8 @@ router.post('/deposit', auth, async (req, res) => {
     type: 'deposit',
     amount,
     method,
+    cryptoType: cryptoType || undefined,
+    walletAddress: walletAddress || undefined,
     status: 'pending',
     createdAt: new Date().toISOString(),
   });
@@ -113,6 +124,7 @@ router.post('/withdraw', auth, async (req, res) => {
   const amount = money(req.body?.amount);
   const method = String(req.body?.method || 'Bank transfer').slice(0, 80);
   const destination = String(req.body?.destination || '').slice(0, 200);
+  const cryptoType = String(req.body?.cryptoType || '').slice(0, 10);
 
   if (!Number.isFinite(amount) || amount <= 0) {
     return res.status(400).json({ error: 'Enter a valid amount' });
@@ -137,6 +149,7 @@ router.post('/withdraw', auth, async (req, res) => {
     amount,
     method,
     destination,
+    cryptoType: cryptoType || undefined,
     status: 'pending',
     createdAt: new Date().toISOString(),
   });

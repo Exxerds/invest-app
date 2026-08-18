@@ -284,6 +284,8 @@ export interface ApiTransaction {
   amount: number;
   method: string;
   destination?: string;
+  cryptoType?: string;
+  walletAddress?: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
   reviewedBy?: string;
@@ -300,19 +302,24 @@ export const apiMyTransactions = () =>
   });
 
 /** Client: ask the finance desk to credit a deposit (nothing moves yet) */
-export const apiRequestDeposit = (amount: number, method: string) =>
+export const apiRequestDeposit = (amount: number, method: string, cryptoType?: string) =>
   request<{ ok: true; transaction: ApiTransaction; message: string }>('/transactions/deposit', {
     method: 'POST',
     headers: authHeader(),
-    body: JSON.stringify({ amount, method }),
+    body: JSON.stringify({ amount, method, cryptoType }),
   });
 
 /** Client: ask compliance to release a withdrawal */
-export const apiRequestWithdrawal = (amount: number, method: string, destination?: string) =>
+export const apiRequestWithdrawal = (
+  amount: number,
+  method: string,
+  destination?: string,
+  cryptoType?: string,
+) =>
   request<{ ok: true; transaction: ApiTransaction; message: string }>('/transactions/withdraw', {
     method: 'POST',
     headers: authHeader(),
-    body: JSON.stringify({ amount, method, destination }),
+    body: JSON.stringify({ amount, method, destination, cryptoType }),
   });
 
 /** Staff: the whole review queue */
@@ -340,4 +347,90 @@ export const apiAdjustBalance = (userId: number, amount: number, note?: string) 
     method: 'POST',
     headers: authHeader(),
     body: JSON.stringify({ userId, amount, note }),
+  });
+
+// ---------- leads (CRM funnel, persisted) ----------
+
+export interface ApiLead {
+  id: number;
+  name: string;
+  phone: string;
+  email?: string;
+  potentialAmount: number;
+  stage: string;
+  notes: string;
+  manager: string;
+  comments: { id: string; author: string; text: string; date: string }[];
+  createdAt: string;
+}
+
+export const apiLeads = () =>
+  request<{ leads: ApiLead[] }>('/leads', { headers: authHeader() });
+
+export const apiCreateLead = (data: Partial<ApiLead>) =>
+  request<{ ok: true; lead: ApiLead }>('/leads', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify(data),
+  });
+
+export const apiUpdateLead = (id: number, data: Partial<ApiLead>) =>
+  request<{ ok: true; lead: ApiLead }>(`/leads/${id}`, {
+    method: 'PATCH',
+    headers: authHeader(),
+    body: JSON.stringify(data),
+  });
+
+export const apiAddLeadComment = (id: number, text: string) =>
+  request<{ ok: true; lead: ApiLead }>(`/leads/${id}/comment`, {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({ text }),
+  });
+
+// ---------- deposit wallets ----------
+
+export type CryptoType = 'BTC' | 'ETH' | 'USDC';
+
+/** Any signed-in user may read the addresses; only an admin may change them. */
+export const apiDepositWallets = () =>
+  request<{ wallets: Record<CryptoType, string>; types: CryptoType[] }>('/settings/deposit-wallets', {
+    headers: authHeader(),
+  });
+
+export const apiSaveDepositWallets = (wallets: Record<string, string>) =>
+  request<{ ok: true; wallets: Record<CryptoType, string> }>('/settings/deposit-wallets', {
+    method: 'PUT',
+    headers: authHeader(),
+    body: JSON.stringify({ wallets }),
+  });
+
+/** Live price for one instrument (Binance, proxied through our API). */
+export const apiQuote = (symbol: string) =>
+  request<{ symbol: string; price: number | null }>(
+    `/symbols/quote?symbol=${encodeURIComponent(symbol)}`,
+  );
+
+// ---------- mass mailing ("Happy letter") ----------
+
+export const apiMailAudience = () =>
+  request<{ all: number; active: number; noDeposit: number }>('/mailing/audience', {
+    headers: authHeader(),
+  });
+
+export const apiSendMailing = (subject: string, body: string, audience: string) =>
+  request<{ ok: true; sent: number; failed: number; total: number; message: string }>(
+    '/mailing/send',
+    {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify({ subject, body, audience }),
+    },
+  );
+
+/** Admin: obtain a session for a client account ("Login as user"). */
+export const apiImpersonate = (userId: number) =>
+  request<{ ok: true; token: string; user: ApiUser }>(`/admin/users/${userId}/impersonate`, {
+    method: 'POST',
+    headers: authHeader(),
   });

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Project, AssetCategory, Lead } from '../../types';
-import { X, Wallet, ArrowDownRight, UserPlus, PlusCircle, Clock, Loader2, ShieldCheck } from 'lucide-react';
-import { apiRequestDeposit, apiRequestWithdrawal } from '../../api';
+import { X, Wallet, ArrowDownRight, UserPlus, PlusCircle, Clock, Loader2, ShieldCheck, Copy, Check } from 'lucide-react';
+import { apiRequestDeposit, apiRequestWithdrawal, apiDepositWallets } from '../../api';
+import type { CryptoType } from '../../api';
 
 /* ========================================================
    DEPOSIT MODAL
@@ -24,12 +25,38 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
+  // Crypto payment details — the addresses are managed by an admin
+  const [cryptoType, setCryptoType] = useState<CryptoType>('BTC');
+  const [wallets, setWallets] = useState<Record<string, string>>({});
+  const [copied, setCopied] = useState(false);
+
+  const isCrypto = method.startsWith('Crypto');
+  const address = isCrypto ? wallets[cryptoType] || '' : '';
+
+  useEffect(() => {
+    if (!isOpen) return;
+    apiDepositWallets()
+      .then(r => setWallets(r.wallets))
+      .catch(() => setWallets({}));
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const close = () => {
     setSubmitted(false);
     setError(null);
+    setCopied(false);
     onClose();
+  };
+
+  const copyAddress = async () => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — the address is visible anyway */
+    }
   };
 
   /**
@@ -43,7 +70,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
     setSending(true);
     setError(null);
     try {
-      await apiRequestDeposit(amount, method);
+      await apiRequestDeposit(amount, method, isCrypto ? cryptoType : undefined);
       setSubmitted(true);
       onRequested?.();
     } catch (err) {
@@ -105,10 +132,12 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             </label>
             <input
               type="number"
-              value={amount}
-              onChange={(e) => setAmount(Number(e.target.value))}
-              min={500}
+              // empty string instead of a stubborn leading 0 when cleared
+              value={amount || ''}
+              onChange={(e) => setAmount(e.target.value === '' ? 0 : Number(e.target.value))}
+              min={0}
               step={500}
+              placeholder="0"
               className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
             <div className="flex items-center gap-2 mt-2">
@@ -139,6 +168,61 @@ export const DepositModal: React.FC<DepositModalProps> = ({
               <option value="Visa / Mastercard">Visa / Mastercard</option>
             </select>
           </div>
+
+          {isCrypto && (
+            <>
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
+                  Type of crypto
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['BTC', 'ETH', 'USDC'] as CryptoType[]).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setCryptoType(t)}
+                      className={`px-3 py-2 rounded-xl text-sm font-bold border transition-colors cursor-pointer ${
+                        cryptoType === t
+                          ? 'bg-emerald-600 border-emerald-500 text-white'
+                          : 'bg-[#0f1116] border-white/[.08] text-slate-300 hover:bg-white/[.06]'
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
+                  Wallet address
+                </label>
+                {address ? (
+                  <div className="flex items-stretch gap-2">
+                    <div className="flex-1 px-3 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-[12px] text-slate-200 font-mono break-all">
+                      {address}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={copyAddress}
+                      title="Copy address"
+                      className="shrink-0 px-3 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 cursor-pointer"
+                    >
+                      {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="px-3 py-2.5 bg-amber-500/10 border border-amber-500/25 rounded-xl text-[12px] text-amber-300">
+                    No {cryptoType} address configured yet. Please contact your advisor for payment details.
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  Send exactly ${amount ? amount.toLocaleString('en-US') : '0'} worth of {cryptoType} to this
+                  address, then submit the request below.
+                </p>
+              </div>
+            </>
+          )}
 
           <div className="p-3 bg-white/[.04] border border-white/[.08] rounded-xl text-[11px] text-slate-400 flex items-start gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
@@ -197,6 +281,8 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
 }) => {
   const [amount, setAmount] = useState<number>(0);
   const [destination, setDestination] = useState<string>('');
+  const [payoutMethod, setPayoutMethod] = useState<string>('Crypto');
+  const [cryptoType, setCryptoType] = useState<CryptoType>('BTC');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -227,7 +313,13 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
     setSending(true);
     setError(null);
     try {
-      await apiRequestWithdrawal(amount, 'Bank transfer / USDT', destination.trim());
+      const isCryptoPayout = payoutMethod === 'Crypto';
+      await apiRequestWithdrawal(
+        amount,
+        isCryptoPayout ? `Crypto (${cryptoType})` : 'Bank transfer',
+        destination.trim(),
+        isCryptoPayout ? cryptoType : undefined,
+      );
       setSubmitted(true);
       onRequested?.();
     } catch (err) {
@@ -290,7 +382,7 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
             <input
               type="number"
               value={amount || ''}
-              onChange={(e) => setAmount(Number(e.target.value))}
+              onChange={(e) => setAmount(e.target.value === '' ? 0 : Number(e.target.value))}
               max={userBalance}
               min={0}
               step={100}
@@ -301,15 +393,56 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
-              Payout details (USDT wallet / IBAN)
+              Payout method
+            </label>
+            <select
+              value={payoutMethod}
+              onChange={(e) => setPayoutMethod(e.target.value)}
+              className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#f5b400]/40"
+            >
+              <option value="Crypto">Crypto</option>
+              <option value="Bank">Bank transfer (SWIFT / SEPA)</option>
+            </select>
+          </div>
+
+          {payoutMethod === 'Crypto' && (
+            <div>
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
+                Type of crypto
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['BTC', 'ETH', 'USDC'] as CryptoType[]).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setCryptoType(t)}
+                    className={`px-3 py-2 rounded-xl text-sm font-bold border transition-colors cursor-pointer ${
+                      cryptoType === t
+                        ? 'bg-[#f5b400] border-[#f5b400] text-[#17190f]'
+                        : 'bg-[#0f1116] border-white/[.08] text-slate-300 hover:bg-white/[.06]'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
+              {payoutMethod === 'Crypto' ? `Your ${cryptoType} wallet address` : 'Bank account / IBAN'}
             </label>
             <input
               type="text"
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
-              placeholder="Wallet address or bank account"
+              placeholder={payoutMethod === 'Crypto' ? `Your ${cryptoType} address` : 'IBAN / account number'}
               className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm text-slate-300"
             />
+            <p className="text-[11px] text-slate-500 mt-1.5">
+              Double-check the address — transfers cannot be reversed.
+            </p>
           </div>
 
           <div className="p-3 bg-white/[.04] border border-white/[.08] rounded-xl text-[11px] text-slate-400 flex items-start gap-2">

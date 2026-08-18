@@ -12,7 +12,7 @@ import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
 import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
-import { apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
+import { apiLeads, apiCreateLead, apiUpdateLead, apiAddLeadComment, apiImpersonate, apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
 import type { ApiTrade, ApiTransaction } from './api';
 import { 
   DepositModal, 
@@ -23,7 +23,6 @@ import {
 import { 
   INITIAL_PROJECTS, 
   INITIAL_INVESTORS, 
-  INITIAL_LEADS, 
   INITIAL_REQUESTS 
 } from './data/mockData';
 import type { 
@@ -39,10 +38,21 @@ import type {
 import type { AdminTrade } from './components/crm/CrmTradesManager';
 import { CheckCircle2, TrendingUp } from 'lucide-react';
 
+/** Where the user was before a refresh */
+const TAB_KEY = 'ohy_tab';
+/** Holds the admin's own token while they view a client account */
+const ADMIN_TOKEN_KEY = 'ohy_admin_token';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('landing');
+
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<ApiUser | null>(null);
+
+  // Remember the current screen so a page refresh returns to it
+  useEffect(() => {
+    if (isLoggedIn && activeTab !== 'landing') localStorage.setItem(TAB_KEY, activeTab);
+  }, [activeTab, isLoggedIn]);
 
   // Core State
   const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
@@ -52,7 +62,7 @@ export default function App() {
   const [allTransactions, setAllTransactions] = useState<ApiTransaction[]>([]);
   const [myInvestments, setMyInvestments] = useState<ActiveInvestment[]>([]);
   const [investors, setInvestors] = useState<Investor[]>(INITIAL_INVESTORS);
-  const [leads, setLeads] = useState<Lead[]>(INITIAL_LEADS);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [requests] = useState<TransactionRequest[]>(INITIAL_REQUESTS);
 
   // CRM users (from backend) + privacy settings
@@ -131,6 +141,9 @@ export default function App() {
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [resetToken, setResetToken] = useState<string | null>(null);
+  const [impersonating, setImpersonating] = useState<boolean>(
+    () => !!localStorage.getItem(ADMIN_TOKEN_KEY),
+  );
 
   /* ========================================================
      AUTH: auto-login + email link handling
@@ -159,11 +172,17 @@ export default function App() {
       setResetToken(confirmToken);
       window.history.replaceState({}, '', '/');
     } else if (getToken()) {
-      // Restore session from stored token
+      // Restore the session AND the screen the user was on. Without the
+      // second part a refresh dropped everyone back onto the landing page,
+      // which felt exactly like being logged out.
       apiMe()
         .then((res) => {
           setCurrentUser(res.user);
           setIsLoggedIn(true);
+          const saved = localStorage.getItem(TAB_KEY) as ActiveTab | null;
+          const allowed: ActiveTab[] =
+            res.user.role === 'CLIENT' ? ['investor', 'catalog'] : ['crm'];
+          setActiveTab(saved && allowed.includes(saved) ? saved : allowed[0]);
         })
         .catch(() => setToken(null));
     }
@@ -206,6 +225,7 @@ export default function App() {
         } catch {
           /* ignore transient errors */
         }
+        await reloadLeads();
       } else {
         // Clients pull their own documents so the KYC badge is truthful
         try {
@@ -300,6 +320,9 @@ export default function App() {
     setCurrentUser(null);
     setIsLoggedIn(false);
     setUsers([]);
+    localStorage.removeItem(TAB_KEY);
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setImpersonating(false);
     setActiveTab('landing');
     showToast('✔ Signed out.', 'info');
   };
@@ -479,54 +502,78 @@ export default function App() {
   /* ========================================================
      CRM / ADMIN PIPELINE ACTIONS
   ======================================================== */
-  const handleMoveLeadStage = (leadId: string, direction: 'next' | 'prev') => {
+  /**
+   * Leads live on the server now. Every change is persisted immediately,
+   * so a page refresh no longer wipes the pipeline.
+   */
+  const reloadLeads = async () => {
+    if (!getToken()) return;
+    try {
+      const res = await apiLeads();
+      setLeads(
+        res.leads.map(l => ({
+          id: String(l.id),
+          name: l.name,
+          phone: l.phone,
+          potentialAmount: l.potentialAmount,
+          stage: (l.stage || 'new') as LeadStage,
+          notes: l.notes || '',
+          manager: l.manager || '',
+          createdAt: new Date(l.createdAt).toLocaleString('en-US'),
+          comments: (l.comments || []).map(c => ({
+            id: c.id,
+            author: c.author,
+            text: c.text,
+            date: new Date(c.date).toLocaleString('en-US'),
+          })),
+        })),
+      );
+    } catch {
+      /* ignore transient errors */
+    }
+  };
+
+  const handleMoveLeadStage = async (leadId: string, direction: 'next' | 'prev') => {
     const stages: LeadStage[] = ['new', 'contact', 'kyc', 'active'];
-    setLeads(prev => prev.map(lead => {
-      if (lead.id === leadId) {
-        const idx = stages.indexOf(lead.stage);
-        const newIdx = direction === 'next'
-          ? Math.min(stages.length - 1, idx + 1)
-          : Math.max(0, idx - 1);
-        return {
-          ...lead,
-          stage: stages[newIdx]
-        };
-      }
-      return lead;
-    }));
-    showToast('✔ Lead stage updated in the CRM pipeline!');
+    const lead = leads.find(l => l.id === leadId);
+    if (!lead) return;
+    const idx = stages.indexOf(lead.stage);
+    const nextStage =
+      direction === 'next' ? stages[Math.min(stages.length - 1, idx + 1)] : stages[Math.max(0, idx - 1)];
+    try {
+      await apiUpdateLead(Number(leadId), { stage: nextStage });
+      await reloadLeads();
+      showToast('✔ Lead stage updated.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not update the lead', 'info');
+    }
   };
 
-  const handleCreateLead = (newLeadData: Omit<Lead, 'id' | 'createdAt'>) => {
-    const newLead: Lead = {
-      ...newLeadData,
-      id: `lead-${Date.now()}`,
-      createdAt: 'Just now',
-      comments: []
-    };
-    setLeads(prev => [newLead, ...prev]);
-    showToast(`✔ Lead «${newLeadData.name}» added to the pipeline!`);
+  const handleCreateLead = async (newLeadData: Omit<Lead, 'id' | 'createdAt'>) => {
+    try {
+      await apiCreateLead({
+        name: newLeadData.name,
+        phone: newLeadData.phone,
+        potentialAmount: newLeadData.potentialAmount,
+        stage: newLeadData.stage,
+        notes: newLeadData.notes,
+        manager: newLeadData.manager,
+      });
+      await reloadLeads();
+      showToast(`✔ Lead «${newLeadData.name}» added to the pipeline.`);
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not create the lead', 'info');
+    }
   };
 
-  const handleAddLeadComment = (leadId: string, text: string) => {
-    setLeads(prev => prev.map(lead => {
-      if (lead.id === leadId) {
-        return {
-          ...lead,
-          comments: [
-            ...lead.comments,
-            {
-              id: `c-${Date.now()}`,
-              author: currentUser?.name || 'Manager',
-              text,
-              date: new Date().toLocaleString('en-US')
-            }
-          ]
-        };
-      }
-      return lead;
-    }));
-    showToast('✔ Comment added to the lead.');
+  const handleAddLeadComment = async (leadId: string, text: string) => {
+    try {
+      await apiAddLeadComment(Number(leadId), text);
+      await reloadLeads();
+      showToast('✔ Comment saved.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the comment', 'info');
+    }
   };
 
   const handleApproveKyc = (investorId: string) => {
@@ -658,6 +705,35 @@ export default function App() {
         activeTab === 'landing' ? 'bg-[#F5F2E9] text-[#213532]' : 'bg-[#0e0f13] text-slate-200'
       }`}
     >
+      {/* Impersonation banner — always visible so nobody forgets they are
+          looking at somebody else's account */}
+      {impersonating && (
+        <div className="sticky top-0 z-[60] bg-[#B08B48] text-[#1C412C] px-4 py-2 flex items-center justify-between gap-3">
+          <span className="text-[13px] font-bold">
+            You are viewing the platform as {currentUser?.name} ({currentUser?.email})
+          </span>
+          <button
+            onClick={() => {
+              const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
+              localStorage.removeItem(ADMIN_TOKEN_KEY);
+              setImpersonating(false);
+              if (!adminToken) return handleLogout();
+              setToken(adminToken);
+              apiMe()
+                .then(res => {
+                  setCurrentUser(res.user);
+                  setActiveTab('crm');
+                  showToast('Back in the admin panel');
+                })
+                .catch(() => handleLogout());
+            }}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-[#1C412C] text-[#F5F2E9] text-[12px] font-bold hover:bg-[#163524] cursor-pointer"
+          >
+            Return to admin
+          </button>
+        </div>
+      )}
+
       {/* Top Header (hidden on landing & CRM — they have their own navbars) */}
       {activeTab !== 'crm' && activeTab !== 'landing' && activeTab !== 'investor' && (
       <Header
@@ -736,6 +812,20 @@ export default function App() {
               })) as TransactionRequest[],
               ...requests,
             ]}
+            onImpersonateUser={async (u) => {
+              // Keep the admin session so we can switch back afterwards
+              try {
+                const res = await apiImpersonate(u.id);
+                localStorage.setItem(ADMIN_TOKEN_KEY, getToken() || '');
+                setToken(res.token);
+                setCurrentUser(res.user);
+                setImpersonating(true);
+                setActiveTab('investor');
+                showToast(`Viewing the platform as ${res.user.name}`);
+              } catch (err) {
+                showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not open the account', 'info');
+              }
+            }}
             onApproveRequest={handleApproveRequest}
             onRejectRequest={handleRejectRequest}
             projects={projects}

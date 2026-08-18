@@ -101,4 +101,56 @@ router.get('/search', async (req, res) => {
   }
 });
 
+/* ============================================================
+   LIVE QUOTES
+   Binance public API — no key required, generous rate limits.
+   Used to stamp the entry price when a position opens and to keep
+   the open-positions table (and its P/L) moving in real time.
+   ============================================================ */
+
+const quoteCache = new Map();
+const QUOTE_TTL = 4000; // ms — matches the UI refresh interval
+
+/** BTCUSD, BTC/USDT, BINANCE:BTCUSDT ... -> BTCUSDT */
+function toBinanceSymbol(raw) {
+  let s = String(raw || '').toUpperCase().trim();
+  if (s.includes(':')) s = s.split(':').pop();
+  s = s.replace(/[^A-Z0-9]/g, '');
+  if (s.endsWith('USDT')) return s;
+  if (s.endsWith('USD')) return s.slice(0, -3) + 'USDT';
+  return s + 'USDT';
+}
+
+router.get('/quote', async (req, res) => {
+  const raw = String(req.query.symbol || '');
+  if (!raw) return res.status(400).json({ error: 'symbol is required' });
+
+  const sym = toBinanceSymbol(raw);
+  const hit = quoteCache.get(sym);
+  if (hit && Date.now() - hit.at < QUOTE_TTL) {
+    return res.json({ symbol: raw, price: hit.price, cached: true });
+  }
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`, {
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!r.ok) return res.json({ symbol: raw, price: null });
+
+    const data = await r.json();
+    const price = Number(data?.price);
+    if (!Number.isFinite(price)) return res.json({ symbol: raw, price: null });
+
+    if (quoteCache.size > 200) quoteCache.clear();
+    quoteCache.set(sym, { price, at: Date.now() });
+    res.json({ symbol: raw, price });
+  } catch {
+    // Never fail the page over a quote — the UI keeps the last known value
+    res.json({ symbol: raw, price: null });
+  }
+});
+
 export default router;
