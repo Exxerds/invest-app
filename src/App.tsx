@@ -12,8 +12,8 @@ import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
 import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
-import { apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
-import type { ApiTrade } from './api';
+import { apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
+import type { ApiTrade, ApiTransaction } from './api';
 import { 
   DepositModal, 
   WithdrawModal, 
@@ -46,12 +46,14 @@ export default function App() {
 
   // Core State
   const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
-  // New accounts start empty — balances are credited by the back office
+  // Mirrors the server-side balance; only the back office can change it
   const [investorBalance, setInvestorBalance] = useState<number>(0);
+  const [myTransactions, setMyTransactions] = useState<ApiTransaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<ApiTransaction[]>([]);
   const [myInvestments, setMyInvestments] = useState<ActiveInvestment[]>([]);
   const [investors, setInvestors] = useState<Investor[]>(INITIAL_INVESTORS);
   const [leads, setLeads] = useState<Lead[]>(INITIAL_LEADS);
-  const [requests, setRequests] = useState<TransactionRequest[]>(INITIAL_REQUESTS);
+  const [requests] = useState<TransactionRequest[]>(INITIAL_REQUESTS);
 
   // CRM users (from backend) + privacy settings
   const [users, setUsers] = useState<ApiUser[]>([]);
@@ -179,6 +181,8 @@ export default function App() {
       setKycDocuments([]);
       setNotifications([]);
       setUnreadCount(0);
+      setInvestorBalance(0);
+      setMyTransactions([]);
       return;
     }
 
@@ -196,11 +200,25 @@ export default function App() {
         } catch {
           /* ignore transient errors */
         }
+        try {
+          const tx = await apiAllTransactions();
+          setAllTransactions(tx.transactions);
+        } catch {
+          /* ignore transient errors */
+        }
       } else {
         // Clients pull their own documents so the KYC badge is truthful
         try {
           const mine = await apiKycMine();
           setKycDocuments(mine.documents);
+        } catch {
+          /* ignore transient errors */
+        }
+        // ...and their balance, so an approval in the CRM shows up here
+        try {
+          const fin = await apiMyTransactions();
+          setInvestorBalance(fin.balance);
+          setMyTransactions(fin.transactions);
         } catch {
           /* ignore transient errors */
         }
@@ -329,51 +347,22 @@ export default function App() {
     showToast(`✔ Position of $${amount.toLocaleString('en-US')} opened in «${project.title}».`);
   };
 
-  const handleConfirmDeposit = (amount: number, method: string) => {
-    setInvestorBalance(prev => prev + amount);
-
-    const newReq: TransactionRequest = {
-      id: `req-${Date.now().toString().slice(-4)}`,
-      investorId: 'inv-01',
-      investorName: 'Michael Carter (You)',
-      type: 'deposit',
-      amount: amount,
-      status: 'approved',
-      date: 'Just now',
-      method: method
-    };
-    setRequests(prev => [newReq, ...prev]);
-
-    setInvestors(prev => prev.map(inv => {
-      if (inv.id === 'inv-01') {
-        return {
-          ...inv,
-          balance: inv.balance + amount
-        };
-      }
-      return inv;
-    }));
-
-    showToast(`✔ Balance topped up by $${amount.toLocaleString('en-US')}!`);
+  /**
+   * Deposits and withdrawals are filed as requests on the server.
+   * Nothing is credited here — the balance is re-read from the API,
+   * and it only changes after the back office approves the request.
+   */
+  const refreshMyFinances = async () => {
+    if (!getToken()) return;
+    try {
+      const res = await apiMyTransactions();
+      setInvestorBalance(res.balance);
+      setMyTransactions(res.transactions);
+    } catch {
+      /* ignore transient errors */
+    }
   };
 
-  const handleConfirmWithdraw = (amount: number) => {
-    setInvestorBalance(prev => prev - amount);
-
-    const newReq: TransactionRequest = {
-      id: `req-${Date.now().toString().slice(-4)}`,
-      investorId: 'inv-01',
-      investorName: 'Michael Carter (You)',
-      type: 'withdrawal',
-      amount: amount,
-      status: 'pending',
-      date: 'Just now',
-      method: 'Withdrawal to bank / USDT'
-    };
-    setRequests(prev => [newReq, ...prev]);
-
-    showToast(`✔ Withdrawal request for $${amount.toLocaleString('en-US')} is being processed by Finance and Compliance.`);
-  };
 
   const handleClaimDividends = (invId: string, profit: number) => {
     setInvestorBalance(prev => prev + profit);
@@ -553,30 +542,28 @@ export default function App() {
     showToast('✔ Investor KYC approved!');
   };
 
-  const handleApproveRequest = (requestId: string) => {
-    setRequests(prev => prev.map(req => {
-      if (req.id === requestId) {
-        return {
-          ...req,
-          status: 'approved'
-        };
-      }
-      return req;
-    }));
-    showToast('✔ Transaction approved in CRM.');
+  /**
+   * Approving a request is what actually moves money: the server credits or
+   * debits the client's balance, writes the audit trail and notifies them.
+   */
+  const handleApproveRequest = async (requestId: string) => {
+    try {
+      const res = await apiApproveTransaction(Number(requestId));
+      setAllTransactions(prev => prev.map(t => (t.id === res.transaction.id ? res.transaction : t)));
+      showToast(`✔ Approved — client balance is now $${res.balance.toLocaleString('en-US')}.`);
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not approve', 'info');
+    }
   };
 
-  const handleRejectRequest = (requestId: string) => {
-    setRequests(prev => prev.map(req => {
-      if (req.id === requestId) {
-        return {
-          ...req,
-          status: 'rejected'
-        };
-      }
-      return req;
-    }));
-    showToast('✖ Request rejected.', 'info');
+  const handleRejectRequest = async (requestId: string) => {
+    try {
+      const res = await apiRejectTransaction(Number(requestId));
+      setAllTransactions(prev => prev.map(t => (t.id === res.transaction.id ? res.transaction : t)));
+      showToast('✖ Request rejected. The client has been notified.', 'info');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not reject', 'info');
+    }
   };
 
   const handleCreateProject = (newProjData: Omit<Project, 'id' | 'raisedAmount' | 'status'>) => {
@@ -703,6 +690,7 @@ export default function App() {
           <InvestorDashboard
             user={currentUser}
             kycVerified={kycApproved}
+            transactions={myTransactions}
             investorBalance={investorBalance}
             myInvestments={myInvestments}
             onOpenCatalog={() => setActiveTab('catalog')}
@@ -729,7 +717,25 @@ export default function App() {
             onOpenNewLeadModal={() => setIsNewLeadModalOpen(true)}
             investors={investors}
             onApproveKyc={handleApproveKyc}
-            requests={requests}
+            requests={[
+              // Real deposit / withdrawal requests from the server
+              ...allTransactions.map(t => ({
+                id: String(t.id),
+                investorId: `srv-${t.userId}`,
+                investorName: t.userName,
+                type: t.type,
+                amount: t.amount,
+                status: t.status,
+                date: new Date(t.createdAt).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+                method: t.method,
+              })) as TransactionRequest[],
+              ...requests,
+            ]}
             onApproveRequest={handleApproveRequest}
             onRejectRequest={handleRejectRequest}
             projects={projects}
@@ -886,14 +892,14 @@ export default function App() {
       <DepositModal
         isOpen={isDepositModalOpen}
         onClose={() => setIsDepositModalOpen(false)}
-        onConfirmDeposit={handleConfirmDeposit}
+        onRequested={refreshMyFinances}
       />
 
       <WithdrawModal
         isOpen={isWithdrawModalOpen}
         onClose={() => setIsWithdrawModalOpen(false)}
         userBalance={investorBalance}
-        onConfirmWithdraw={handleConfirmWithdraw}
+        onRequested={refreshMyFinances}
       />
 
       <NewLeadModal

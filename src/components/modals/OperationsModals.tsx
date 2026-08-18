@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Project, AssetCategory, Lead } from '../../types';
-import { X, Wallet, ArrowDownRight, UserPlus, PlusCircle } from 'lucide-react';
+import { X, Wallet, ArrowDownRight, UserPlus, PlusCircle, Clock, Loader2, ShieldCheck } from 'lucide-react';
+import { apiRequestDeposit, apiRequestWithdrawal } from '../../api';
 
 /* ========================================================
    DEPOSIT MODAL
@@ -8,24 +9,47 @@ import { X, Wallet, ArrowDownRight, UserPlus, PlusCircle } from 'lucide-react';
 interface DepositModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirmDeposit: (amount: number, method: string) => void;
+  /** Called after the request reaches the finance desk (balance is NOT changed) */
+  onRequested?: () => void;
 }
 
 export const DepositModal: React.FC<DepositModalProps> = ({
   isOpen,
   onClose,
-  onConfirmDeposit
+  onRequested
 }) => {
+  const [amount, setAmount] = useState<number>(10000);
+  const [method, setMethod] = useState<string>('Crypto gateway (USDT TRC20 / ERC20)');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+
   if (!isOpen) return null;
 
-  const [amount, setAmount] = useState<number>(10000);
-  const [method, setMethod] = useState<string>('Crypto gateway (USDT TRC20)');
+  const close = () => {
+    setSubmitted(false);
+    setError(null);
+    onClose();
+  };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  /**
+   * Money never moves here. The client files a request; the finance desk
+   * confirms the incoming payment in the CRM and only then the account
+   * is credited.
+   */
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (amount > 0) {
-      onConfirmDeposit(amount, method);
-      onClose();
+    if (!(amount > 0)) return;
+    setSending(true);
+    setError(null);
+    try {
+      await apiRequestDeposit(amount, method);
+      setSubmitted(true);
+      onRequested?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not submit the request');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -44,9 +68,36 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             <span>Deposit</span>
           </div>
           <h2 className="text-xl font-bold">Deposit funds</h2>
-          <p className="text-xs text-emerald-100 mt-1">Funds will be credited to your available balance</p>
+          <p className="text-xs text-emerald-100 mt-1">
+            Credited once our finance team confirms your payment
+          </p>
         </div>
 
+        {submitted ? (
+          <div className="p-6 space-y-4">
+            <div className="flex flex-col items-center text-center gap-3 py-2">
+              <div className="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                <Clock className="w-7 h-7 text-emerald-400" />
+              </div>
+              <div className="text-base font-bold text-white">Request received</div>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Your deposit of{' '}
+                <strong className="text-[#f5b400]">${amount.toLocaleString('en-US')}</strong> is
+                pending confirmation. Send the funds using the details provided by your advisor —
+                the balance updates as soon as our finance team verifies the payment.
+              </p>
+              <div className="text-[11px] text-slate-500">
+                You can track the status under Transactions.
+              </div>
+            </div>
+            <button
+              onClick={close}
+              className="w-full px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold cursor-pointer"
+            >
+              Got it
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
@@ -89,22 +140,39 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             </select>
           </div>
 
+          <div className="p-3 bg-white/[.04] border border-white/[.08] rounded-xl text-[11px] text-slate-400 flex items-start gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <span>
+              Deposits are reviewed by our finance team before they appear on your balance.
+              This protects your account against unauthorised transfers.
+            </span>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl text-xs text-rose-400">
+              {error}
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 text-sm font-semibold"
+              onClick={close}
+              className="px-4 py-2 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 text-sm font-semibold cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold shadow-md cursor-pointer"
+              disabled={sending}
+              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-bold shadow-md cursor-pointer flex items-center gap-2"
             >
-              Deposit
+              {sending && <Loader2 className="w-4 h-4 animate-spin" />}
+              {sending ? 'Submitting...' : 'Submit request'}
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );
@@ -117,28 +185,56 @@ interface WithdrawModalProps {
   isOpen: boolean;
   onClose: () => void;
   userBalance: number;
-  onConfirmWithdraw: (amount: number) => void;
+  /** Called after the request is filed (balance is NOT changed yet) */
+  onRequested?: () => void;
 }
 
 export const WithdrawModal: React.FC<WithdrawModalProps> = ({
   isOpen,
   onClose,
   userBalance,
-  onConfirmWithdraw
+  onRequested
 }) => {
+  const [amount, setAmount] = useState<number>(0);
+  const [destination, setDestination] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
   if (!isOpen) return null;
 
-  const [amount, setAmount] = useState<number>(Math.min(userBalance, 5000));
-  const [error, setError] = useState<string>('');
+  const close = () => {
+    setSubmitted(false);
+    setError(null);
+    onClose();
+  };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  /** Compliance releases the payout — the client only files the request. */
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!(amount > 0)) {
+      setError('Enter an amount');
+      return;
+    }
     if (amount > userBalance) {
       setError('Amount exceeds available balance');
       return;
     }
-    onConfirmWithdraw(amount);
-    onClose();
+    if (!destination.trim()) {
+      setError('Enter your payout details');
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      await apiRequestWithdrawal(amount, 'Bank transfer / USDT', destination.trim());
+      setSubmitted(true);
+      onRequested?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not submit the request');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -161,6 +257,31 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
           </p>
         </div>
 
+        {submitted ? (
+          <div className="p-6 space-y-4">
+            <div className="flex flex-col items-center text-center gap-3 py-2">
+              <div className="w-14 h-14 rounded-full bg-[#f5b400]/15 border border-[#f5b400]/30 flex items-center justify-center">
+                <Clock className="w-7 h-7 text-[#f5b400]" />
+              </div>
+              <div className="text-base font-bold text-white">Request submitted</div>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Your withdrawal of{' '}
+                <strong className="text-[#f5b400]">${amount.toLocaleString('en-US')}</strong> is
+                under review by our compliance team. Funds are released to your verified payout
+                details once approved.
+              </p>
+              <div className="text-[11px] text-slate-500">
+                You can track the status under Transactions.
+              </div>
+            </div>
+            <button
+              onClick={close}
+              className="w-full px-5 py-2.5 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] text-sm font-bold cursor-pointer"
+            >
+              Got it
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1.5">
@@ -168,14 +289,14 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
             </label>
             <input
               type="number"
-              value={amount}
+              value={amount || ''}
               onChange={(e) => setAmount(Number(e.target.value))}
               max={userBalance}
-              min={100}
+              min={0}
               step={100}
+              placeholder="0"
               className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-lg"
             />
-            {error && <p className="text-xs text-rose-600 mt-1">{error}</p>}
           </div>
 
           <div>
@@ -184,28 +305,45 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
             </label>
             <input
               type="text"
-              defaultValue="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (USDT TRC20)"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              placeholder="Wallet address or bank account"
               className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm text-slate-300"
             />
           </div>
 
+          <div className="p-3 bg-white/[.04] border border-white/[.08] rounded-xl text-[11px] text-slate-400 flex items-start gap-2">
+            <ShieldCheck className="w-4 h-4 text-[#f5b400] shrink-0 mt-0.5" />
+            <span>
+              Withdrawals are released after compliance review and identity verification.
+            </span>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl text-xs text-rose-400">
+              {error}
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 text-sm font-semibold"
+              onClick={close}
+              className="px-4 py-2 rounded-xl bg-white/[.06] hover:bg-white/[.12] text-slate-300 text-sm font-semibold cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={amount > userBalance || amount <= 0}
-              className="px-5 py-2 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] text-sm font-bold shadow-md cursor-pointer"
+              disabled={sending || amount > userBalance || amount <= 0}
+              className="px-5 py-2 rounded-xl bg-[#f5b400] hover:bg-[#ffc21f] disabled:opacity-60 text-[#17190f] text-sm font-bold shadow-md cursor-pointer flex items-center gap-2"
             >
-              Submit withdrawal request
+              {sending && <Loader2 className="w-4 h-4 animate-spin" />}
+              {sending ? 'Submitting...' : 'Submit request'}
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

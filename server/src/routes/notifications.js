@@ -16,7 +16,7 @@ async function auth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Not authorized' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    const user = await store.findOne('users', (u) => u.id === payload.userId);
+    const user = await store.byId('users', payload.userId);
     if (!user) return res.status(401).json({ error: 'User not found' });
     req.user = user;
     next();

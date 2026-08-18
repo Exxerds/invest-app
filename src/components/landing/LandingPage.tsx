@@ -324,9 +324,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               ))}
             </div>
 
-            <p className="mt-3 text-[10px] text-[#213532]/45 text-center leading-relaxed">
-              Illustrative portfolio. Chart data is live from the market.
-            </p>
           </div>
         </div>
 

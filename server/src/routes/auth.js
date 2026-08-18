@@ -31,10 +31,11 @@ async function createToken(userId, type) {
 
 async function findValidToken(token, type) {
   const now = new Date().toISOString();
-  return store.findOne(
-    'tokens',
-    (t) => t.token === token && t.type === type && t.used === 0 && t.expires_at > now
-  );
+  // Indexed lookup on the token itself, then verify the rest in memory.
+  const t = await store.byField('tokens', 'token', String(token || ''));
+  if (!t) return undefined;
+  if (t.type !== type || t.used !== 0 || !(t.expires_at > now)) return undefined;
+  return t;
 }
 
 function publicUser(u) {
@@ -185,7 +186,7 @@ router.get('/me', async (req, res) => {
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    const user = await store.findBy('users', 'id', payload.userId);
+    const user = await store.byId('users', payload.userId);
     if (!user) return res.status(401).json({ error: 'User not found' });
     res.json({ user: publicUser(user) });
   } catch {

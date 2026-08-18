@@ -272,3 +272,72 @@ export const apiCloseTrade = (id: number) =>
     method: 'POST',
     headers: authHeader(),
   });
+
+// ---------- deposits & withdrawals ----------
+
+export interface ApiTransaction {
+  id: number;
+  userId: number;
+  userName: string;
+  userEmail: string;
+  type: 'deposit' | 'withdrawal';
+  amount: number;
+  method: string;
+  destination?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectReason?: string;
+  balanceAfter?: number;
+  manual?: boolean;
+}
+
+/** Client: own balance + request history */
+export const apiMyTransactions = () =>
+  request<{ balance: number; transactions: ApiTransaction[] }>('/transactions/mine', {
+    headers: authHeader(),
+  });
+
+/** Client: ask the finance desk to credit a deposit (nothing moves yet) */
+export const apiRequestDeposit = (amount: number, method: string) =>
+  request<{ ok: true; transaction: ApiTransaction; message: string }>('/transactions/deposit', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({ amount, method }),
+  });
+
+/** Client: ask compliance to release a withdrawal */
+export const apiRequestWithdrawal = (amount: number, method: string, destination?: string) =>
+  request<{ ok: true; transaction: ApiTransaction; message: string }>('/transactions/withdraw', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({ amount, method, destination }),
+  });
+
+/** Staff: the whole review queue */
+export const apiAllTransactions = () =>
+  request<{ transactions: ApiTransaction[] }>('/transactions/all', { headers: authHeader() });
+
+/** Staff: credit / debit the client and close the request */
+export const apiApproveTransaction = (id: number) =>
+  request<{ ok: true; transaction: ApiTransaction; balance: number }>(`/transactions/${id}/approve`, {
+    method: 'POST',
+    headers: authHeader(),
+  });
+
+/** Staff: decline a request with an optional reason */
+export const apiRejectTransaction = (id: number, reason?: string) =>
+  request<{ ok: true; transaction: ApiTransaction }>(`/transactions/${id}/reject`, {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({ reason }),
+  });
+
+/** Staff: manual balance correction (positive or negative) */
+export const apiAdjustBalance = (userId: number, amount: number, note?: string) =>
+  request<{ ok: true; transaction: ApiTransaction; balance: number }>('/transactions/adjust', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({ userId, amount, note }),
+  });

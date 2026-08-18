@@ -31,7 +31,7 @@ import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
 import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade } from '../../api';
-import type { ApiTrade } from '../../api';
+import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
 
@@ -40,6 +40,8 @@ interface InvestorDashboardProps {
   user?: { name: string; email: string } | null;
   /** True once an admin approved the client's KYC documents */
   kycVerified?: boolean;
+  /** Real deposit / withdrawal requests from the server */
+  transactions?: ApiTransaction[];
   investorBalance: number;
   myInvestments: ActiveInvestment[];
   onOpenCatalog: () => void;
@@ -73,6 +75,7 @@ const WALLETS: Wallet[] = [];
 export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   user,
   kycVerified = false,
+  transactions = [],
   investorBalance,
   myInvestments,
   onOpenCatalog,
@@ -823,30 +826,75 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
         {/* ================= SIMPLE TABS ================= */}
         {tab === 'withdrawals' && (
-          <Card title="Withdrawal request" subtitle="Funds are processed within 24 hours">
-            <div className="p-5 space-y-4 max-w-lg">
-              <div>
-                <label className="text-[11px] font-bold uppercase text-slate-500">Amount, $</label>
-                <Input type="number" defaultValue={1000} className="w-full mt-1.5" />
+          <div className="space-y-4">
+            <Card title="Withdraw funds" subtitle="Reviewed by compliance before release">
+              <div className="p-5 space-y-4 max-w-lg">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[11px] font-bold uppercase text-slate-500">Available</span>
+                  <span className="text-[20px] font-extrabold text-white">
+                    ${investorBalance.toLocaleString('en-US')}
+                  </span>
+                </div>
+                <p className="text-[12px] text-slate-500 leading-relaxed">
+                  Submit a request and our compliance team will release the funds to your verified
+                  payout details. Identity verification is required before the first withdrawal.
+                </p>
+                <Btn variant="gold" onClick={onOpenWithdrawModal}>
+                  Request withdrawal
+                </Btn>
               </div>
-              <div>
-                <label className="text-[11px] font-bold uppercase text-slate-500">Method</label>
-                <Select className="w-full mt-1.5">
-                  <option>USDT TRC-20</option>
-                  <option>Bitcoin</option>
-                  <option>Visa / Mastercard</option>
-                  <option>SEPA transfer</option>
-                </Select>
+            </Card>
+
+            <Card title="Withdrawal requests">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-white/[.02] border-b border-white/[.06]">
+                    <tr>
+                      <Th>Date</Th>
+                      <Th>Amount</Th>
+                      <Th>Destination</Th>
+                      <Th>Status</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[.05]">
+                    {transactions.filter(t => t.type === 'withdrawal').length === 0 && (
+                      <tr>
+                        <Td className="py-10 text-center text-slate-600">No withdrawal requests yet.</Td>
+                      </tr>
+                    )}
+                    {transactions
+                      .filter(t => t.type === 'withdrawal')
+                      .map(r => (
+                        <tr key={r.id} className="hover:bg-white/[.02]">
+                          <Td className="text-[12px]">
+                            {new Date(r.createdAt).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </Td>
+                          <Td className="font-bold text-white">
+                            ${Number(r.amount).toLocaleString('en-US')}
+                          </Td>
+                          <Td className="text-[12px] text-slate-400 max-w-[220px] truncate">
+                            {r.destination || '—'}
+                          </Td>
+                          <Td>
+                            <Badge
+                              tone={
+                                r.status === 'approved' ? 'green' : r.status === 'rejected' ? 'red' : 'gold'
+                              }
+                            >
+                              {r.status === 'pending' ? 'pending review' : r.status}
+                            </Badge>
+                          </Td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
               </div>
-              <div>
-                <label className="text-[11px] font-bold uppercase text-slate-500">Wallet / account</label>
-                <Input placeholder="Enter destination address" className="w-full mt-1.5" />
-              </div>
-              <Btn variant="gold" onClick={onOpenWithdrawModal}>
-                Request withdrawal
-              </Btn>
-            </div>
-          </Card>
+            </Card>
+          </div>
         )}
 
         {tab === 'transactions' && (
@@ -863,24 +911,41 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[.05]">
-                  {[
-                    { d: '2026-08-12', t: 'Deposit', m: 'USDT TRC-20', a: 10000, s: 'completed' },
-                    { d: '2026-08-05', t: 'Withdrawal', m: 'Visa', a: -2500, s: 'completed' },
-                    { d: '2026-07-28', t: 'Deposit', m: 'Bitcoin', a: 5000, s: 'completed' },
-                    { d: '2026-07-14', t: 'Bonus', m: 'Promo', a: 250, s: 'completed' },
-                  ].map(r => (
-                    <tr key={r.d} className="hover:bg-white/[.02]">
-                      <Td className="text-[12px]">{r.d}</Td>
-                      <Td className="font-semibold text-white">{r.t}</Td>
-                      <Td className="text-[12px]">{r.m}</Td>
-                      <Td className={r.a >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                        {r.a >= 0 ? '+' : ''}${Math.abs(r.a).toLocaleString('en-US')}
-                      </Td>
-                      <Td>
-                        <Badge tone="green">{r.s}</Badge>
+                  {transactions.length === 0 && (
+                    <tr>
+                      <Td className="py-10 text-center text-slate-600">
+                        No transactions yet.
                       </Td>
                     </tr>
-                  ))}
+                  )}
+                  {transactions.map(r => {
+                    const positive = r.type === 'deposit';
+                    return (
+                      <tr key={r.id} className="hover:bg-white/[.02]">
+                        <Td className="text-[12px]">
+                          {new Date(r.createdAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </Td>
+                        <Td className="font-semibold text-white capitalize">{r.type}</Td>
+                        <Td className="text-[12px]">{r.method}</Td>
+                        <Td className={positive ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                          {positive ? '+' : '-'}${Number(r.amount).toLocaleString('en-US')}
+                        </Td>
+                        <Td>
+                          <Badge
+                            tone={
+                              r.status === 'approved' ? 'green' : r.status === 'rejected' ? 'red' : 'gold'
+                            }
+                          >
+                            {r.status === 'pending' ? 'pending review' : r.status}
+                          </Badge>
+                        </Td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

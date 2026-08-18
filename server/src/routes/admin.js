@@ -21,7 +21,7 @@ function auth(requiredRole = 'ADMIN') {
 
     try {
       const payload = jwt.verify(token, JWT_SECRET);
-      const user = await store.findBy('users', 'id', payload.userId);
+      const user = await store.byId('users', payload.userId);
       if (!user) return res.status(401).json({ error: 'User not found' });
       if (requiredRole === 'ADMIN' && user.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Admin access required' });
@@ -64,7 +64,7 @@ router.post('/users/:id/password', auth('ADMIN'), async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
 
-  const user = await store.findBy('users', 'id', id);
+  const user = await store.byId('users', id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   const hash = await bcrypt.hash(String(newPassword), 10);
@@ -80,7 +80,7 @@ router.patch('/users/:id', auth('ADMIN'), async (req, res) => {
   const id = Number(req.params.id);
   const { status, role } = req.body || {};
 
-  const user = await store.findBy('users', 'id', id);
+  const user = await store.byId('users', id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (id === req.user.id) return res.status(400).json({ error: 'You cannot change your own account here' });
 

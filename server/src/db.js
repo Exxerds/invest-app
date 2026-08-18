@@ -23,21 +23,35 @@ export const USE_PG = Boolean(process.env.DATABASE_URL);
 /* ============================================================
    POSTGRES BACKEND
    ============================================================ */
-let pool = null;
-let schemaReady = null;
+/**
+ * The pool and the schema flag are cached on globalThis, not in module scope.
+ * Serverless keeps a warm instance alive between requests but may re-evaluate
+ * modules; anchoring to the global object guarantees we reuse ONE pool instead
+ * of opening a new connection per invocation (which is what exhausts Postgres
+ * connection limits under load).
+ */
+const g = globalThis;
+g.__ohyPool = g.__ohyPool || null;
+g.__ohySchema = g.__ohySchema || null;
 
 async function getPool() {
-  if (!pool) {
+  if (!g.__ohyPool) {
     const { default: pg } = await import('pg');
-    pool = new pg.Pool({
+    g.__ohyPool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
       // Managed providers (Neon, Supabase, Vercel Postgres) require TLS
       ssl: process.env.PGSSL === 'off' ? false : { rejectUnauthorized: false },
-      max: 3, // serverless: keep the pool small
-      idleTimeoutMillis: 10_000,
+      // Every serverless instance handles one request at a time, so a large
+      // pool only wastes server-side connections. Neon's pooled endpoint
+      // multiplexes for us.
+      max: Number(process.env.PG_POOL_MAX || 2),
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+      keepAlive: true,
     });
+    g.__ohyPool.on('error', (err) => console.error('[db] idle client error:', err.message));
   }
-  return pool;
+  return g.__ohyPool;
 }
 
 /**
@@ -45,11 +59,11 @@ async function getPool() {
  * so both backends behave the same and no migration is needed when the
  * shape of a record changes.
  */
-const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades'];
+const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactions'];
 
 async function ensureSchema() {
-  if (schemaReady) return schemaReady;
-  schemaReady = (async () => {
+  if (g.__ohySchema) return g.__ohySchema;
+  g.__ohySchema = (async () => {
     const p = await getPool();
     for (const t of TABLES) {
       await p.query(`
@@ -64,8 +78,15 @@ async function ensureSchema() {
     await p.query(`CREATE INDEX IF NOT EXISTS tokens_token_idx ON tokens ((data->>'token'))`);
     await p.query(`CREATE INDEX IF NOT EXISTS kyc_user_idx ON kyc (((data->>'userId')::int))`);
     await p.query(`CREATE INDEX IF NOT EXISTS trades_user_idx ON trades (((data->>'userId')::int))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS tx_user_idx ON transactions (((data->>'userId')::int))`);
+    // generic expression indexes matching byField()/manyByField()
+    await p.query(`CREATE INDEX IF NOT EXISTS trades_user_txt_idx ON trades ((data->>'userId'))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS tx_user_txt_idx ON transactions ((data->>'userId'))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS kyc_user_txt_idx ON kyc ((data->>'userId'))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS notif_user_idx ON notifications ((data->>'userId'))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS notif_audience_idx ON notifications ((data->>'audience'))`);
   })();
-  return schemaReady;
+  return g.__ohySchema;
 }
 
 const pgStore = {
@@ -101,12 +122,42 @@ const pgStore = {
     await p.query(`DELETE FROM ${table} WHERE id = ANY($1::int[])`, [doomed.map(d => d.id)]);
     return doomed.length;
   },
+
+  /* ---- indexed lookups: these never load the whole table ---- */
+
+  async byId(table, id) {
+    await ensureSchema();
+    const p = await getPool();
+    const { rows } = await p.query(`SELECT id, data FROM ${table} WHERE id = $1`, [id]);
+    return rows[0] ? { ...rows[0].data, id: rows[0].id } : undefined;
+  },
+
+  /** Exact match on a top-level JSON field, served by the matching index. */
+  async byField(table, field, value) {
+    await ensureSchema();
+    const p = await getPool();
+    const { rows } = await p.query(
+      `SELECT id, data FROM ${table} WHERE data->>$1 = $2 ORDER BY id LIMIT 1`,
+      [field, String(value)],
+    );
+    return rows[0] ? { ...rows[0].data, id: rows[0].id } : undefined;
+  },
+
+  async manyByField(table, field, value) {
+    await ensureSchema();
+    const p = await getPool();
+    const { rows } = await p.query(
+      `SELECT id, data FROM ${table} WHERE data->>$1 = $2 ORDER BY id`,
+      [field, String(value)],
+    );
+    return rows.map(r => ({ ...r.data, id: r.id }));
+  },
 };
 
 /* ============================================================
    JSON-FILE BACKEND (local development)
    ============================================================ */
-let data = { users: [], tokens: [], kyc: [], notifications: [], trades: [], _seq: 1 };
+let data = { users: [], tokens: [], kyc: [], notifications: [], trades: [], transactions: [], _seq: 1 };
 
 function loadFile() {
   try {
@@ -155,6 +206,15 @@ const fileStore = {
     if (deleted) saveFile();
     return deleted;
   },
+  async byId(table, id) {
+    return data[table].find(r => r.id === id);
+  },
+  async byField(table, field, value) {
+    return data[table].find(r => String(r[field]) === String(value));
+  },
+  async manyByField(table, field, value) {
+    return data[table].filter(r => String(r[field]) === String(value));
+  },
 };
 
 if (!USE_PG) loadFile();
@@ -169,14 +229,31 @@ export const insert = (table, row) => backend.insert(table, row);
 export const update = (table, id, fields) => backend.update(table, id, fields);
 export const removeWhere = (table, predicate) => backend.removeWhere(table, predicate);
 
+/** Fetch a single row by primary key — one indexed query. */
+export const byId = (table, id) => backend.byId(table, Number(id));
+
+/**
+ * Exact match on one field — one indexed query.
+ * Use this instead of findOne() wherever the lookup is a plain equality,
+ * otherwise the whole table travels over the wire on every request.
+ */
+export const byField = (table, field, value) => backend.byField(table, field, value);
+
+/** All rows where `field` equals `value` — one indexed query. */
+export const manyByField = (table, field, value) => backend.manyByField(table, field, value);
+
+/**
+ * Predicate scan. Loads the table, so it is only for genuinely ad-hoc
+ * filters. Prefer byId / byField / manyByField on request paths.
+ */
 export async function findOne(table, predicate) {
   const rows = await backend.all(table);
   return rows.find(predicate);
 }
 
 export async function findBy(table, field, value) {
-  const rows = await backend.all(table);
-  return rows.find(r => r[field] === value);
+  if (field === 'id') return backend.byId(table, Number(value));
+  return backend.byField(table, field, value);
 }
 
 export async function allWhere(table, predicate) {

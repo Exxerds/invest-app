@@ -21,7 +21,7 @@ async function auth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Not authorized' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    const user = await store.findOne('users', (u) => u.id === payload.userId);
+    const user = await store.byId('users', payload.userId);
     if (!user) return res.status(401).json({ error: 'User not found' });
     req.user = user;
     next();
@@ -45,7 +45,7 @@ const num = (v, fallback = 0) => {
 /* ---------------- read ---------------- */
 
 router.get('/mine', auth, async (req, res) => {
-  const trades = await store.allWhere('trades', (t) => t.userId === req.user.id);
+  const trades = await store.manyByField('trades', 'userId', req.user.id);
   res.json({ trades });
 });
 
@@ -61,7 +61,7 @@ router.post('/', auth, async (req, res) => {
   // Staff may open a position on behalf of a client
   let owner = req.user;
   if (b.userId && isStaff(req.user)) {
-    const target = await store.findOne('users', (u) => u.id === Number(b.userId));
+    const target = await store.byId('users', Number(b.userId));
     if (!target) return res.status(404).json({ error: 'Client not found' });
     owner = target;
   }
@@ -141,7 +141,7 @@ router.patch('/:id', auth, staffOnly, async (req, res) => {
 
 router.post('/:id/close', auth, async (req, res) => {
   const id = Number(req.params.id);
-  const existing = await store.findOne('trades', (t) => t.id === id);
+  const existing = await store.byId('trades', id);
   if (!existing) return res.status(404).json({ error: 'Position not found' });
 
   if (!isStaff(req.user) && existing.userId !== req.user.id) {

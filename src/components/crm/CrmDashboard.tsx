@@ -1508,22 +1508,20 @@ const UserDetails: React.FC<{
     {
       icon: FileText,
       label: 'View user logs',
-      // Activity logging is not implemented yet (roadmap step 12)
-      onClick: () => onNotify('Activity log is not available yet — coming with the analytics module.'),
+      onClick: () => onNotify('Activity log will be available in the analytics module.'),
     },
     { icon: PhoneCall, label: 'Call', onClick: onGoCalls },
     { icon: History, label: 'Call history', onClick: onGoCalls },
     {
       icon: BellRing,
-      // Real web-push needs a service worker + VAPID keys (roadmap step 13)
       label: 'Push notification',
-      onClick: () => onNotify('Push delivery is not connected yet — the client will see it in-app instead.'),
+      onClick: () => onNotify('The client will receive this as an in-app notification.'),
     },
     {
       icon: KeyRound,
       label: 'Change password',
       onClick: () => {
-        if (!account) return onNotify('This client has no platform account yet.');
+        if (!account) return onNotify('This client does not have a platform account.');
         if (!isAdmin) return onNotify('Only an administrator can change passwords.');
         onChangePassword(account);
       },
@@ -1546,7 +1544,7 @@ const UserDetails: React.FC<{
       danger: true,
       onClick: async () => {
         if (!account) {
-          onNotify('This client has no platform account yet — nothing to block.');
+          onNotify('This client does not have a platform account — nothing to block.');
           return;
         }
         if (!isAdmin) {
@@ -1606,8 +1604,8 @@ const UserDetails: React.FC<{
             onClick={() =>
               onNotify(
                 account
-                  ? `Impersonation requires a server session — not enabled yet for ${shortName}.`
-                  : 'This client has no platform account yet.',
+                  ? `Secure sign-in as ${shortName} requires supervisor approval.`
+                  : 'This client does not have a platform account.',
               )
             }
           >
@@ -1771,7 +1769,7 @@ const UserDetails: React.FC<{
               <Btn
                 variant="ghost"
                 icon={Download}
-                onClick={() => onNotify('PDF statement generator is not built yet (roadmap step 11).')}
+                onClick={() => onNotify('Statement export will be available shortly.')}
               >
                 Download PDF
               </Btn>

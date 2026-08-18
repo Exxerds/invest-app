@@ -51,7 +51,7 @@ async function auth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Not authorized' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    const user = await store.findOne('users', (u) => u.id === payload.userId);
+    const user = await store.byId('users', payload.userId);
     if (!user) return res.status(401).json({ error: 'User not found' });
     req.user = user;
     next();
@@ -78,7 +78,7 @@ function publicDoc(d) {
 /* ---------------- client ---------------- */
 
 router.get('/mine', auth, async (req, res) => {
-  const docs = await store.allWhere('kyc', (d) => d.userId === req.user.id);
+  const docs = await store.manyByField('kyc', 'userId', req.user.id);
   res.json({ documents: docs.map(publicDoc) });
 });
 
@@ -159,7 +159,7 @@ router.get('/all', auth, staffOnly, async (req, res) => {
 
 router.get('/user/:userId', auth, staffOnly, async (req, res) => {
   const id = Number(req.params.userId);
-  const docs = await store.allWhere('kyc', (d) => d.userId === id);
+  const docs = await store.manyByField('kyc', 'userId', id);
   res.json({ documents: docs.map(publicDoc) });
 });
 
@@ -193,7 +193,7 @@ router.post('/:id/review', auth, staffOnly, async (req, res) => {
   });
 
   // all three approved → account fully verified
-  const mine = await store.allWhere('kyc', (d) => d.userId === doc.userId);
+  const mine = await store.manyByField('kyc', 'userId', doc.userId);
   const approved = mine.filter((d) => d.status === 'approved').map((d) => d.type);
   if (SLOTS.every((s) => approved.includes(s))) {
     await notify({
@@ -221,7 +221,7 @@ router.post('/:id/review', auth, staffOnly, async (req, res) => {
 
 router.get('/file/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
-  const doc = await store.findOne('kyc', (d) => d.id === id);
+  const doc = await store.byId('kyc', id);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
 
   // clients may only look at their own scans
