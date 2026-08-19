@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Phone, PhoneOff, Mic, MicOff, MonitorUp, Circle, Ear, Loader2, GripVertical,
+  Maximize2, Minimize2,
 } from 'lucide-react';
 import { useWebRTCCall } from '../../hooks/useWebRTCCall';
 import type { CallRole } from '../../hooks/useWebRTCCall';
@@ -39,6 +40,7 @@ export const CallDock: React.FC<DockProps> = ({
   } = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
 
   const [seconds, setSeconds] = useState(0);
+  const [videoExpanded, setVideoExpanded] = useState(false);
 
   /* The dock can be dragged anywhere, so it never covers a toast or a table */
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -74,6 +76,11 @@ export const CallDock: React.FC<DockProps> = ({
     const t = setInterval(() => setSeconds(s => s + 1), 1000);
     return () => clearInterval(t);
   }, [phase]);
+
+  /* When the far side stops sharing, drop out of fullscreen automatically */
+  useEffect(() => {
+    if (!hasRemoteVideo) setVideoExpanded(false);
+  }, [hasRemoteVideo]);
 
   const title =
     role === 'client'
@@ -165,15 +172,43 @@ export const CallDock: React.FC<DockProps> = ({
       )}
 
       {/* Kept in the DOM at all times (the ref must exist when ontrack
-          fires); only becomes visible once the other side shares a screen */}
-      <video
-        ref={remoteVideoRef}
-        autoPlay
-        playsInline
-        muted
-        className={`w-full bg-black ${hasRemoteVideo ? 'block cursor-pointer' : 'hidden'}`}
-        style={{ maxHeight: 160 }}
-      />
+          fires); only becomes visible once the other side shares a screen.
+          The <video> stays a single element in a stable tree position —
+          expanding just swaps className/style, so srcObject is preserved. */}
+      <div className={videoExpanded ? '' : 'relative w-full'}>
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          muted
+          onClick={() => setVideoExpanded(v => !v)}
+          title={videoExpanded ? 'Minimize' : 'Expand to fullscreen'}
+          className={`bg-black object-contain cursor-pointer ${
+            videoExpanded
+              ? 'fixed inset-0 z-[90] w-screen h-screen'
+              : `w-full ${hasRemoteVideo ? 'block' : 'hidden'}`
+          }`}
+          style={videoExpanded ? undefined : { maxHeight: 160 }}
+        />
+        {hasRemoteVideo && !videoExpanded && (
+          <button
+            onClick={() => setVideoExpanded(true)}
+            title="Expand to fullscreen"
+            className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center cursor-pointer"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      {videoExpanded && (
+        <button
+          onClick={() => setVideoExpanded(false)}
+          title="Minimize"
+          className="fixed top-4 right-4 z-[95] flex items-center gap-2 px-3 py-2 rounded-full bg-[#1C412C] text-[#F5F2E9] hover:bg-[#245238] text-[12px] font-bold cursor-pointer shadow-lg"
+        >
+          <Minimize2 className="w-4 h-4" /> Minimize
+        </button>
+      )}
       <audio ref={remoteAudioRef} autoPlay />
 
       <div className="p-3 bg-white flex items-center justify-center gap-2">
@@ -192,27 +227,28 @@ export const CallDock: React.FC<DockProps> = ({
           {muted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
         </button>
 
+        {/* Screen sharing is available to BOTH sides of the call */}
+        <button
+          onClick={toggleScreenShare}
+          title="Share screen"
+          className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+            sharingScreen ? 'bg-[#B08B48] text-white' : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12]'
+          }`}
+        >
+          <MonitorUp className="w-4 h-4" />
+        </button>
+
+        {/* Recording stays staff-only */}
         {role !== 'client' && (
-          <>
-            <button
-              onClick={toggleScreenShare}
-              title="Share screen"
-              className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                sharingScreen ? 'bg-[#B08B48] text-white' : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12]'
-              }`}
-            >
-              <MonitorUp className="w-4 h-4" />
-            </button>
-            <button
-              onClick={toggleRecording}
-              title={recording ? 'Stop recording' : 'Record call'}
-              className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                recording ? 'bg-rose-500/15 text-rose-600' : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12]'
-              }`}
-            >
-              <Circle className={`w-4 h-4 ${recording ? 'fill-rose-600' : ''}`} />
-            </button>
-          </>
+          <button
+            onClick={toggleRecording}
+            title={recording ? 'Stop recording' : 'Record call'}
+            className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+              recording ? 'bg-rose-500/15 text-rose-600' : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12]'
+            }`}
+          >
+            <Circle className={`w-4 h-4 ${recording ? 'fill-rose-600' : ''}`} />
+          </button>
         )}
 
         <button

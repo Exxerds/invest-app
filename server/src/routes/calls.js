@@ -195,8 +195,10 @@ router.get('/inbox', auth, async (req, res) => {
     if (c.status === 'ended') return false;
     if (c.clientId === req.user.id) return true;
     if (c.managerId === req.user.id) return true;
-    // A supervisor may attach to any live call
-    return isStaff(req.user) && c.whisperBy === req.user.id;
+    // Staff (admin / manager) may see and join ANY live call as a whisper
+    // coach. Previously only calls the user was already whispering on were
+    // returned, so a supervisor standing by could never attach.
+    return isStaff(req.user);
   });
   res.json({ calls: mine.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1)) });
 });
