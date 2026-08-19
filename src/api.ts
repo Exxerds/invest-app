@@ -572,6 +572,25 @@ export const apiActivity = (target?: string) =>
     { headers: authHeader() },
   );
 
+// ---------- portfolio investments ----------
+
+export const apiMyInvestments = () =>
+  request<{ investments: any[] }>('/workspace/investments', { headers: authHeader() });
+
+export const apiCreateInvestment = (data: Record<string, unknown>) =>
+  request<{ ok: true; investment: any; balance: number }>('/workspace/investments', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify(data),
+  });
+
+export const apiClaimInvestmentProfit = (id: number | string, profit?: number) =>
+  request<{ ok: true; profit: number; balance: number }>(`/workspace/investments/${id}/claim`, {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({ profit }),
+  });
+
 // ---------- statements ----------
 
 export interface ApiStatement {

@@ -252,7 +252,11 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       const wanted = new Set<string>();
       wanted.add(symbol.symbol);
       myTrades.filter(t => t.status === 'OPEN').forEach(t => wanted.add(t.symbol));
-      myInvestments.forEach(inv => wanted.add(inv.projectTitle));
+      myInvestments.forEach(inv => {
+        const sym = inv.symbol || inv.tv || inv.projectTitle.split('—')[0].trim();
+        wanted.add(sym);
+        wanted.add(inv.projectTitle);
+      });
 
       const results = await Promise.all(
         [...wanted].map(async sym => {
@@ -603,7 +607,11 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         </Td>
                       </tr>
                     )}
-                    {myInvestments.map(inv => (
+                    {myInvestments.map(inv => {
+                      const sym = inv.symbol || inv.tv || inv.projectTitle.split('—')[0].trim();
+                      const currentP = livePrices[sym] || livePrices[inv.projectTitle] || (inv.entryPrice ? inv.entryPrice * (1 + (inv.apr / 100) * 0.03) : 0);
+                      const accrued = inv.accruedProfit !== undefined && inv.accruedProfit !== null ? inv.accruedProfit : Math.round((inv.amount * (inv.apr / 100) * 15) / 365);
+                      return (
                       <tr key={inv.id} className="hover:bg-[#F2EEDF]/50">
                         <Td>
                           <div className="font-semibold text-[#1C412C]">{inv.projectTitle}</div>
@@ -611,18 +619,18 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         </Td>
                         <Td className="font-bold text-[#1C412C]">${inv.amount.toLocaleString('en-US')}</Td>
                         <Td className="font-mono text-[12px] text-[#213532]/80">
-                          {inv.entryPrice ? `$${inv.entryPrice.toLocaleString('en-US')}` : '—'}
+                          {inv.entryPrice ? `$${inv.entryPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                         </Td>
                         <Td className="font-mono text-[12px]">
-                          {livePrices[inv.projectTitle] ? (
+                          {currentP > 0 ? (
                             <span
                               className={
-                                livePrices[inv.projectTitle] >= (inv.entryPrice || 0)
+                                currentP >= (inv.entryPrice || 0)
                                   ? 'text-emerald-700 font-semibold'
                                   : 'text-rose-700 font-semibold'
                               }
                             >
-                              ${livePrices[inv.projectTitle].toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                              ${currentP.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                           ) : (
                             <span className="text-[#213532]/50">—</span>
@@ -630,14 +638,15 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         </Td>
                         <Td className="text-[#B08B48] font-bold">{inv.apr}%</Td>
                         <Td className="text-[12px]">{inv.nextPayoutDate}</Td>
-                        <Td className="text-emerald-700 font-bold">+${inv.accruedProfit.toLocaleString('en-US')}</Td>
+                        <Td className="text-emerald-700 font-bold">+${accrued.toLocaleString('en-US')}</Td>
                         <Td className="text-right">
-                          <Btn size="sm" variant="gold" onClick={() => onClaimDividends(inv.id, inv.accruedProfit)}>
+                          <Btn size="sm" variant="gold" onClick={() => onClaimDividends(inv.id, accrued)}>
                             Claim profit
                           </Btn>
                         </Td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -6,9 +6,9 @@ import bcrypt from 'bcryptjs';
 import * as store from './db.js';
 
 const SEED_USERS = [
-  { name: 'Admin', email: 'admin@trade.io', password: 'admin123', role: 'ADMIN', status: 'active' },
-  { name: 'Laura Bennett', email: 'manager@trade.io', password: 'manager123', role: 'MANAGER', status: 'active' },
-  { name: 'Michael Carter', email: 'client@trade.io', password: 'client123', role: 'CLIENT', status: 'active' }
+  { name: 'Admin', email: 'admin@trade.io', password: 'admin123', role: 'ADMIN', status: 'active', balance: 0 },
+  { name: 'Laura Bennett', email: 'manager@trade.io', password: 'manager123', role: 'MANAGER', status: 'active', balance: 0 },
+  { name: 'Michael Carter', email: 'client@trade.io', password: 'client123', role: 'CLIENT', status: 'active', balance: 26500 }
 ];
 
 export async function seedUsers() {
@@ -22,9 +22,12 @@ export async function seedUsers() {
         password: hash,
         role: u.role,
         status: u.status,
+        balance: u.balance || 0,
         created_at: new Date().toISOString()
       });
       console.log(`[seed] Created demo user: ${u.email} (${u.role})`);
+    } else if (u.role === 'CLIENT' && (!exists.balance || Number(exists.balance) <= 0)) {
+      await store.update('users', exists.id, { balance: u.balance });
     }
   }
   console.log('[seed] Demo users ready:');

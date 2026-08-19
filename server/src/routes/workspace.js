@@ -62,6 +62,65 @@ export async function logActivity({ actor, action, target, details }) {
 
 /* ---------------- client notes ---------------- */
 
+router.get('/investments', auth, async (req, res) => {
+  const userId = req.user.id;
+  const all = await store.manyByField('investments', 'userId', userId);
+  res.json({ investments: all });
+});
+
+router.post('/investments', auth, async (req, res) => {
+  const userId = req.user.id;
+  const b = req.body || {};
+  const amount = Number(b.amount) || 0;
+  if (amount <= 0) return res.status(400).json({ error: 'Enter an amount' });
+
+  const user = await store.byId('users', userId);
+  const balance = Number(user?.balance) || 0;
+  if (balance < amount && req.user.role === 'CLIENT') {
+    return res.status(400).json({ error: 'Not enough balance' });
+  }
+
+  // Debit user balance
+  const nextBalance = Math.max(0, Math.round((balance - amount) * 100) / 100);
+  await store.update('users', userId, { balance: nextBalance });
+
+  const investment = await store.insert('investments', {
+    userId,
+    userName: req.user.name,
+    projectId: b.projectId || `p-${Date.now()}`,
+    projectTitle: b.projectTitle || 'Asset Position',
+    categoryLabel: b.categoryLabel || 'Trading Asset',
+    amount,
+    date: b.date || new Date().toISOString().split('T')[0],
+    apr: Number(b.apr) || 24.5,
+    nextPayoutDate: b.nextPayoutDate || '2026-09-01',
+    accruedProfit: Number(b.accruedProfit) || 0,
+    entryPrice: Number(b.entryPrice) || 0,
+    symbol: b.symbol || '',
+    tv: b.tv || '',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+  });
+
+  res.json({ ok: true, investment, balance: nextBalance });
+});
+
+router.post('/investments/:id/claim', auth, async (req, res) => {
+  const id = Number(req.params.id);
+  const inv = await store.byId('investments', id);
+  if (!inv || inv.userId !== req.user.id) return res.status(404).json({ error: 'Investment not found' });
+
+  const user = await store.byId('users', req.user.id);
+  const profit = Number(req.body?.profit) || Number(inv.accruedProfit) || 0;
+  if (profit <= 0) return res.json({ ok: true, profit: 0, balance: user?.balance || 0 });
+
+  const nextBalance = Math.round(((Number(user?.balance) || 0) + profit) * 100) / 100;
+  await store.update('users', req.user.id, { balance: nextBalance });
+  await store.update('investments', id, { accruedProfit: 0, lastClaimedAt: new Date().toISOString() });
+
+  res.json({ ok: true, profit, balance: nextBalance });
+});
+
 router.get('/notes', auth, staffOnly, async (req, res) => {
   const notes = await store.all('notes');
   res.json({ notes: notes.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
