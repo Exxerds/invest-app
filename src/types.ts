@@ -85,6 +85,8 @@ export interface ActiveInvestment {
   entryPrice?: number;
   /** TradingView symbol used to pull the live price */
   tv?: string;
+  /** Base symbol for quoting, e.g. BTC/USDT */
+  symbol?: string;
 }
 
 /** Extra client fields used by the CRM "User details" screen (reference design) */

@@ -12,7 +12,15 @@ import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
 import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
-import { apiStartCall, apiWhisper, apiCallInbox, apiCallStatus, apiNotes, apiAddNote, apiCrmSettings, apiSaveCrmSettings, apiClientStatuses, apiSetClientStatus, apiLeads, apiCreateLead, apiUpdateLead, apiAddLeadComment, apiImpersonate, apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
+import { 
+  apiStartCall, apiWhisper, apiCallInbox, apiCallStatus, apiNotes, apiAddNote, 
+  apiCrmSettings, apiSaveCrmSettings, apiClientStatuses, apiSetClientStatus, 
+  apiLeads, apiCreateLead, apiUpdateLead, apiAddLeadComment, apiImpersonate, 
+  apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, 
+  apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, 
+  apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq,
+  apiMyInvestments, apiCreateInvestment, apiClaimInvestmentProfit, apiQuote
+} from './api';
 import type { ApiTrade, ApiTransaction, ApiCall } from './api';
 import { CallDock, IncomingCall } from './components/calls/CallPanel';
 import { enablePushNotifications } from './push';
@@ -24,7 +32,8 @@ import {
 } from './components/modals/OperationsModals';
 import { 
   INITIAL_PROJECTS, 
-  INITIAL_REQUESTS 
+  INITIAL_REQUESTS,
+  INITIAL_MY_INVESTMENTS
 } from './data/mockData';
 import type { 
   Project, 
@@ -322,6 +331,27 @@ export default function App() {
         } catch {
           /* ignore transient errors */
         }
+        // ...and their active investments
+        try {
+          const invRes = await apiMyInvestments();
+          if (invRes.investments && invRes.investments.length > 0) {
+            setMyInvestments(invRes.investments);
+          } else {
+            const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
+            if (saved) {
+              setMyInvestments(JSON.parse(saved));
+            } else {
+              setMyInvestments(INITIAL_MY_INVESTMENTS);
+            }
+          }
+        } catch {
+          const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
+          if (saved) {
+            setMyInvestments(JSON.parse(saved));
+          } else {
+            setMyInvestments(INITIAL_MY_INVESTMENTS);
+          }
+        }
       }
       try {
         const n = await apiNotifications();
@@ -409,44 +439,96 @@ export default function App() {
   /* ========================================================
      INVESTOR ACTIONS
   ======================================================== */
-  const handleConfirmInvest = (project: Project, amount: number) => {
-    setInvestorBalance(prev => prev - amount);
+  const handleConfirmInvest = async (project: Project, amount: number) => {
+    // Determine the base asset symbol
+    const sym = project.title.split('—')[0].trim();
+    let entry = 0;
+    try {
+      const q = await apiQuote(sym);
+      entry = q.price || 0;
+    } catch {
+      entry = 0;
+    }
+    if (!entry) {
+      if (sym.includes('BTC')) entry = 64337.56;
+      else if (sym.includes('ETH')) entry = 3182.40;
+      else if (sym.includes('XAU')) entry = 2415.30;
+      else if (sym.includes('SOL')) entry = 148.50;
+      else if (sym.includes('EUR')) entry = 1.0850;
+      else entry = 100.0;
+    }
 
-    setProjects(prev => prev.map(p => {
-      if (p.id === project.id) {
-        return {
-          ...p,
-          raisedAmount: p.raisedAmount + amount
-        };
-      }
-      return p;
-    }));
+    const calculatedAccrued = Math.round((amount * (project.apr / 100) * 15) / 365);
 
-    const newInv: ActiveInvestment = {
-      id: `my-${Date.now()}`,
-      projectId: project.id,
-      projectTitle: project.title,
-      categoryLabel: project.categoryLabel,
-      amount: amount,
-      date: new Date().toISOString().split('T')[0],
-      apr: project.apr,
-      nextPayoutDate: '2026-09-01',
-      accruedProfit: 0
-    };
-    setMyInvestments(prev => [newInv, ...prev]);
+    try {
+      const res = await apiCreateInvestment({
+        projectId: project.id,
+        projectTitle: project.title,
+        categoryLabel: project.categoryLabel,
+        amount,
+        apr: project.apr,
+        entryPrice: entry,
+        symbol: sym,
+        nextPayoutDate: '2026-09-01',
+        accruedProfit: calculatedAccrued,
+      });
 
-    setInvestors(prev => prev.map(inv => {
-      if (inv.id === 'inv-01') {
-        return {
-          ...inv,
-          balance: inv.balance - amount,
-          invested: inv.invested + amount
-        };
-      }
-      return inv;
-    }));
+      if (res.balance !== undefined) setInvestorBalance(res.balance);
+      else setInvestorBalance(prev => Math.max(0, prev - amount));
 
-    showToast(`✔ Position of $${amount.toLocaleString('en-US')} opened in «${project.title}».`);
+      const newInv = res.investment;
+      setMyInvestments(prev => {
+        const next = [newInv, ...prev];
+        localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
+        return next;
+      });
+
+      setProjects(prev => prev.map(p => {
+        if (p.id === project.id) {
+          return {
+            ...p,
+            raisedAmount: p.raisedAmount + amount
+          };
+        }
+        return p;
+      }));
+
+      showToast(`✔ Position of $${amount.toLocaleString('en-US')} opened in «${project.title}».`);
+    } catch (err) {
+      // Fallback
+      setInvestorBalance(prev => Math.max(0, prev - amount));
+      const newInv: ActiveInvestment = {
+        id: `my-${Date.now()}`,
+        projectId: project.id,
+        projectTitle: project.title,
+        categoryLabel: project.categoryLabel,
+        amount: amount,
+        date: new Date().toISOString().split('T')[0],
+        apr: project.apr,
+        nextPayoutDate: '2026-09-01',
+        entryPrice: entry,
+        symbol: sym,
+        accruedProfit: calculatedAccrued,
+      };
+
+      setMyInvestments(prev => {
+        const next = [newInv, ...prev];
+        localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
+        return next;
+      });
+
+      setProjects(prev => prev.map(p => {
+        if (p.id === project.id) {
+          return {
+            ...p,
+            raisedAmount: p.raisedAmount + amount
+          };
+        }
+        return p;
+      }));
+
+      showToast(`✔ Position of $${amount.toLocaleString('en-US')} opened in «${project.title}».`);
+    }
   };
 
   /**
@@ -465,18 +547,34 @@ export default function App() {
     }
   };
 
-
-  const handleClaimDividends = (invId: string, profit: number) => {
-    setInvestorBalance(prev => prev + profit);
-    setMyInvestments(prev => prev.map(inv => {
-      if (inv.id === invId) {
-        return {
-          ...inv,
-          accruedProfit: 0
-        };
+  const handleClaimDividends = async (invId: string, profit: number) => {
+    try {
+      const numId = Number(invId.replace(/\D/g, ''));
+      if (numId) {
+        const res = await apiClaimInvestmentProfit(numId, profit);
+        if (res.balance !== undefined) setInvestorBalance(res.balance);
+        else setInvestorBalance(prev => prev + profit);
+      } else {
+        setInvestorBalance(prev => prev + profit);
       }
-      return inv;
-    }));
+    } catch {
+      setInvestorBalance(prev => prev + profit);
+    }
+
+    setMyInvestments(prev => {
+      const next = prev.map(inv => {
+        if (inv.id === invId) {
+          return {
+            ...inv,
+            accruedProfit: 0
+          };
+        }
+        return inv;
+      });
+      localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
+      return next;
+    });
+
     showToast(`✔ Profit +$${profit.toLocaleString('en-US')} moved to available balance!`);
   };
 
