@@ -4,9 +4,9 @@
 //  CallDock      — the in-call controls, shared by both sides
 //  IncomingCall  — full-screen prompt in the client's cabinet
 // ============================================================
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Phone, PhoneOff, Mic, MicOff, MonitorUp, Circle, Ear, Loader2,
+  Phone, PhoneOff, Mic, MicOff, MonitorUp, Circle, Ear, Loader2, GripVertical,
 } from 'lucide-react';
 import { useWebRTCCall } from '../../hooks/useWebRTCCall';
 import type { CallRole } from '../../hooks/useWebRTCCall';
@@ -19,19 +19,49 @@ interface DockProps {
   call: ApiCall;
   role: CallRole;
   initiator: boolean;
+  /** Separate peer connection for supervisor coaching */
+  channel?: 'main' | 'whisper';
   /** Supervisor listening in — shown to the manager only */
   whisperName?: string | null;
+  /** Audio-only leg: connects and plays sound, draws no window */
+  headless?: boolean;
   onClosed: () => void;
 }
 
-export const CallDock: React.FC<DockProps> = ({ call, role, initiator, whisperName, onClosed }) => {
+export const CallDock: React.FC<DockProps> = ({
+  call, role, initiator, channel = 'main', whisperName, headless = false, onClosed,
+}) => {
   const {
     phase, error, muted, sharingScreen, recording,
     remoteAudioRef, remoteVideoRef,
     connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
-  } = useWebRTCCall({ callId: call.id, role, initiator, onEnded: onClosed });
+  } = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
 
   const [seconds, setSeconds] = useState(0);
+
+  /* The dock can be dragged anywhere, so it never covers a toast or a table */
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+
+  const startDrag = (e: React.MouseEvent) => {
+    const box = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+    dragRef.current = { dx: e.clientX - box.left, dy: e.clientY - box.top };
+
+    const move = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      setPos({
+        x: Math.max(8, Math.min(window.innerWidth - 330, ev.clientX - dragRef.current.dx)),
+        y: Math.max(8, Math.min(window.innerHeight - 120, ev.clientY - dragRef.current.dy)),
+      });
+    };
+    const up = () => {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
 
   useEffect(() => {
     void connect();
@@ -45,11 +75,38 @@ export const CallDock: React.FC<DockProps> = ({ call, role, initiator, whisperNa
   }, [phase]);
 
   const title =
-    role === 'client' ? call.callerName : role === 'supervisor' ? `Whisper · ${call.clientName}` : call.clientName;
+    role === 'client'
+      ? call.callerName
+      : role === 'supervisor'
+      ? `Coaching ${call.managerName}`
+      : call.clientName;
+
+  /**
+   * The manager's whisper leg exists only to carry the coach's audio —
+   * a second window on screen would just confuse them.
+   */
+  if (headless) {
+    return (
+      <>
+        <audio ref={remoteAudioRef} autoPlay />
+        <video ref={remoteVideoRef} autoPlay playsInline className="hidden" />
+      </>
+    );
+  }
 
   return (
-    <div className="fixed bottom-5 right-5 z-[70] w-[320px] bg-[#14161c] border border-[#f5b400]/30 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden">
+    <div
+      className="fixed z-[70] w-[320px] bg-[#14161c] border border-[#f5b400]/30 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden"
+      style={pos ? { left: pos.x, top: pos.y } : { right: 20, bottom: 96 }}
+    >
       <div className="px-4 py-3 bg-[#0f1116] border-b border-white/[.06] flex items-center gap-2.5">
+        <button
+          onMouseDown={startDrag}
+          title="Drag to move"
+          className="shrink-0 -ml-1 text-slate-600 hover:text-slate-300 cursor-grab active:cursor-grabbing"
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
         <div className="w-9 h-9 rounded-full bg-[#f5b400]/15 border border-[#f5b400]/30 flex items-center justify-center">
           {phase === 'connecting' ? (
             <Loader2 className="w-4 h-4 text-[#f5b400] animate-spin" />
@@ -77,6 +134,12 @@ export const CallDock: React.FC<DockProps> = ({ call, role, initiator, whisperNa
       {whisperName && role === 'manager' && (
         <div className="px-4 py-2 bg-violet-500/10 border-b border-violet-500/20 text-[11px] text-violet-300 flex items-center gap-1.5">
           <Ear className="w-3.5 h-3.5" /> {whisperName} is coaching you — the client cannot hear them
+        </div>
+      )}
+
+      {role === 'supervisor' && (
+        <div className="px-4 py-2 bg-violet-500/10 border-b border-violet-500/20 text-[11px] text-violet-300 flex items-center gap-1.5">
+          <Ear className="w-3.5 h-3.5" /> Only {call.managerName} hears you
         </div>
       )}
 

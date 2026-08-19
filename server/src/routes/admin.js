@@ -40,8 +40,10 @@ function auth(requiredRole = 'ADMIN') {
 // ------------------------------------------------------------
 //  List users
 // ------------------------------------------------------------
-router.get('/users', auth('ADMIN'), async (req, res) => {
-  const rows = await store.all('users');
+router.get('/users', auth('STAFF'), async (req, res) => {
+  const all = await store.all('users');
+  // A manager sees clients only; an administrator sees everyone
+  const rows = req.user.role === 'ADMIN' ? all : all.filter(u => u.role === 'CLIENT');
   const users = rows.map((u) => ({
     id: u.id,
     name: u.name,

@@ -14,7 +14,8 @@
     "setup": "npm install && npm install --prefix server",
     "predev": "node scripts/preflight.js",
     "start": "node server/src/index.js",
-    "deploy": "npm install && npm run build && npm start"
+    "deploy": "npm install && npm run build && npm start",
+    "keys": "node scripts/vapid.js"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -22,7 +23,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

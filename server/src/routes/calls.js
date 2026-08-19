@@ -137,9 +137,22 @@ router.post('/:id/signal', auth, async (req, res) => {
     call.clientId === req.user.id || call.managerId === req.user.id || isStaff(req.user);
   if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
+  const wantsWhisper = req.body?.channel === 'whisper';
+  if (wantsWhisper && !isStaff(req.user)) {
+    return res.status(403).json({ error: 'Staff access only' });
+  }
+
   const signal = await store.insert('signals', {
     callId,
     from: req.user.id,
+    /**
+     * A three-way whisper needs two independent peer connections:
+     *   main    — manager <-> client
+     *   whisper — manager <-> supervisor
+     * Keeping their SDP apart is what stops the client from ever
+     * receiving the supervisor's audio.
+     */
+    channel: wantsWhisper ? 'whisper' : 'main',
     role: clean(req.body?.role, 20) || (isStaff(req.user) ? 'manager' : 'client'),
     kind: clean(req.body?.kind, 20),
     // SDP blobs are large; keep them as-is but bounded
@@ -155,9 +168,22 @@ router.get('/:id/signals', auth, async (req, res) => {
   const callId = Number(req.params.id);
   const after = Number(req.query.after) || 0;
 
+  const channel = req.query.channel === 'whisper' ? 'whisper' : 'main';
+
+  /**
+   * Hard guarantee, not just a UI convention: a client can never read the
+   * whisper channel, so a supervisor's coaching cannot reach them even if
+   * the request is crafted by hand.
+   */
+  const call = await store.byId('calls', callId);
+  if (!call) return res.status(404).json({ error: 'Call not found' });
+  if (channel === 'whisper' && !isStaff(req.user)) {
+    return res.status(403).json({ error: 'Staff access only' });
+  }
+
   const all = await store.manyByField('signals', 'callId', callId);
   const fresh = all
-    .filter(s => s.id > after && s.from !== req.user.id)
+    .filter(s => s.id > after && s.from !== req.user.id && (s.channel || 'main') === channel)
     .sort((a, b) => a.id - b.id);
 
   res.json({ signals: fresh, lastId: fresh.length ? fresh[fresh.length - 1].id : after });

@@ -28,10 +28,16 @@ interface Options {
   role: CallRole;
   /** Start the handshake (the caller does, the callee waits for an offer) */
   initiator: boolean;
+  /**
+   * 'main'    — manager <-> client
+   * 'whisper' — manager <-> supervisor, a separate connection so the
+   *             client never receives the supervisor's audio
+   */
+  channel?: 'main' | 'whisper';
   onEnded?: () => void;
 }
 
-export function useWebRTCCall({ callId, role, initiator, onEnded }: Options) {
+export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnded }: Options) {
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [muted, setMuted] = useState(false);
   const [sharingScreen, setSharingScreen] = useState(false);
@@ -48,12 +54,17 @@ export function useWebRTCCall({ callId, role, initiator, onEnded }: Options) {
   const lastSignalRef = useRef(0);
   const pollRef = useRef<number | null>(null);
   const negotiatingRef = useRef(false);
+  const retryRef = useRef<number | null>(null);
 
   /** Tear everything down — safe to call twice. */
   const cleanup = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
+    }
+    if (retryRef.current) {
+      clearInterval(retryRef.current);
+      retryRef.current = null;
     }
     recorderRef.current?.state === 'recording' && recorderRef.current.stop();
     recorderRef.current = null;
@@ -68,7 +79,8 @@ export function useWebRTCCall({ callId, role, initiator, onEnded }: Options) {
   }, []);
 
   const hangUp = useCallback(async () => {
-    if (callId) {
+    if (callId && channel === 'main') {
+      // A supervisor leaving must not end the conversation for everyone
       try {
         await apiCallStatus(callId, 'ended');
       } catch {
@@ -80,7 +92,7 @@ export function useWebRTCCall({ callId, role, initiator, onEnded }: Options) {
     setSharingScreen(false);
     setRecording(false);
     onEnded?.();
-  }, [callId, cleanup, onEnded]);
+  }, [callId, channel, cleanup, onEnded]);
 
   /** Open the microphone, build the peer connection and start polling. */
   const connect = useCallback(async () => {
@@ -109,7 +121,7 @@ export function useWebRTCCall({ callId, role, initiator, onEnded }: Options) {
 
       pc.onicecandidate = (e) => {
         if (e.candidate && callId) {
-          apiPostSignal(callId, 'ice', JSON.stringify(e.candidate), role).catch(() => undefined);
+          apiPostSignal(callId, 'ice', JSON.stringify(e.candidate), role, channel).catch(() => undefined);
         }
       };
 
@@ -125,32 +137,56 @@ export function useWebRTCCall({ callId, role, initiator, onEnded }: Options) {
       if (initiator) {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        await apiPostSignal(callId, 'offer', JSON.stringify(offer), role);
+        await apiPostSignal(callId, 'offer', JSON.stringify(offer), role, channel);
+
+        /**
+         * The callee may not have opened the page yet, and a missed offer
+         * leaves both sides waiting forever. Re-send it every 4s until the
+         * answer lands.
+         */
+        let tries = 0;
+        const retry = window.setInterval(async () => {
+          tries += 1;
+          const pcNow = pcRef.current;
+          if (!pcNow || pcNow.remoteDescription || tries > 15) {
+            clearInterval(retry);
+            return;
+          }
+          try {
+            await apiPostSignal(callId, 'offer', JSON.stringify(pcNow.localDescription), role, channel);
+          } catch {
+            /* keep trying */
+          }
+        }, 4000);
+        retryRef.current = retry;
       }
 
       // Poll for the other side's SDP / ICE
       pollRef.current = window.setInterval(async () => {
         if (!pcRef.current) return;
         try {
-          const { signals, lastId } = await apiReadSignals(callId, lastSignalRef.current);
+          const { signals, lastId } = await apiReadSignals(callId, lastSignalRef.current, channel);
           lastSignalRef.current = Math.max(lastSignalRef.current, lastId);
 
           for (const s of signals) {
-            // A supervisor's stream is for the manager only: the client
-            // must ignore it so whisper audio never leaks.
-            if (role === 'client' && s.role === 'supervisor') continue;
-
             const data = JSON.parse(s.payload);
 
             if (s.kind === 'offer') {
               if (negotiatingRef.current) continue;
               negotiatingRef.current = true;
-              await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
-              const answer = await pcRef.current.createAnswer();
-              await pcRef.current.setLocalDescription(answer);
-              await apiPostSignal(callId, 'answer', JSON.stringify(answer), role);
-              negotiatingRef.current = false;
-              if (role === 'client') await apiCallStatus(callId, 'active');
+              try {
+                // Rolling back first lets a re-offer (screen share) succeed
+                if (pcRef.current.signalingState !== 'stable') {
+                  await pcRef.current.setLocalDescription({ type: 'rollback' });
+                }
+                await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
+                const answer = await pcRef.current.createAnswer();
+                await pcRef.current.setLocalDescription(answer);
+                await apiPostSignal(callId, 'answer', JSON.stringify(answer), role, channel);
+                if (role === 'client') await apiCallStatus(callId, 'active');
+              } finally {
+                negotiatingRef.current = false;
+              }
             } else if (s.kind === 'answer') {
               if (pcRef.current.signalingState === 'have-local-offer') {
                 await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
@@ -212,7 +248,7 @@ export function useWebRTCCall({ callId, role, initiator, onEnded }: Options) {
       // Adding a track requires a fresh offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      await apiPostSignal(callId, 'offer', JSON.stringify(offer), role);
+      await apiPostSignal(callId, 'offer', JSON.stringify(offer), role, channel);
 
       setSharingScreen(true);
       await apiCallStatus(callId, 'active', { screenShare: true }).catch(() => undefined);

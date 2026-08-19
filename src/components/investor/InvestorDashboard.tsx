@@ -144,9 +144,12 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [marginRates, setMarginRates] = useState<Record<string, number>>({});
   const [triggerPrice, setTriggerPrice] = useState('');
   // Live order book for the selected instrument
-  const [book, setBook] = useState<{ bids: { price: number; size: number }[]; asks: { price: number; size: number }[] }>(
-    { bids: [], asks: [] },
-  );
+  const [book, setBook] = useState<{
+    bids: { price: number; size: number }[];
+    asks: { price: number; size: number }[];
+    supported: boolean;
+    reason?: string;
+  }>({ bids: [], asks: [], supported: true });
   const [stopLoss, setStopLoss] = useState('');
   const [takeProfit, setTakeProfit] = useState('');
   const [category, setCategory] = useState<AssetCategory>('Crypto');
@@ -304,9 +307,16 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     const pull = async () => {
       try {
         const b = await apiOrderBook(symbol.symbol);
-        if (!stop) setBook({ bids: b.bids || [], asks: b.asks || [] });
+        if (!stop) {
+          setBook({
+            bids: b.bids || [],
+            asks: b.asks || [],
+            supported: b.supported !== false,
+            reason: b.reason,
+          });
+        }
       } catch {
-        if (!stop) setBook({ bids: [], asks: [] });
+        if (!stop) setBook({ bids: [], asks: [], supported: true });
       }
     };
     pull();
@@ -849,7 +859,12 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                             : 'text-rose-400'
                         }
                       >
-                        {marginLevel > 0 ? `${marginLevel.toFixed(0)}%` : '—'}
+                        {marginLevel <= 0
+                          ? '—'
+                          : marginLevel >= 10000
+                          // Anything past this point only means "plenty of room"
+                          ? '>9999%'
+                          : `${marginLevel.toFixed(0)}%`}
                       </span>
                     </div>
                     <div className="flex justify-between text-[11px]">
@@ -942,8 +957,18 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               <Card title="Order book" subtitle={`${symbol.symbol} · live depth`}>
                 <div className="p-4">
                   {book.asks.length === 0 && book.bids.length === 0 ? (
-                    <div className="py-8 text-center text-[12px] text-slate-600">
-                      Depth is not published for this instrument.
+                    <div className="py-10 text-center space-y-2">
+                      <div className="text-[12px] text-slate-500">
+                        {book.supported
+                          ? 'Depth is loading…'
+                          : 'Live depth is available for crypto markets'}
+                      </div>
+                      {!book.supported && (
+                        <div className="text-[11px] text-slate-600 max-w-[220px] mx-auto leading-relaxed">
+                          Stocks, indices, metals and FX trade on venues that do not publish a
+                          free public order book. Prices and charts still update live.
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-3">

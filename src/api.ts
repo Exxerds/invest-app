@@ -616,15 +616,22 @@ export const apiStartCall = (clientId: number, callerName: string) =>
 export const apiCallInbox = () =>
   request<{ calls: ApiCall[] }>('/calls/inbox', { headers: authHeader() });
 
-export const apiPostSignal = (callId: number, kind: string, payload: string, role: string) =>
+export const apiPostSignal = (
+  callId: number,
+  kind: string,
+  payload: string,
+  role: string,
+  channel: 'main' | 'whisper' = 'main',
+) =>
   request<{ ok: true; id: number }>(`/calls/${callId}/signal`, {
-    method: 'POST', headers: authHeader(), body: JSON.stringify({ kind, payload, role }),
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ kind, payload, role, channel }),
   });
 
-export const apiReadSignals = (callId: number, after: number) =>
-  request<{ signals: ApiSignal[]; lastId: number }>(`/calls/${callId}/signals?after=${after}`, {
-    headers: authHeader(),
-  });
+export const apiReadSignals = (callId: number, after: number, channel: 'main' | 'whisper' = 'main') =>
+  request<{ signals: ApiSignal[]; lastId: number }>(
+    `/calls/${callId}/signals?after=${after}&channel=${channel}`,
+    { headers: authHeader() },
+  );
 
 export const apiCallStatus = (
   callId: number,
@@ -657,7 +664,13 @@ export const apiCallRecording = (callId: number) =>
 // ---------- live market data ----------
 
 export const apiOrderBook = (symbol: string) =>
-  request<{ symbol: string; bids: { price: number; size: number }[]; asks: { price: number; size: number }[] }>(
+  request<{
+    symbol: string;
+    bids: { price: number; size: number }[];
+    asks: { price: number; size: number }[];
+    supported?: boolean;
+    reason?: string;
+  }>(
     `/symbols/orderbook?symbol=${encodeURIComponent(symbol)}`,
   );
 

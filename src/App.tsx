@@ -148,6 +148,7 @@ export default function App() {
   const [activeCall, setActiveCall] = useState<ApiCall | null>(null);
   const [callRole, setCallRole] = useState<'manager' | 'client' | 'supervisor'>('client');
   const [callInitiator, setCallInitiator] = useState(false);
+  const [whisperCall, setWhisperCall] = useState<ApiCall | null>(null);
 
   const [impersonating, setImpersonating] = useState<boolean>(
     () => !!localStorage.getItem(ADMIN_TOKEN_KEY),
@@ -158,6 +159,46 @@ export default function App() {
      - /confirm-email?token=...  (email confirmation)
      - /reset-password?token=... (password reset)
   ======================================================== */
+  /**
+   * Calls need their own, much faster loop: the shared 20s poll made an
+   * incoming call appear long after the caller had given up, and a hang-up
+   * on one side stayed on screen for the other.
+   */
+  useEffect(() => {
+    if (!isLoggedIn || !getToken()) {
+      setIncomingCall(null);
+      setActiveCall(null);
+      return;
+    }
+
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const inbox = await apiCallInbox();
+        if (stopped) return;
+
+        setActiveCall(prev => {
+          if (!prev) return prev;
+          const same = inbox.calls.find(c => c.id === prev.id);
+          // The other side hung up — close our dock too
+          if (!same || same.status === 'ended') return null;
+          return same;
+        });
+
+        const ringing = inbox.calls.find(
+          c => c.status === 'ringing' && c.clientId === currentUser?.id,
+        );
+        setIncomingCall(ringing || null);
+      } catch {
+        /* ignore transient errors */
+      }
+    };
+
+    tick();
+    const t = setInterval(tick, 2000);
+    return () => { stopped = true; clearInterval(t); };
+  }, [isLoggedIn, currentUser?.id]);
+
   // Register for browser notifications once the client is signed in
   useEffect(() => {
     if (!isLoggedIn || currentUser?.role !== 'CLIENT') return;
@@ -266,26 +307,6 @@ export default function App() {
           /* ignore transient errors */
         }
       }
-      // Ringing / live calls addressed to me
-      try {
-        const inbox = await apiCallInbox();
-        const ringing = inbox.calls.find(c => c.status === 'ringing');
-        const live = inbox.calls.find(c => c.status === 'active');
-
-        if (activeCall) {
-          // Keep the whisper badge fresh while the call runs
-          const same = inbox.calls.find(c => c.id === activeCall.id);
-          if (same) setActiveCall(same);
-          else setActiveCall(null);
-        } else if (ringing && ringing.clientId === currentUser?.id) {
-          setIncomingCall(ringing);
-        } else if (live && live.clientId === currentUser?.id) {
-          setIncomingCall(null);
-        }
-      } catch {
-        /* ignore transient errors */
-      }
-
       try {
         const n = await apiNotifications();
         setNotifications(n.notifications);
@@ -321,17 +342,16 @@ export default function App() {
     }
   };
 
-  // Load users list when logged in as ADMIN
+  // Both admins and managers need the client list (calls, leads, support)
   useEffect(() => {
-    if (isLoggedIn && currentUser?.role === 'ADMIN' && getToken()) {
-      apiAdminUsers()
-        .then((res) => setUsers(res.users))
-        .catch(() => setUsers([]));
-    }
-    if (currentUser?.role === 'ADMIN' && !getToken()) {
-      // demo admin (no backend) — leave list empty
+    const staff = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+    if (!isLoggedIn || !staff || !getToken()) {
       setUsers([]);
+      return;
     }
+    apiAdminUsers()
+      .then((res) => setUsers(res.users))
+      .catch(() => setUsers([]));
   }, [isLoggedIn, currentUser]);
 
   // Toast notification
@@ -810,6 +830,39 @@ export default function App() {
         />
       )}
 
+      {/**
+        * The manager answers the supervisor on the whisper channel.
+        * Without this leg the coach could talk but nobody would hear them.
+        */}
+      {activeCall?.whisperBy && callRole === 'manager' && (
+        <CallDock
+          call={activeCall}
+          role="manager"
+          initiator={false}
+          channel="whisper"
+          headless
+          onClosed={() => undefined}
+        />
+      )}
+
+      {/* Supervisor coaching runs on its own connection */}
+      {whisperCall && (
+        <CallDock
+          call={whisperCall}
+          role="supervisor"
+          initiator
+          channel="whisper"
+          onClosed={async () => {
+            try {
+              await apiWhisper(whisperCall.id, false);
+            } catch {
+              /* leaving locally is enough */
+            }
+            setWhisperCall(null);
+          }}
+        />
+      )}
+
       {/* Impersonation banner — always visible so nobody forgets they are
           looking at somebody else's account */}
       {impersonating && (
@@ -933,10 +986,10 @@ export default function App() {
             onWhisper={async (call) => {
               try {
                 const res = await apiWhisper(call.id, true);
-                setCallRole('supervisor');
-                setCallInitiator(true);
-                setActiveCall(res.call);
-                showToast('Joined in whisper mode — the client cannot hear you');
+                // A separate dock on the whisper channel, so the manager's
+                // own call keeps running untouched
+                setWhisperCall(res.call);
+                showToast(`Coaching ${res.call.managerName} — the client cannot hear you`);
               } catch (err) {
                 showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not join', 'info');
               }
