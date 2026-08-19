@@ -1891,7 +1891,7 @@ const UserDetails: React.FC<{
           <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
             {(['BTC', 'ETH', 'USDC'] as const).map(t => (
               <div key={t}>
-                <label className="text-[11px] font-bold uppercase text-slate-500">{t}</label>
+                <label className="text-[11px] font-bold uppercase text-[#213532]/70">{t}</label>
                 <Input
                   className="w-full mt-1.5 font-mono text-[11px]"
                   placeholder={clientWalletDefaults[t] ? `Default: ${clientWalletDefaults[t]}` : `${t} address`}
@@ -1933,13 +1933,13 @@ const UserDetails: React.FC<{
             {/* Passwords are stored hashed — they cannot be read back, only reset */}
             <Field label="Password">
               <span className="inline-flex items-center gap-2">
-                <span className="font-mono text-slate-500">••••••••</span>
+                <span className="font-mono text-[#213532]/70">••••••••</span>
                 {account && isAdmin ? (
                   <Btn size="sm" variant="ghost" icon={KeyRound} onClick={() => onChangePassword(account)}>
                     Change
                   </Btn>
                 ) : (
-                  <span className="text-[11px] text-slate-600">
+                  <span className="text-[11px] text-[#213532]/60">
                     {account ? 'admin only' : 'no account yet'}
                   </span>
                 )}
@@ -1998,11 +1998,11 @@ const UserDetails: React.FC<{
           <Card title="Account information">
             <div className="px-5 pb-2">
               <Field label="Balance">
-                <span className="text-emerald-400 font-extrabold">${user.balance.toLocaleString('en-US')}</span>
+                <span className="text-emerald-700 font-extrabold">${user.balance.toLocaleString('en-US')}</span>
               </Field>
               <Field label="Invested">${user.invested.toLocaleString('en-US')}</Field>
               <Field label="Total profit">
-                <span className="text-emerald-400">+${user.totalProfit.toLocaleString('en-US')}</span>
+                <span className="text-emerald-700">+${user.totalProfit.toLocaleString('en-US')}</span>
               </Field>
               <Field label="Open trades">{trades.filter(t => t.status === 'OPEN').length}</Field>
               <Field label="KYC status">
@@ -2011,8 +2011,8 @@ const UserDetails: React.FC<{
                 </Badge>
               </Field>
             </div>
-            <div className="p-5 pt-3 border-t border-white/[.06] space-y-2">
-              <label className="text-[11px] font-bold uppercase text-slate-500">Set balance manually</label>
+            <div className="p-5 pt-3 border-t border-[#E4DECB] space-y-2">
+              <label className="text-[11px] font-bold uppercase text-[#213532]/70">Set balance manually</label>
               <div className="flex gap-2">
                 <Input value={balanceInput} onChange={e => setBalanceInput(e.target.value)} className="flex-1" />
                 <Btn
@@ -2104,12 +2104,12 @@ const UserDetails: React.FC<{
                       Uploaded {new Date(doc.uploadedAt).toLocaleString('en-US')}
                     </div>
                     {doc.reviewedBy && (
-                      <div className="text-[10px] text-slate-600">
+                      <div className="text-[10px] text-[#213532]/60">
                         Reviewed by {doc.reviewedBy}
                       </div>
                     )}
                     {doc.rejectReason && (
-                      <div className="mt-1.5 text-[11px] text-rose-400">{doc.rejectReason}</div>
+                      <div className="mt-1.5 text-[11px] text-rose-700">{doc.rejectReason}</div>
                     )}
                     {doc.status !== 'approved' && (
                       <div className="flex gap-2 mt-3">
@@ -2135,7 +2135,7 @@ const UserDetails: React.FC<{
                       </div>
                     )}
                     {doc.status === 'approved' && (
-                      <div className="mt-3 text-[11px] text-emerald-400 text-center py-1.5">Approved</div>
+                      <div className="mt-3 text-[11px] text-emerald-700 text-center py-1.5">Approved</div>
                     )}
                   </>
                 )}
@@ -2157,10 +2157,10 @@ const UserDetails: React.FC<{
               ))}
             </Select>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-500">Current:</span>
+              <span className="text-[11px] text-[#213532]/70">Current:</span>
               <Badge tone={statusTone(status)}>{status}</Badge>
             </div>
-            <p className="text-[11px] text-slate-600 leading-relaxed">
+            <p className="text-[11px] text-[#213532]/60 leading-relaxed">
               The full status list will be supplied by the client and plugged in here.
             </p>
           </div>
@@ -2175,7 +2175,7 @@ const UserDetails: React.FC<{
           <div className="p-5 space-y-3">
             <div className="space-y-2.5 max-h-64 overflow-y-auto">
               {notes.length === 0 && (
-                <div className="text-center text-[12px] text-slate-600 py-6">
+                <div className="text-center text-[12px] text-[#213532]/60 py-6">
                   No notes yet — add the first daily update below.
                 </div>
               )}
@@ -2211,7 +2211,7 @@ const UserDetails: React.FC<{
                 className="w-full px-3.5 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-[13px] text-[#213532] resize-none focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20"
               />
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[10px] text-slate-600">
+                <span className="text-[10px] text-[#213532]/60">
                   Once sent, a note cannot be edited or deleted.
                 </span>
                 <Btn variant="gold" type="submit" disabled={!noteText.trim()}>
@@ -2227,7 +2227,7 @@ const UserDetails: React.FC<{
       {searchOpen && (
         <Card className="p-4">
           <div className="flex items-center gap-2">
-            <Search className="w-4 h-4 text-slate-500" />
+            <Search className="w-4 h-4 text-[#213532]/70" />
             <Input
               autoFocus
               className="flex-1"
@@ -2240,7 +2240,7 @@ const UserDetails: React.FC<{
             </Btn>
           </div>
           {searchQ && (
-            <div className="mt-3 text-[12px] text-slate-500">
+            <div className="mt-3 text-[12px] text-[#213532]/70">
               {trades.filter(t => t.asset.toLowerCase().includes(searchQ.toLowerCase())).length} position(s) match
               “{searchQ}”
             </div>

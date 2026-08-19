@@ -87,6 +87,10 @@ export interface ActiveInvestment {
   tv?: string;
   /** Base symbol for quoting, e.g. BTC/USDT */
   symbol?: string;
+  /** Server timestamp the position was opened (accrual start) */
+  createdAt?: string;
+  /** Server timestamp of the last profit claim (accrual restarts here) */
+  lastClaimedAt?: string;
 }
 
 /** Extra client fields used by the CRM "User details" screen (reference design) */

@@ -170,6 +170,7 @@ export const CallDock: React.FC<DockProps> = ({
         ref={remoteVideoRef}
         autoPlay
         playsInline
+        muted
         className={`w-full bg-black ${hasRemoteVideo ? 'block cursor-pointer' : 'hidden'}`}
         style={{ maxHeight: 160 }}
       />

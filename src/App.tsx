@@ -566,7 +566,10 @@ export default function App() {
         if (inv.id === invId) {
           return {
             ...inv,
-            accruedProfit: 0
+            accruedProfit: 0,
+            // The accrual clock restarts now, so the next payout only counts
+            // income earned after this claim.
+            lastClaimedAt: new Date().toISOString(),
           };
         }
         return inv;
@@ -1181,7 +1184,7 @@ export default function App() {
           </div>
 
           <div className="mt-8 pt-6 border-t border-white/15">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
+            <p className="text-[11px] text-[#F5F2E9]/60 leading-relaxed">
               <strong className="text-[#B08B48]">Risk Warning:</strong> Leveraged products such as
               CFD's and Forex trading are complex instruments with a high risk of losing money. The
               products offered are intended for professional and retail clients. Please note that

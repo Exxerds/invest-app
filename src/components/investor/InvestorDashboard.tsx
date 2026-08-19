@@ -112,6 +112,21 @@ function livePnlOf(t: ApiTrade, live: number): number {
   const dir = t.side === 'SHORT' ? -1 : 1;
   return (live - entry) * unitsOf(t) * dir;
 }
+
+/**
+ * Accrued income grows continuously from APR and elapsed time.
+ * The clock restarts at `lastClaimedAt` (or the position's creation date),
+ * so claiming profit never double-counts income already paid out.
+ */
+function accruedOf(inv: ActiveInvestment): number {
+  const startIso = inv.lastClaimedAt || inv.createdAt || inv.date;
+  const start = startIso ? new Date(startIso).getTime() : NaN;
+  if (Number.isNaN(start)) return Number(inv.accruedProfit) || 0;
+  const days = Math.max(0, (Date.now() - start) / 86_400_000);
+  const raw = (Number(inv.amount) || 0) * ((Number(inv.apr) || 0) / 100) * (days / 365);
+  return Math.max(0, Math.round(raw));
+}
+
 const WALLETS: Wallet[] = [];
 
 export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
@@ -610,7 +625,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     {myInvestments.map(inv => {
                       const sym = inv.symbol || inv.tv || inv.projectTitle.split('—')[0].trim();
                       const currentP = livePrices[sym] || livePrices[inv.projectTitle] || (inv.entryPrice ? inv.entryPrice * (1 + (inv.apr / 100) * 0.03) : 0);
-                      const accrued = inv.accruedProfit !== undefined && inv.accruedProfit !== null ? inv.accruedProfit : Math.round((inv.amount * (inv.apr / 100) * 15) / 365);
+                      const accrued = accruedOf(inv);
                       return (
                       <tr key={inv.id} className="hover:bg-[#F2EEDF]/50">
                         <Td>
@@ -763,7 +778,9 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     <button
                       onClick={() => setSide('buy')}
                       className={`py-2 rounded-xl text-[12px] font-bold cursor-pointer ${
-                        side === 'buy' ? 'bg-emerald-500 text-white' : 'bg-white/[.05] text-slate-400'
+                        side === 'buy'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-[#1C412C]/[.06] text-[#213532]/70 hover:bg-[#1C412C]/[.12]'
                       }`}
                     >
                       Buy / Long
@@ -771,7 +788,9 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     <button
                       onClick={() => setSide('sell')}
                       className={`py-2 rounded-xl text-[12px] font-bold cursor-pointer ${
-                        side === 'sell' ? 'bg-rose-500 text-white' : 'bg-white/[.05] text-slate-400'
+                        side === 'sell'
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-[#1C412C]/[.06] text-[#213532]/70 hover:bg-[#1C412C]/[.12]'
                       }`}
                     >
                       Sell / Short
