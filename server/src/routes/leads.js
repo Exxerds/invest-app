@@ -14,6 +14,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
+import { notify } from '../notifications.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -62,6 +63,58 @@ async function findDuplicate({ phone, email }, { leads, users }) {
   }
   return null;
 }
+
+router.post('/public', async (req, res) => {
+  const b = req.body || {};
+  const name = clean(b.name, 120).trim();
+  if (!name || name.length < 1) return res.status(400).json({ error: 'Name is required' });
+
+  const emailRaw = clean(b.email, 120).trim();
+  if (!emailRaw || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw)) {
+    return res.status(400).json({ error: 'Valid email is required' });
+  }
+  if (emailRaw.length > 120) return res.status(400).json({ error: 'Email is too long' });
+
+  const phone = clean(b.phone, 40);
+  const message = clean(b.message ?? b.notes ?? '', 2000);
+  const source = clean(b.source, 120).trim() || 'Landing';
+
+  // Duplicate — same phone or email already in leads or users (do not reveal who owns it)
+  const [leads, users] = await Promise.all([store.all('leads'), store.all('users')]);
+  const dup = await findDuplicate({ phone, email: emailRaw }, { leads, users });
+  if (dup) return res.status(409).json({ error: 'This contact already exists' });
+
+  // Anti-spam: max 3 leads per normalized email per 24h
+  const eNorm = normEmail(emailRaw);
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const recent = leads.filter(l => normEmail(l.email) === eNorm && l.createdAt && new Date(l.createdAt).getTime() >= cutoff).length;
+  if (recent >= 3) return res.status(429).json({ error: 'Too many requests, try again later' });
+
+  const lead = await store.insert('leads', {
+    name,
+    phone,
+    email: emailRaw,
+    potentialAmount: 0,
+    stage: 'New',
+    notes: message ? `From website: ${message}` : '',
+    source,
+    manager: '',
+    comments: [],
+    createdBy: 'Website',
+    createdAt: new Date().toISOString(),
+  });
+
+  // Notify staff (bell + push)
+  notify({
+    audience: 'staff',
+    kind: 'lead',
+    title: 'New lead from the website',
+    message: `${name} (${emailRaw || phone}) — ${source}`,
+    link: 'leads',
+  }).catch(() => undefined);
+
+  res.json({ ok: true, id: lead.id });
+});
 
 router.get('/', auth, async (req, res) => {
   const leads = await store.all('leads');

@@ -32,7 +32,7 @@ import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
 import { OakCrest, OakWordmark } from '../brand/Logo';
-import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall, apiStatement, apiUpdateProfile, apiChangeMyPassword } from '../../api';
+import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall, apiStatement, apiUpdateProfile, apiChangeMyPassword, apiSupportMessages, apiSendSupportMessage, apiSupportPresence } from '../../api';
 import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
@@ -454,7 +454,9 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
   const [toast, setToast] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
-  const [msgLog, setMsgLog] = useState<{ me: boolean; text: string }[]>([]);
+  const [supportMsgs, setSupportMsgs] = useState<{ id: number; from: string; text: string; createdAt: string; senderName: string }[]>([]);
+  const [supportSystemShown, setSupportSystemShown] = useState(false);
+  const [supportPrevStaffCount, setSupportPrevStaffCount] = useState(0);
   const [callRequested, setCallRequested] = useState(false);
   const [callRequesting, setCallRequesting] = useState(false);
 
@@ -463,6 +465,32 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Real support chat polling — only while Support tab is open
+  useEffect(() => {
+    if (tab !== 'support' || !user?.id) return;
+    let alive = true;
+    const fetchSupport = async () => {
+      try {
+        const r = await apiSupportMessages();
+        if (!alive) return;
+        const msgs = r.messages || [];
+        // toast on new staff reply
+        const staffCount = msgs.filter(m => m.from === 'staff').length;
+        if (staffCount > supportPrevStaffCount && supportPrevStaffCount !== 0) {
+          setToast('New message from support');
+        }
+        setSupportPrevStaffCount(staffCount);
+        setSupportMsgs(msgs.map(m => ({ id: m.id, from: m.from, text: m.text, createdAt: m.createdAt, senderName: m.senderName })));
+        apiSupportPresence().catch(() => undefined);
+      } catch {
+        /* ignore */
+      }
+    };
+    fetchSupport();
+    const timer = setInterval(fetchSupport, 3000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [tab, user?.id, supportPrevStaffCount]);
 
   /* ---------------- Profile tab: controlled fields ----------------
      The form used to be uncontrolled defaultValue inputs whose Save
@@ -1509,30 +1537,43 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         {tab === 'support' && (
           <Card title="Support chat" subtitle="Live chat with your personal manager">
             <div className="p-5 space-y-3 h-72 overflow-y-auto bg-white">
-              <div className="max-w-[70%] bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl rounded-tl-sm px-4 py-2.5 text-[13px] text-[#213532]">
-                Good afternoon! How can I help you today?
-                <div className="text-[10px] text-[#213532]/60 mt-1">Manager · 11:02</div>
-              </div>
-              <div className="max-w-[70%] ml-auto bg-[#1C412C] text-[#F5F2E9] rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13px]">
-                Hi! I'd like to increase the leverage on my account.
-                <div className="text-[10px] text-[#F5F2E9]/70 mt-1">You · 11:04</div>
-              </div>
-              {msgLog.map((m, i) => (
-                <div
-                  key={i}
-                  className="max-w-[70%] ml-auto bg-[#1C412C] text-[#F5F2E9] rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13px]"
-                >
-                  {m.text}
-                  <div className="text-[10px] text-[#F5F2E9]/70 mt-1">You</div>
-                </div>
-              ))}
+              {supportMsgs.length === 0 && (
+                <div className="text-center text-[12px] text-[#213532]/60 py-8">No messages yet — write to your manager.</div>
+              )}
+              {supportMsgs.map(m => {
+                const isClient = m.from === 'client';
+                const time = new Date(m.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                return (
+                  <div
+                    key={m.id}
+                    className={`${isClient ? 'ml-auto bg-[#1C412C] text-[#F5F2E9] rounded-tr-sm' : 'bg-[#F5F2E9] border border-[#E4DECB] text-[#213532] rounded-tl-sm'} max-w-[70%] rounded-2xl px-4 py-2.5 text-[13px]`}
+                  >
+                    {m.text}
+                    <div className={`${isClient ? 'text-[#F5F2E9]/70' : 'text-[#213532]/60'} text-[10px] mt-1`}>{isClient ? 'You' : m.senderName || 'Manager'} · {time}</div>
+                  </div>
+                );
+              })}
+              {supportSystemShown && (
+                <div className="text-center text-[11px] text-[#213532]/50 py-2">A manager is being connected to your conversation — typically within a few minutes.</div>
+              )}
             </div>
             <form
-              onSubmit={e => {
+              onSubmit={async e => {
                 e.preventDefault();
                 if (!msg.trim()) return;
-                setMsgLog(l => [...l, { me: true, text: msg.trim() }]);
+                const text = msg.trim();
                 setMsg('');
+                try {
+                  await apiSendSupportMessage({ text });
+                  const r = await apiSupportMessages();
+                  setSupportMsgs(r.messages.map(m => ({ id: m.id, from: m.from, text: m.text, createdAt: m.createdAt, senderName: m.senderName })));
+                  const staffCount = r.messages.filter(x => x.from === 'staff').length;
+                  setSupportPrevStaffCount(staffCount);
+                  if (!supportSystemShown) setSupportSystemShown(true);
+                } catch (err) {
+                  setToast(err instanceof Error ? err.message : 'Could not send message');
+                  setMsg(text);
+                }
               }}
               className="p-4 border-t border-[#E4DECB] flex gap-2 bg-[#F5F2E9]"
             >

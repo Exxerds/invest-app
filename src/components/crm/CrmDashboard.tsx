@@ -10,7 +10,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Investor, Lead, TransactionRequest, LeadStage, CrmSettings, ClientNote } from '../../types';
 import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
 import type { ApiKycDoc, ApiNotification, ApiCall, ApiAnalytics, ApiManagerStat } from '../../api';
-import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates } from '../../api';
+import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates, apiResetUserPortfolio, apiSupportConversations, apiSupportMessages, apiSendSupportMessage, apiSupportRead } from '../../api';
+import type { ApiSupportConversation, ApiSupportMessage } from '../../api';
 import type { ApiUser } from '../../api';
 import { sanitizeDecimal } from '../../utils/number';
 import {
@@ -271,13 +272,52 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
     Bitcoin: true, PayPal: false, 'ACH transfer': true,
   });
 
-  // Support
-  const [activeTicket, setActiveTicket] = useState<string | null>(null);
-  const [chatText, setChatText] = useState('');
-  const [chatLog, setChatLog] = useState<{ me: boolean; text: string; time: string }[]>([
-    { me: false, text: 'Hello, when will my withdrawal be processed?', time: '12:04' },
-    { me: true, text: 'Good afternoon! Your request is in processing, funds arrive within 24 hours.', time: '12:06' },
-  ]);
+  // Support — real chat (TradeNation-style)
+  const [supportConvs, setSupportConvs] = useState<ApiSupportConversation[]>([]);
+  const [supportSearch, setSupportSearch] = useState('');
+  const [supportActiveClientId, setSupportActiveClientId] = useState<number | null>(null);
+  const [supportMsgs, setSupportMsgs] = useState<ApiSupportMessage[]>([]);
+  const [supportChatText, setSupportChatText] = useState('');
+
+  // poll conversations while Support tab is open
+  useEffect(() => {
+    if (activeTab !== 'support') return;
+    let alive = true;
+    const pull = async () => {
+      try {
+        const r = await apiSupportConversations();
+        if (!alive) return;
+        setSupportConvs(r.conversations);
+      } catch { /* ignore */ }
+    };
+    pull();
+    const t = setInterval(pull, 3000);
+    return () => { alive = false; clearInterval(t); };
+  }, [activeTab]);
+
+  // poll active chat messages + mark read
+  useEffect(() => {
+    if (activeTab !== 'support' || supportActiveClientId == null) return;
+    let alive = true;
+    const pull = async () => {
+      try {
+        const r = await apiSupportMessages(supportActiveClientId);
+        if (!alive) return;
+        setSupportMsgs(r.messages);
+        apiSupportRead(supportActiveClientId).catch(() => undefined);
+      } catch { /* ignore */ }
+    };
+    pull();
+    const t = setInterval(pull, 3000);
+    return () => { alive = false; clearInterval(t); };
+  }, [activeTab, supportActiveClientId]);
+
+  // when active chat changes, mark read immediately
+  useEffect(() => {
+    if (activeTab === 'support' && supportActiveClientId != null) {
+      apiSupportRead(supportActiveClientId).catch(() => undefined);
+    }
+  }, [activeTab, supportActiveClientId]);
 
   // Happy letter
   const [letterSubject, setLetterSubject] = useState('Your weekly trading report is ready');
@@ -1228,80 +1268,94 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
             </div>
           )}
 
-          {/* ===================== SUPPORT ===================== */}
+          {/* ===================== SUPPORT — REAL CHAT (TradeNation reference) ===================== */}
           {activeTab === 'support' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <Card title="Tickets" subtitle="Click a ticket to open the conversation" className="lg:col-span-1">
-                <div className="p-4 space-y-2">
-                  {investors.slice(0, 4).map((inv, i) => (
-                    <button
-                      key={inv.id}
-                      onClick={() => setActiveTicket(inv.id)}
-                      className={`w-full text-left border rounded-xl p-3 cursor-pointer transition-colors ${
-                        activeTicket === inv.id
-                          ? 'bg-[#B08B48]/15 border-[#B08B48]/40'
-                          : 'bg-[#F5F2E9] border-[#E4DECB] hover:bg-[#F2EEDF]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="text-[13px] font-semibold text-[#1C412C]">{inv.name}</div>
-                        <Badge tone={i === 0 ? 'red' : i === 1 ? 'gold' : 'gray'}>
-                          {i === 0 ? 'high' : i === 1 ? 'open' : 'closed'}
-                        </Badge>
+              <Card title="Support chats" className="lg:col-span-1">
+                <div className="p-4 space-y-3">
+                  <Input placeholder="Search by name, email, phone..." value={supportSearch} onChange={e => setSupportSearch(e.target.value)} className="w-full" />
+                  {(() => {
+                    const q = supportSearch.trim().toLowerCase();
+                    const filtered = supportConvs.filter(c => {
+                      if (!q) return true;
+                      const u = users.find(x => x.id === c.clientId) as any;
+                      const phone = u?.phone || '';
+                      return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || String(phone).toLowerCase().includes(q);
+                    });
+                    if (filtered.length === 0) {
+                      return <div className="text-center text-[12px] text-[#213532]/60 py-8">No conversations yet — chats appear when clients write to you.</div>;
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {filtered.map(c => {
+                          const isActive = supportActiveClientId === c.clientId;
+                          const created = c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US') : '—';
+                          const lastRead = c.unreadForStaff > 0 ? 'Never' : (c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleDateString('en-US') : '—');
+                          return (
+                            <div key={c.clientId} className={`border rounded-xl p-3 ${isActive ? 'bg-[#B08B48]/15 border-[#B08B48]/40' : 'bg-[#F5F2E9] border-[#E4DECB]'}`}>
+                              <div className="flex items-start gap-3">
+                                <Avatar name={c.name} size={36} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[13px] font-bold text-[#1C412C] truncate">{c.name}</div>
+                                  <div className={`text-[11px] font-bold ${c.online ? 'text-emerald-600' : 'text-rose-600'}`}>{c.online ? 'ONLINE' : 'OFFLINE'}</div>
+                                  <div className="text-[11px] text-[#213532]/60 truncate">{c.email}</div>
+                                  {c.lastPreview && <div className="text-[11px] text-[#213532]/50 truncate mt-0.5">{c.lastPreview}</div>}
+                                </div>
+                                <div className="flex flex-col items-end gap-1 shrink-0 text-[10px] text-[#213532]/60">
+                                  {c.unreadForStaff > 0 && <Badge tone="gold">{c.unreadForStaff}</Badge>}
+                                  <span>Created: {created}</span>
+                                  <span className={c.unreadForStaff > 0 ? 'text-rose-600 font-bold' : ''}>Last read: {lastRead}</span>
+                                </div>
+                              </div>
+                              <Btn size="sm" variant="ghost" className="mt-2 w-full justify-center border border-[#B08B48] text-[#B08B48] hover:bg-[#B08B48]/10" onClick={() => setSupportActiveClientId(c.clientId)}>Open chat</Btn>
+                            </div>
+                          );
+                        })}
                       </div>
-                      <div className="text-[11px] text-[#213532]/70 mt-1">Withdrawal question · #{1000 + i}</div>
-                    </button>
-                  ))}
+                    );
+                  })()}
                 </div>
               </Card>
-              <Card
-                title="Live chat"
-                subtitle={activeTicket ? investors.find(i => i.id === activeTicket)?.name : 'Conversation history'}
-                className="lg:col-span-2"
-              >
-                <div className="p-4 space-y-3 h-80 overflow-y-auto bg-white">
-                  {chatLog.map((m, idx) => (
-                    <div
-                      key={idx}
-                      className={`max-w-[70%] px-4 py-2.5 text-[13px] rounded-2xl ${
-                        m.me
-                          ? 'ml-auto bg-[#1C412C] text-[#F5F2E9] rounded-tr-sm'
-                          : 'bg-[#F5F2E9] border border-[#E4DECB] text-[#213532] rounded-tl-sm'
-                      }`}
-                    >
-                      {m.text}
-                      <div className={`text-[10px] mt-1 ${m.me ? 'text-[#F5F2E9]/70' : 'text-[#213532]/60'}`}>
-                        {m.me ? 'Support' : 'Client'} · {m.time}
-                      </div>
+              <Card title={supportActiveClientId != null ? (supportConvs.find(c => c.clientId === supportActiveClientId)?.name || `Chat #${supportActiveClientId}`) : 'Select a chat'} subtitle={supportActiveClientId != null ? 'Real conversation' : 'Choose a client on the left'} className="lg:col-span-2">
+                {!supportActiveClientId ? (
+                  <div className="p-10 text-center text-[12px] text-[#213532]/60">Select a chat on the left to view messages.</div>
+                ) : (
+                  <>
+                    <div className="p-4 space-y-3 h-80 overflow-y-auto bg-white">
+                      {supportMsgs.length === 0 && <div className="text-center text-[12px] text-[#213532]/60 py-8">No messages yet.</div>}
+                      {supportMsgs.map(m => {
+                        const isClient = m.from === 'client';
+                        const time = new Date(m.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        return (
+                          <div key={m.id} className={`max-w-[70%] px-4 py-2.5 text-[13px] rounded-2xl ${isClient ? 'bg-[#F5F2E9] border border-[#E4DECB] text-[#213532] rounded-tl-sm' : 'ml-auto bg-[#1C412C] text-[#F5F2E9] rounded-tr-sm'}`}>
+                            {m.text}
+                            <div className={`text-[10px] mt-1 ${isClient ? 'text-[#213532]/60' : 'text-[#F5F2E9]/70'}`}>{m.senderName} · {time}</div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
-                <form
-                  onSubmit={e => {
-                    e.preventDefault();
-                    if (!chatText.trim()) return;
-                    setChatLog(l => [
-                      ...l,
-                      {
-                        me: true,
-                        text: chatText.trim(),
-                        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
-                      },
-                    ]);
-                    setChatText('');
-                  }}
-                  className="p-4 border-t border-[#E4DECB] flex gap-2 bg-[#F5F2E9]"
-                >
-                  <Input
-                    className="flex-1"
-                    placeholder="Type a message..."
-                    value={chatText}
-                    onChange={e => setChatText(e.target.value)}
-                  />
-                  <Btn variant="gold" type="submit" disabled={!chatText.trim()}>
-                    Send
-                  </Btn>
-                </form>
+                    <form
+                      onSubmit={async e => {
+                        e.preventDefault();
+                        if (!supportChatText.trim() || supportActiveClientId == null) return;
+                        const text = supportChatText.trim();
+                        setSupportChatText('');
+                        try {
+                          await apiSendSupportMessage({ clientId: supportActiveClientId, text });
+                          const r = await apiSupportMessages(supportActiveClientId);
+                          setSupportMsgs(r.messages);
+                        } catch (err) {
+                          onNotify(err instanceof Error ? err.message : 'Could not send message');
+                          setSupportChatText(text);
+                        }
+                      }}
+                      className="p-4 border-t border-[#E4DECB] flex gap-2 bg-[#F5F2E9]"
+                    >
+                      <Input className="flex-1" placeholder="Type a message..." value={supportChatText} onChange={e => setSupportChatText(e.target.value)} />
+                      <Btn variant="gold" type="submit" disabled={!supportChatText.trim()}>Send</Btn>
+                    </form>
+                  </>
+                )}
               </Card>
             </div>
           )}
@@ -2038,6 +2092,23 @@ const UserDetails: React.FC<{
                   Save
                 </Btn>
               </div>
+              {isAdmin && account && (
+                <Btn
+                  variant="danger"
+                  className="w-full justify-center"
+                  onClick={async () => {
+                    if (!confirm(`Reset portfolio for ${shortName}? This will delete all trades and investments and zero the balance.`)) return;
+                    try {
+                      const r = await apiResetUserPortfolio(account.id);
+                      onNotify(`Portfolio reset: ${r.deletedTrades} trade(s), ${r.deletedInvestments} investment(s) removed. Balance is now $0.`);
+                    } catch (err) {
+                      onNotify(err instanceof Error ? err.message : 'Could not reset portfolio');
+                    }
+                  }}
+                >
+                  Reset portfolio (test data)
+                </Btn>
+              )}
             </div>
           </Card>
 

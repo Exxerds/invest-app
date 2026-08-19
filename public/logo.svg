@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240" role="img" aria-label="Oak Haven Yield">
+  <!-- outer shield -->
+  <path d="M100 8 L188 52 v88 c0 46-40 74-88 92-48-18-88-46-88-92V52 Z" fill="none" stroke="#1C412C" stroke-width="9" stroke-linejoin="round"/>
+  <!-- inner shield -->
+  <path d="M100 26 L172 62 v78 c0 38-33 62-72 78-39-16-72-40-72-78V62 Z" fill="none" stroke="#B08B48" stroke-width="5" stroke-linejoin="round"/>
+  <!-- trunk -->
+  <path d="M100 176 c-4-20-3-40 0-58 3 18 4 38 0 58Z" fill="#1C412C"/>
+  <path d="M100 150 c-2-14-1-26 0-36 1 10 2 22 0 36Z" fill="#B08B48" opacity=".65"/>
+  <!-- roots -->
+  <g stroke="#1C412C" stroke-width="4.5" stroke-linecap="round" fill="none">
+    <path d="M100 176 c-12 8-22 10-34 9"/>
+    <path d="M100 176 c12 8 22 10 34 9"/>
+    <path d="M100 176 c-7 12-16 18-27 21"/>
+    <path d="M100 176 c7 12 16 18 27 21"/>
+    <path d="M100 176 v22"/>
+  </g>
+  <!-- canopy -->
+  <g fill="#1C412C">
+    <ellipse cx="100" cy="74" rx="20" ry="15"/>
+    <ellipse cx="70" cy="88" rx="19" ry="14"/>
+    <ellipse cx="130" cy="88" rx="19" ry="14"/>
+    <ellipse cx="56" cy="106" rx="16" ry="12"/>
+    <ellipse cx="144" cy="106" rx="16" ry="12"/>
+    <ellipse cx="84" cy="100" rx="17" ry="13"/>
+    <ellipse cx="116" cy="100" rx="17" ry="13"/>
+  </g>
+  <!-- branches reaching into the canopy -->
+  <g stroke="#1C412C" stroke-width="4" stroke-linecap="round" fill="none">
+    <path d="M100 128 c-14-8-22-18-28-30"/>
+    <path d="M100 128 c14-8 22-18 28-30"/>
+    <path d="M100 118 c-8-12-12-22-13-34"/>
+    <path d="M100 118 c8-12 12-22 13-34"/>
+  </g>
+  <!-- growth arrows — the "yield" half of the mark -->
+  <g stroke="#B08B48" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M104 132 L118 112 L132 96 L146 78"/>
+    <path d="M138 78 h10 v10"/>
+    <path d="M66 128 l10-12 10 8 12-16"/>
+    <path d="M92 104 h8 v8"/>
+  </g>
+  <g stroke="#B08B48" stroke-width="4" stroke-linecap="round">
+    <path d="M74 130 v-14"/>
+    <path d="M84 130 v-22"/>
+    <path d="M124 130 v-22"/>
+    <path d="M134 130 v-14"/>
+  </g>
+</svg>
