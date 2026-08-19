@@ -117,9 +117,9 @@ export const VerifyIdentity: React.FC<Props> = ({ onNotify, refreshKey = 0 }) =>
       }
     >
       <div className="p-5 space-y-4">
-        <div className="flex items-start gap-3 bg-[#1b1e26] border border-white/[.06] rounded-xl p-4">
-          <ShieldCheck className="w-5 h-5 text-[#f5b400] shrink-0 mt-0.5" />
-          <p className="text-[12.5px] text-slate-400 leading-relaxed">
+        <div className="flex items-start gap-3 bg-[#F5F2E9] border border-[#E4DECB] rounded-xl p-4">
+          <ShieldCheck className="w-5 h-5 text-[#B08B48] shrink-0 mt-0.5" />
+          <p className="text-[12.5px] text-[#213532]/80 leading-relaxed">
             Upload clear, uncropped photos where all four corners are visible. Your documents are stored securely and
             reviewed by our compliance team, usually within one business day.
           </p>
@@ -133,17 +133,17 @@ export const VerifyIdentity: React.FC<Props> = ({ onNotify, refreshKey = 0 }) =>
 
             const border =
               status === 'approved'
-                ? 'border-emerald-500/40'
+                ? 'border-emerald-500'
                 : status === 'rejected'
-                ? 'border-rose-500/40'
+                ? 'border-rose-500'
                 : status === 'pending'
-                ? 'border-[#f5b400]/40'
-                : 'border-white/[.08] border-dashed';
+                ? 'border-[#B08B48]'
+                : 'border-[#E4DECB] border-dashed';
 
             return (
-              <div key={slot.type} className={`bg-[#1b1e26] border ${border} rounded-2xl p-4 flex flex-col`}>
+              <div key={slot.type} className={`bg-[#F5F2E9] border ${border} rounded-2xl p-4 flex flex-col`}>
                 <div className="flex items-start justify-between gap-2">
-                  <div className="text-[13px] font-bold text-white">{KYC_DOC_LABELS[slot.type]}</div>
+                  <div className="text-[13px] font-bold text-[#1C412C]">{KYC_DOC_LABELS[slot.type]}</div>
                   {status === 'approved' && (
                     <Badge tone="green">
                       <CheckCircle2 className="w-3 h-3" /> approved
@@ -161,22 +161,22 @@ export const VerifyIdentity: React.FC<Props> = ({ onNotify, refreshKey = 0 }) =>
                   )}
                 </div>
 
-                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{slot.hint}</p>
+                <p className="text-[11px] text-[#213532]/70 mt-1 leading-relaxed">{slot.hint}</p>
 
-                <div className="mt-3 h-28 rounded-xl bg-[#0f1116] border border-white/[.06] flex items-center justify-center overflow-hidden">
+                <div className="mt-3 h-28 rounded-xl bg-white border border-[#E4DECB] flex items-center justify-center overflow-hidden">
                   {loading ? (
-                    <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
+                    <Loader2 className="w-5 h-5 text-[#213532]/40 animate-spin" />
                   ) : doc ? (
                     previews[doc.id] ? (
                       <img src={previews[doc.id]} alt={KYC_DOC_LABELS[slot.type]} className="w-full h-full object-cover" />
                     ) : (
-                      <div className="flex flex-col items-center gap-1.5 text-slate-500">
+                      <div className="flex flex-col items-center gap-1.5 text-[#213532]/60">
                         <FileText className="w-6 h-6" />
                         <span className="text-[10px] px-2 text-center truncate max-w-full">{doc.fileName}</span>
                       </div>
                     )
                   ) : (
-                    <div className="flex flex-col items-center gap-1.5 text-slate-600">
+                    <div className="flex flex-col items-center gap-1.5 text-[#213532]/40">
                       <Upload className="w-6 h-6" />
                       <span className="text-[10px]">No file uploaded</span>
                     </div>
@@ -184,13 +184,13 @@ export const VerifyIdentity: React.FC<Props> = ({ onNotify, refreshKey = 0 }) =>
                 </div>
 
                 {doc?.status === 'rejected' && doc.rejectReason && (
-                  <div className="mt-2 text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2.5 py-1.5">
+                  <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
                     {doc.rejectReason}
                   </div>
                 )}
 
                 {doc && (
-                  <div className="text-[10px] text-slate-600 mt-2">
+                  <div className="text-[10px] text-[#213532]/60 mt-2">
                     Uploaded {new Date(doc.uploadedAt).toLocaleString('en-US')}
                   </div>
                 )}
@@ -210,7 +210,7 @@ export const VerifyIdentity: React.FC<Props> = ({ onNotify, refreshKey = 0 }) =>
 
                 <div className="mt-3">
                   {status === 'approved' ? (
-                    <div className="text-[11px] text-emerald-400 text-center py-2">Verified — no action needed</div>
+                    <div className="text-[11px] text-emerald-700 font-semibold text-center py-2">Verified — no action needed</div>
                   ) : (
                     <Btn
                       variant={doc && status !== 'rejected' ? 'ghost' : 'gold'}
@@ -237,9 +237,9 @@ export const VerifyIdentity: React.FC<Props> = ({ onNotify, refreshKey = 0 }) =>
         </div>
 
         {allApproved && (
-          <div className="flex items-center gap-2.5 bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-4 py-3">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="text-[12.5px] text-emerald-400">
+          <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="text-[12.5px] text-emerald-700 font-semibold">
               Identity verified. Withdrawals are now available on your account.
             </span>
           </div>

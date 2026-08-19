@@ -30,14 +30,16 @@ import type { ActiveInvestment } from '../../types';
 import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
-import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall } from '../../api';
+import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall, apiStatement } from '../../api';
 import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
+import { sanitizeDecimal, parseNumber } from '../../utils/number';
+import { openStatementWindow } from '../../utils/statement';
 
 interface InvestorDashboardProps {
   /** Signed-in account — the cabinet shows real data, never a demo persona */
-  user?: { name: string; email: string } | null;
+  user?: { id?: number; name: string; email: string } | null;
   /** True once an admin approved the client's KYC documents */
   kycVerified?: boolean;
   /** Real deposit / withdrawal requests from the server */
@@ -139,7 +141,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [tab, setTab] = useState<Tab>('dashboard');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
-  const [amount, setAmount] = useState(500);
+  const [amountStr, setAmountStr] = useState('500');
+  const amount = parseNumber(amountStr, 0);
   // Margin requirements per asset class, set by the back office
   const [marginRates, setMarginRates] = useState<Record<string, number>>({});
   const [triggerPrice, setTriggerPrice] = useState('');
@@ -210,6 +213,32 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
   /* ---- positions live on the server ---- */
   const [myTrades, setMyTrades] = useState<ApiTrade[]>([]);
+  const [statementPeriod, setStatementPeriod] = useState<'Last week' | 'Last month' | 'Last year' | 'All time'>('Last month');
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  const handleDownloadPdfStatement = async () => {
+    setGeneratingPdf(true);
+    try {
+      setToast('Generating official PDF statement…');
+      let fromDate: string | undefined = undefined;
+      const now = new Date();
+      if (statementPeriod === 'Last week') {
+        fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      } else if (statementPeriod === 'Last month') {
+        fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      } else if (statementPeriod === 'Last year') {
+        fromDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      const stmt = await apiStatement(user?.id || 1, fromDate, now.toISOString());
+      openStatementWindow(stmt);
+      setToast('Statement opened in a new tab! Print or save as PDF.');
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not generate statement');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
 
   /**
    * Real quotes for the selected instrument and for every open position,
@@ -403,24 +432,24 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const portfolioValue = investorBalance + usedMargin + openPnl + walletsValue;
 
   return (
-    <div className="flex min-h-screen bg-[#0a0b0e] text-slate-200">
-      {/* ============ SIDEBAR (as in PDF client screens) ============ */}
-      <aside className="w-[230px] shrink-0 bg-[#0f1116] border-r border-white/[.06] hidden lg:flex flex-col sticky top-0 h-screen">
-        <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/[.06]">
-          <div className="w-9 h-9 rounded-full bg-[#f5b400] flex items-center justify-center">
-            <TrendingUp className="w-5 h-5 text-[#17190f]" />
+    <div className="flex min-h-screen bg-[#F5F2E9] text-[#213532]">
+      {/* ============ SIDEBAR (Oak Haven green) ============ */}
+      <aside className="w-[230px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] hidden lg:flex flex-col sticky top-0 h-screen text-[#F5F2E9]">
+        <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/10">
+          <div className="w-9 h-9 rounded-full bg-[#B08B48] flex items-center justify-center shadow-sm">
+            <TrendingUp className="w-5 h-5 text-white" />
           </div>
           <div className="leading-tight">
-            <div className="text-[13px] font-extrabold text-white">Oak Haven <span className="text-[#B08B48]">Yield</span></div>
-            <div className="text-[9px] font-bold text-[#f5b400] tracking-widest">CLIENT</div>
+            <div className="text-[13px] font-extrabold text-[#F5F2E9] font-serif">OAK HAVEN <span className="text-[#B08B48] font-sans">YIELD</span></div>
+            <div className="text-[9px] font-bold text-[#B08B48] tracking-widest">CLIENT</div>
           </div>
         </div>
 
-        <div className="px-4 py-4 flex items-center gap-3 border-b border-white/[.06]">
-          <div className="w-9 h-9 rounded-full bg-[#f5b400] text-[#17190f] font-extrabold flex items-center justify-center">{initials}</div>
+        <div className="px-4 py-4 flex items-center gap-3 border-b border-white/10">
+          <div className="w-9 h-9 rounded-full bg-[#B08B48] text-white font-extrabold flex items-center justify-center shadow-sm">{initials}</div>
           <div className="leading-tight">
-            <div className="text-[13px] font-bold text-white">{shortName}</div>
-            <div className="text-[9px] font-bold text-slate-500 tracking-widest">CLIENT</div>
+            <div className="text-[13px] font-bold text-[#F5F2E9]">{shortName}</div>
+            <div className="text-[9px] font-bold text-[#F5F2E9]/60 tracking-widest">CLIENT</div>
           </div>
         </div>
 
@@ -432,7 +461,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 key={n.id}
                 onClick={() => setTab(n.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all cursor-pointer ${
-                  tab === n.id ? 'bg-[#f5b400]/12 text-[#f5b400]' : 'text-slate-400 hover:text-white hover:bg-white/[.05]'
+                  tab === n.id ? 'bg-[#B08B48] text-white font-bold shadow-sm' : 'text-[#F5F2E9]/75 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -442,7 +471,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
           })}
           <button
             onClick={() => onLogout?.()}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] text-slate-500 hover:text-rose-400 hover:bg-white/[.05] cursor-pointer mt-2"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] text-[#F5F2E9]/60 hover:text-rose-300 hover:bg-white/5 cursor-pointer mt-2"
           >
             <LogOut className="w-4 h-4" /> Log out
           </button>
@@ -454,10 +483,10 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         {/* header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">
+            <h1 className="text-2xl font-extrabold text-[#1C412C] font-serif tracking-tight">
               {NAV.find(n => n.id === tab)?.label}
             </h1>
-            <p className="text-[12px] text-slate-500 mt-0.5 flex items-center gap-2">
+            <p className="text-[12px] text-[#213532]/70 mt-0.5 flex items-center gap-2">
               Welcome back, {firstName}
               {kycVerified ? (
                 <Badge tone="green">
@@ -501,8 +530,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               subtitle="Value, average price and PnL in one panel"
               actions={
                 <div className="text-right">
-                  <div className="text-[10px] text-slate-500 uppercase">Total portfolio</div>
-                  <div className="text-[17px] font-extrabold text-[#f5b400]">
+                  <div className="text-[10px] text-[#213532]/70 uppercase font-semibold">Total portfolio</div>
+                  <div className="text-[17px] font-extrabold text-[#B08B48]">
                     {usd(portfolioValue)}
                   </div>
                 </div>
@@ -510,8 +539,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             >
               {WALLETS.length === 0 && (
                 <div className="p-10 text-center">
-                  <div className="text-[13px] text-slate-500">No wallets yet</div>
-                  <div className="text-[12px] text-slate-600 mt-1">
+                  <div className="text-[13px] text-[#213532]/70">No wallets yet</div>
+                  <div className="text-[12px] text-[#213532]/60 mt-1">
                     Your holdings appear here once your first deposit is credited.
                   </div>
                   <div className="mt-4">
@@ -523,22 +552,22 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               )}
               <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
                 {WALLETS.map(w => (
-                  <div key={w.sym} className="bg-[#1b1e26] border border-white/[.06] rounded-2xl p-4">
+                  <div key={w.sym} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl p-4">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="text-[14px] font-extrabold text-white">{w.sym}</div>
-                        <div className="text-[11px] text-slate-500">{w.name}</div>
+                        <div className="text-[14px] font-extrabold text-[#1C412C]">{w.sym}</div>
+                        <div className="text-[11px] text-[#213532]/70">{w.name}</div>
                       </div>
                       <Badge tone={w.pnl >= 0 ? 'green' : 'red'}>
                         {w.pnl >= 0 ? '+' : ''}
                         {w.pct.toFixed(2)}%
                       </Badge>
                     </div>
-                    <div className="text-[17px] font-extrabold text-emerald-400 mt-3">{w.qty} {w.sym}</div>
-                    <div className="text-[12px] text-slate-400">≈ ${(w.qty * w.price).toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
-                    <div className="flex justify-between text-[11px] text-slate-500 mt-2.5 pt-2.5 border-t border-white/[.05]">
+                    <div className="text-[17px] font-extrabold text-emerald-700 mt-3">{w.qty} {w.sym}</div>
+                    <div className="text-[12px] text-[#213532]/70">≈ ${(w.qty * w.price).toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+                    <div className="flex justify-between text-[11px] text-[#213532]/60 mt-2.5 pt-2.5 border-t border-[#E4DECB]">
                       <span>Avg. price ${w.avg.toLocaleString('en-US')}</span>
-                      <span className={w.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                      <span className={w.pnl >= 0 ? 'text-emerald-700 font-semibold' : 'text-rose-700 font-semibold'}>
                         PnL {w.pnl >= 0 ? '+' : ''}${w.pnl.toLocaleString('en-US')}
                       </span>
                     </div>
@@ -551,7 +580,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             <Card title="Active positions" subtitle="Your running investments and accruals">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
-                  <thead className="bg-white/[.02] border-b border-white/[.06]">
+                  <thead className="bg-[#F5F2E9] border-b border-[#E4DECB]">
                     <tr>
                       <Th>Asset</Th>
                       <Th>Amount</Th>
@@ -563,25 +592,25 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       <Th className="text-right">Action</Th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/[.05]">
+                  <tbody className="divide-y divide-[#E4DECB]">
                     {myInvestments.length === 0 && (
                       <tr>
-                        <Td className="py-10 text-center text-slate-600">
+                        <Td className="py-10 text-center text-[#213532]/60">
                           No positions yet.{' '}
-                          <button onClick={onOpenCatalog} className="text-[#f5b400] cursor-pointer">
+                          <button onClick={onOpenCatalog} className="text-[#B08B48] font-bold cursor-pointer">
                             Browse markets
                           </button>
                         </Td>
                       </tr>
                     )}
                     {myInvestments.map(inv => (
-                      <tr key={inv.id} className="hover:bg-white/[.02]">
+                      <tr key={inv.id} className="hover:bg-[#F2EEDF]/50">
                         <Td>
-                          <div className="font-semibold text-white">{inv.projectTitle}</div>
-                          <div className="text-[11px] text-slate-500">{inv.categoryLabel}</div>
+                          <div className="font-semibold text-[#1C412C]">{inv.projectTitle}</div>
+                          <div className="text-[11px] text-[#213532]/60">{inv.categoryLabel}</div>
                         </Td>
-                        <Td className="font-bold text-white">${inv.amount.toLocaleString('en-US')}</Td>
-                        <Td className="font-mono text-[12px] text-slate-300">
+                        <Td className="font-bold text-[#1C412C]">${inv.amount.toLocaleString('en-US')}</Td>
+                        <Td className="font-mono text-[12px] text-[#213532]/80">
                           {inv.entryPrice ? `$${inv.entryPrice.toLocaleString('en-US')}` : '—'}
                         </Td>
                         <Td className="font-mono text-[12px]">
@@ -589,19 +618,19 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                             <span
                               className={
                                 livePrices[inv.projectTitle] >= (inv.entryPrice || 0)
-                                  ? 'text-emerald-400'
-                                  : 'text-rose-400'
+                                  ? 'text-emerald-700 font-semibold'
+                                  : 'text-rose-700 font-semibold'
                               }
                             >
                               ${livePrices[inv.projectTitle].toLocaleString('en-US', { maximumFractionDigits: 2 })}
                             </span>
                           ) : (
-                            <span className="text-slate-600">—</span>
+                            <span className="text-[#213532]/50">—</span>
                           )}
                         </Td>
-                        <Td className="text-[#f5b400] font-bold">{inv.apr}%</Td>
+                        <Td className="text-[#B08B48] font-bold">{inv.apr}%</Td>
                         <Td className="text-[12px]">{inv.nextPayoutDate}</Td>
-                        <Td className="text-emerald-400 font-bold">+${inv.accruedProfit.toLocaleString('en-US')}</Td>
+                        <Td className="text-emerald-700 font-bold">+${inv.accruedProfit.toLocaleString('en-US')}</Td>
                         <Td className="text-right">
                           <Btn size="sm" variant="gold" onClick={() => onClaimDividends(inv.id, inv.accruedProfit)}>
                             Claim profit
@@ -631,8 +660,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   }}
                   className={`px-4 py-2 rounded-xl text-[13px] font-bold transition-all cursor-pointer border ${
                     category === cat
-                      ? 'bg-[#f5b400] text-[#17190f] border-[#f5b400]'
-                      : 'bg-white/[.04] text-slate-400 border-white/[.08] hover:text-white'
+                      ? 'bg-[#1C412C] text-[#F5F2E9] border-[#1C412C] shadow-sm'
+                      : 'bg-white text-[#213532] border-[#E4DECB] hover:bg-[#F2EEDF]'
                   }`}
                 >
                   {cat}
@@ -649,7 +678,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               >
                 <div className="p-3">
                   <div className="relative mb-2">
-                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <Search className="w-4 h-4 text-[#213532]/40 absolute left-3 top-1/2 -translate-y-1/2" />
                     <Input
                       placeholder="Search any asset — AAPL, gold, BTC…"
                       value={instrumentQuery}
@@ -659,7 +688,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     {instrumentQuery && (
                       <button
                         onClick={() => setInstrumentQuery('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#213532]/50 hover:text-[#1C412C] cursor-pointer"
                         title="Clear"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -668,13 +697,13 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   </div>
 
                   {searching && (
-                    <div className="flex items-center gap-2 px-3 py-2 text-[11px] text-slate-500">
+                    <div className="flex items-center gap-2 px-3 py-2 text-[11px] text-[#213532]/60">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Searching…
                     </div>
                   )}
 
                   {!searching && instrumentQuery && visibleInstruments.length === 0 && (
-                    <div className="px-3 py-6 text-center text-[12px] text-slate-600">
+                    <div className="px-3 py-6 text-center text-[12px] text-[#213532]/60">
                       Nothing found for “{instrumentQuery}”
                     </div>
                   )}
@@ -686,16 +715,16 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         onClick={() => setSymbol(i)}
                         className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors cursor-pointer border ${
                           symbol.tv === i.tv
-                            ? 'bg-[#f5b400]/[.1] border-[#f5b400]/30'
-                            : 'bg-transparent border-transparent hover:bg-white/[.04]'
+                            ? 'bg-[#B08B48]/15 border-[#B08B48]/40 shadow-sm'
+                            : 'bg-transparent border-transparent hover:bg-[#F2EEDF]'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[13px] font-bold text-white">{i.symbol}</span>
-                          <span className="text-[9px] text-slate-600 uppercase shrink-0">{i.exchange}</span>
+                          <span className="text-[13px] font-bold text-[#1C412C]">{i.symbol}</span>
+                          <span className="text-[9px] text-[#213532]/60 uppercase shrink-0">{i.exchange}</span>
                         </div>
-                        <div className="text-[11px] text-slate-500 truncate">{i.name}</div>
-                        <div className="text-[9px] text-slate-600 mt-0.5">{i.kind}</div>
+                        <div className="text-[11px] text-[#213532]/70 truncate">{i.name}</div>
+                        <div className="text-[9px] text-[#213532]/60 mt-0.5">{i.kind}</div>
                       </button>
                     ))}
                   </div>
@@ -706,8 +735,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               <Card className="xl:col-span-3 p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <div className="text-[16px] font-extrabold text-white">{symbol.symbol}</div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-[16px] font-extrabold text-[#1C412C]">{symbol.symbol}</div>
+                    <div className="text-[11px] text-[#213532]/70">
                       {symbol.name} · {symbol.exchange}
                     </div>
                   </div>
@@ -745,8 +774,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       <button
                         key={t}
                         onClick={() => setOrderType(t)}
-                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold capitalize cursor-pointer ${
-                          orderType === t ? 'bg-[#f5b400]/20 text-[#f5b400]' : 'bg-white/[.05] text-slate-500'
+                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold capitalize cursor-pointer transition-colors ${
+                          orderType === t ? 'bg-[#1C412C] text-[#F5F2E9] shadow-sm' : 'bg-[#1C412C]/[.06] text-[#213532]/70 hover:bg-[#1C412C]/[.12]'
                         }`}
                       >
                         {t}
@@ -756,11 +785,12 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
                   {orderType !== 'market' && (
                     <div>
-                      <label className="text-[10px] text-slate-500 uppercase font-bold">
+                      <label className="text-[10px] text-[#213532]/70 uppercase font-bold">
                         Trigger price
                       </label>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         placeholder={
                           refPrice > 0
                             ? orderType === 'limit'
@@ -769,121 +799,124 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                             : 'Order price'
                         }
                         value={triggerPrice}
-                        onChange={e => setTriggerPrice(e.target.value)}
+                        onChange={e => setTriggerPrice(sanitizeDecimal(e.target.value))}
                         className="w-full mt-1"
                       />
-                      <p className="text-[10px] text-slate-600 mt-1">
+                      <p className="text-[10px] text-[#213532]/60 mt-1">
                         The order waits until the market reaches this price.
                       </p>
                     </div>
                   )}
 
                   <div>
-                    <label className="text-[10px] text-slate-500 uppercase font-bold">Amount, $</label>
+                    <label className="text-[10px] text-[#213532]/70 uppercase font-bold">Amount, $</label>
                     <Input
-                      type="number"
-                      value={amount}
-                      onChange={e => setAmount(Number(e.target.value))}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Amount"
+                      value={amountStr}
+                      onChange={e => setAmountStr(sanitizeDecimal(e.target.value))}
                       className="w-full mt-1"
                     />
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] bg-white/[.03] border border-white/[.06] rounded-lg px-3 py-2">
-                    <span className="text-slate-500">
+                  <div className="flex items-center justify-between text-[11px] bg-[#F5F2E9] border border-[#E4DECB] rounded-lg px-3 py-2">
+                    <span className="text-[#213532]/70">
                       Margin requirement · {symbol.category}
                     </span>
-                    <span className="text-slate-200 font-semibold">
-                      {marginRate}% <span className="text-slate-500">({impliedLeverage.toFixed(0)}:1)</span>
+                    <span className="text-[#1C412C] font-semibold">
+                      {marginRate}% <span className="text-[#213532]/60">({impliedLeverage.toFixed(0)}:1)</span>
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[10px] text-slate-500 uppercase font-bold">Stop loss</label>
+                      <label className="text-[10px] text-[#213532]/70 uppercase font-bold">Stop loss</label>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         placeholder={refPrice > 0 ? (side === 'buy' ? `< ${refPrice.toFixed(2)}` : `> ${refPrice.toFixed(2)}`) : '—'}
                         value={stopLoss}
-                        onChange={e => setStopLoss(e.target.value)}
+                        onChange={e => setStopLoss(sanitizeDecimal(e.target.value))}
                         className="w-full mt-1"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] text-slate-500 uppercase font-bold">Take profit</label>
+                      <label className="text-[10px] text-[#213532]/70 uppercase font-bold">Take profit</label>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         placeholder={refPrice > 0 ? (side === 'buy' ? `> ${refPrice.toFixed(2)}` : `< ${refPrice.toFixed(2)}`) : '—'}
                         value={takeProfit}
-                        onChange={e => setTakeProfit(e.target.value)}
+                        onChange={e => setTakeProfit(sanitizeDecimal(e.target.value))}
                         className="w-full mt-1"
                       />
                     </div>
                   </div>
 
                   {protectionError && (
-                    <div className="text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/25 rounded-lg px-2.5 py-1.5">
+                    <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
                       {protectionError}
                     </div>
                   )}
 
-                  {/* Margin summary — standard formulas, overridable by an admin later */}
-                  <div className="space-y-1.5 pt-2 mt-1 border-t border-white/[.06]">
+                  {/* Margin summary */}
+                  <div className="space-y-1.5 pt-2 mt-1 border-t border-[#E4DECB]">
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-500">Position size</span>
-                      <span className="text-white font-bold">
+                      <span className="text-[#213532]/70">Position size</span>
+                      <span className="text-[#1C412C] font-bold">
                         {refPrice > 0
                           ? `${(amount / refPrice).toLocaleString('en-US', { maximumFractionDigits: 6 })} ${baseOf(symbol.symbol)}`
                           : '—'}
                       </span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-500">Position value</span>
-                      <span className="text-slate-200">{usd(amount)}</span>
+                      <span className="text-[#213532]/70">Position value</span>
+                      <span className="text-[#213532] font-medium">{usd(amount)}</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-500">Required margin</span>
-                      <span className="text-slate-200">{usd(requiredMargin)}</span>
+                      <span className="text-[#213532]/70">Required margin</span>
+                      <span className="text-[#213532] font-medium">{usd(requiredMargin)}</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-500">Free margin</span>
-                      <span className={freeMargin >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                      <span className="text-[#213532]/70">Free margin</span>
+                      <span className={freeMargin >= 0 ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
                         ${freeMargin.toLocaleString('en-US')}
                       </span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-500">Margin level</span>
+                      <span className="text-[#213532]/70">Margin level</span>
                       <span
                         className={
                           marginLevel >= 200
-                            ? 'text-emerald-400'
+                            ? 'text-emerald-700 font-bold'
                             : marginLevel >= 100
-                            ? 'text-[#f5b400]'
-                            : 'text-rose-400'
+                            ? 'text-[#B08B48] font-bold'
+                            : 'text-rose-700 font-bold'
                         }
                       >
                         {marginLevel <= 0
                           ? '—'
                           : marginLevel >= 10000
-                          // Anything past this point only means "plenty of room"
                           ? '>9999%'
                           : `${marginLevel.toFixed(0)}%`}
                       </span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-500">Est. liquidation</span>
-                      <span className="text-rose-400 font-mono">
+                      <span className="text-[#213532]/70">Est. liquidation</span>
+                      <span className="text-rose-700 font-mono font-bold">
                         {liquidationPrice ? liquidationPrice.toFixed(2) : '—'}
                       </span>
                     </div>
                     {marginLevel > 0 && marginLevel < 100 && (
-                      <div className="text-[10px] text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2.5 py-1.5 mt-1">
+                      <div className="text-[10px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5 mt-1">
                         Margin call — add funds or reduce the position.
                       </div>
                     )}
                   </div>
 
                   {!canAfford && (
-                    <div className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-2 flex items-start gap-2">
+                    <div className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 flex items-start gap-2">
                       <Wallet className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>
                         {availableForMargin <= 0
@@ -898,7 +931,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     onClick={async () => {
                       setPlacing(true);
                       try {
-                        // Stamp the live market price so "Entry" is never empty
                         let entry = livePrices[symbol.symbol] || 0;
                         if (!entry) {
                           try {
@@ -914,7 +946,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                           name: symbol.name,
                           category: symbol.category,
                           side: side === 'buy' ? 'LONG' : 'SHORT',
-                          // Dollar value; the server converts it into units
                           notional: amount,
                           amount,
                           entryPrice: entry,
@@ -939,8 +970,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         setPlacing(false);
                       }
                     }}
-                    className={`w-full py-2.5 rounded-xl text-[13px] font-bold text-white cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 ${
-                      side === 'buy' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-rose-500 hover:bg-rose-400'
+                    className={`w-full py-2.5 rounded-xl text-[13px] font-bold text-white cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm ${
+                      side === 'buy' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
                     }`}
                   >
                     {placing && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -955,18 +986,18 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 </div>
               </Card>
 
-              {/* Live order book straight from the exchange */}
+              {/* Live order book */}
               <Card title="Order book" subtitle={`${symbol.symbol} · live depth`}>
                 <div className="p-4">
                   {book.asks.length === 0 && book.bids.length === 0 ? (
                     <div className="py-10 text-center space-y-2">
-                      <div className="text-[12px] text-slate-500">
+                      <div className="text-[12px] text-[#213532]/70">
                         {book.supported
                           ? 'Depth is loading…'
                           : 'Live depth is available for crypto markets'}
                       </div>
                       {!book.supported && (
-                        <div className="text-[11px] text-slate-600 max-w-[220px] mx-auto leading-relaxed">
+                        <div className="text-[11px] text-[#213532]/60 max-w-[220px] mx-auto leading-relaxed">
                           Stocks, indices, metals and FX trade on venues that do not publish a
                           free public order book. Prices and charts still update live.
                         </div>
@@ -977,19 +1008,19 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       <div className="space-y-0.5">
                         {[...book.asks].slice(0, 6).reverse().map((a, i) => (
                           <div key={`a${i}`} className="flex justify-between text-[11px] font-mono">
-                            <span className="text-rose-400">{a.price.toLocaleString('en-US')}</span>
-                            <span className="text-slate-500">{a.size.toFixed(4)}</span>
+                            <span className="text-rose-700 font-semibold">{a.price.toLocaleString('en-US')}</span>
+                            <span className="text-[#213532]/60">{a.size.toFixed(4)}</span>
                           </div>
                         ))}
                       </div>
-                      <div className="text-center text-[13px] font-bold text-white border-y border-white/[.06] py-1.5">
+                      <div className="text-center text-[13px] font-bold text-[#1C412C] border-y border-[#E4DECB] py-1.5 bg-[#F5F2E9]">
                         {refPrice > 0 ? refPrice.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—'}
                       </div>
                       <div className="space-y-0.5">
                         {book.bids.slice(0, 6).map((b2, i) => (
                           <div key={`b${i}`} className="flex justify-between text-[11px] font-mono">
-                            <span className="text-emerald-400">{b2.price.toLocaleString('en-US')}</span>
-                            <span className="text-slate-500">{b2.size.toFixed(4)}</span>
+                            <span className="text-emerald-700 font-semibold">{b2.price.toLocaleString('en-US')}</span>
+                            <span className="text-[#213532]/60">{b2.size.toFixed(4)}</span>
                           </div>
                         ))}
                       </div>
@@ -1003,20 +1034,20 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 <Card title="Pending orders" subtitle="Waiting for the market to reach the trigger">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-white/[.02] border-b border-white/[.06]">
+                      <thead className="bg-[#F5F2E9] border-b border-[#E4DECB]">
                         <tr>
                           <Th>Pair</Th><Th>Type</Th><Th>Side</Th>
                           <Th>Trigger</Th><Th>Size</Th><Th className="text-right">Action</Th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/[.05]">
+                      <tbody className="divide-y divide-[#E4DECB]">
                         {myTrades.filter(t => t.status === 'PENDING').map(t => (
-                          <tr key={t.id} className="hover:bg-white/[.02]">
-                            <Td className="font-semibold text-white">{t.symbol}</Td>
+                          <tr key={t.id} className="hover:bg-[#F2EEDF]/50">
+                            <Td className="font-semibold text-[#1C412C]">{t.symbol}</Td>
                             <Td><Badge tone="gold">{t.orderType}</Badge></Td>
                             <Td><Badge tone={t.side === 'SHORT' ? 'red' : 'green'}>{t.side}</Badge></Td>
-                            <Td className="font-mono text-[12px]">{Number(t.triggerPrice).toLocaleString('en-US')}</Td>
-                            <Td className="text-[12px]">{usd(Number(t.notional) || 0)}</Td>
+                            <Td className="font-mono text-[12px] text-[#213532]">{Number(t.triggerPrice).toLocaleString('en-US')}</Td>
+                            <Td className="text-[12px] text-[#213532]">{usd(Number(t.notional) || 0)}</Td>
                             <Td className="text-right">
                               <Btn
                                 size="sm"
@@ -1042,7 +1073,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               <Card title="Open positions" className="xl:col-span-2">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-white/[.02] border-b border-white/[.06]">
+                    <thead className="bg-[#F5F2E9] border-b border-[#E4DECB]">
                       <tr>
                         <Th>Pair</Th>
                         <Th>Side</Th>
@@ -1054,10 +1085,10 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         <Th className="text-right">Action</Th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/[.05]">
+                    <tbody className="divide-y divide-[#E4DECB]">
                       {myTrades.filter(t => t.status === 'OPEN').length === 0 && (
                         <tr>
-                          <Td className="py-8 text-center text-slate-600">
+                          <Td className="py-8 text-center text-[#213532]/60">
                             No open positions yet — place your first order on the left.
                           </Td>
                         </tr>
@@ -1065,18 +1096,16 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       {myTrades
                         .filter(t => t.status === 'OPEN')
                         .map(t => {
-                          // Recompute from the live quote so the number ticks
                           const live = livePrices[t.symbol] || 0;
                           const entry = Number(t.entryPrice) || 0;
                           const livePnl = livePnlOf(t, live);
-                          // Size in units of the asset, e.g. 0.1 BTC
                           const positionUnits = unitsOf(t);
                           const notional = positionUnits * (live > 0 ? live : entry);
                           const fmt = (v: number) =>
                             v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toPrecision(6);
                           return (
-                          <tr key={t.id} className="hover:bg-white/[.02]">
-                            <Td className="font-semibold text-white">{t.symbol}</Td>
+                          <tr key={t.id} className="hover:bg-[#F2EEDF]/50">
+                            <Td className="font-semibold text-[#1C412C]">{t.symbol}</Td>
                             <Td>
                               <Badge tone={t.side === 'LONG' ? 'green' : t.side === 'SHORT' ? 'red' : 'blue'}>
                                 {t.side}
@@ -1085,11 +1114,11 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                             <Td className="font-mono text-[12px]">
                               {positionUnits > 0 ? (
                                 <>
-                                  <span className="text-white">
+                                  <span className="text-[#1C412C] font-semibold">
                                     {positionUnits.toLocaleString('en-US', { maximumFractionDigits: 6 })}
                                   </span>{' '}
-                                  <span className="text-slate-500">{baseOf(t.symbol)}</span>
-                                  <div className="text-[10px] text-slate-500">
+                                  <span className="text-[#213532]/60">{baseOf(t.symbol)}</span>
+                                  <div className="text-[10px] text-[#213532]/60">
                                     {usd(notional)}
                                   </div>
                                 </>
@@ -1097,14 +1126,14 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                                 '—'
                               )}
                             </Td>
-                            <Td className="text-[12px]">
+                            <Td className="text-[12px] text-[#213532]">
                               {usd(Number(t.margin) || 0)}
                               {t.marginRate ? (
-                                <div className="text-[10px] text-slate-500">{t.marginRate}%</div>
+                                <div className="text-[10px] text-[#213532]/60">{t.marginRate}%</div>
                               ) : null}
                             </Td>
-                            <Td className="font-mono text-[12px]">{entry > 0 ? fmt(entry) : '—'}</Td>
-                            <Td className="text-[12px] text-slate-400">
+                            <Td className="font-mono text-[12px] text-[#213532]">{entry > 0 ? fmt(entry) : '—'}</Td>
+                            <Td className="text-[12px] text-[#213532]/70">
                               {t.openedAt
                                 ? new Date(t.openedAt).toLocaleString('en-US', {
                                     month: 'short',
@@ -1114,7 +1143,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                                   })
                                 : '—'}
                             </Td>
-                            <Td className={livePnl >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                            <Td className={livePnl >= 0 ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
                               {livePnl >= 0 ? '+' : '-'}${Math.abs(livePnl).toLocaleString('en-US', { maximumFractionDigits: 2 })}
                             </Td>
                             <Td className="text-right">
@@ -1124,8 +1153,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                                 onClick={async () => {
                                   const res = await apiCloseTrade(t.id);
                                   await reloadTrades();
-                                  // Closing settles the P/L into the cash
-                                  // balance, so pull the new figure in
                                   onBalanceChanged?.();
                                   const settled = Number(res?.trade?.pnl ?? 0);
                                   setToast(
@@ -1147,7 +1174,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
           </div>
         )}
 
-
         {/* ================= STATISTICS (PDF p.17) ================= */}
         {tab === 'statistics' && (
           <div className="space-y-5">
@@ -1163,29 +1189,29 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   <svg viewBox="0 0 400 140" className="w-full h-44">
                     <defs>
                       <linearGradient id="pl" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f5b400" stopOpacity=".45" />
-                        <stop offset="100%" stopColor="#f5b400" stopOpacity="0" />
+                        <stop offset="0%" stopColor="#B08B48" stopOpacity=".45" />
+                        <stop offset="100%" stopColor="#B08B48" stopOpacity="0" />
                       </linearGradient>
                     </defs>
                     <path d="M0,120 L50,110 L100,118 L150,84 L200,92 L250,54 L300,62 L350,28 L400,16 L400,140 L0,140 Z" fill="url(#pl)" />
-                    <path d="M0,120 L50,110 L100,118 L150,84 L200,92 L250,54 L300,62 L350,28 L400,16" fill="none" stroke="#f5b400" strokeWidth="2.5" />
+                    <path d="M0,120 L50,110 L100,118 L150,84 L200,92 L250,54 L300,62 L350,28 L400,16" fill="none" stroke="#B08B48" strokeWidth="2.5" />
                   </svg>
                 </div>
               </Card>
               <Card title="Distribution by markets">
                 <div className="p-5 space-y-3">
                   {[
-                    { m: 'Crypto', v: 62, c: '#f5b400' },
-                    { m: 'Forex', v: 21, c: '#22c55e' },
-                    { m: 'Metals', v: 11, c: '#3b82f6' },
-                    { m: 'Indices', v: 6, c: '#a855f7' },
+                    { m: 'Crypto', v: 62, c: '#B08B48' },
+                    { m: 'Forex', v: 21, c: '#1C412C' },
+                    { m: 'Metals', v: 11, c: '#2563eb' },
+                    { m: 'Indices', v: 6, c: '#7c3aed' },
                   ].map(r => (
                     <div key={r.m}>
                       <div className="flex justify-between text-[12px] mb-1">
-                        <span className="text-slate-300">{r.m}</span>
-                        <span className="text-slate-500">{r.v}%</span>
+                        <span className="text-[#213532] font-semibold">{r.m}</span>
+                        <span className="text-[#213532]/70">{r.v}%</span>
                       </div>
-                      <div className="h-2 bg-white/[.06] rounded-full overflow-hidden">
+                      <div className="h-2 bg-[#EFEAD9] rounded-full overflow-hidden">
                         <div className="h-full rounded-full" style={{ width: `${r.v}%`, background: r.c }} />
                       </div>
                     </div>
@@ -1194,17 +1220,34 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               </Card>
             </div>
             <Card title="PDF statement" subtitle="Download your trading report">
-              <div className="p-5 flex items-center justify-between gap-4">
+              <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <Select defaultValue="Last month">
-                    <option>Last week</option>
-                    <option>Last month</option>
-                    <option>Last year</option>
+                  <Select
+                    value={statementPeriod}
+                    onChange={e => setStatementPeriod(e.target.value as any)}
+                  >
+                    <option value="Last week">Last week</option>
+                    <option value="Last month">Last month</option>
+                    <option value="Last year">Last year</option>
+                    <option value="All time">All time</option>
                   </Select>
-                  <span className="text-[12px] text-slate-500">12.06.2026 — 12.07.2026</span>
+                  <span className="text-[12px] text-[#213532]/70 font-medium">
+                    {statementPeriod === 'Last week'
+                      ? 'Last 7 days'
+                      : statementPeriod === 'Last month'
+                      ? 'Last 30 days'
+                      : statementPeriod === 'Last year'
+                      ? 'Last 12 months'
+                      : 'All recorded activity'}
+                  </span>
                 </div>
-                <Btn variant="gold" icon={Download} onClick={() => setToast('PDF statement is being generated…')}>
-                  Download PDF
+                <Btn
+                  variant="gold"
+                  icon={Download}
+                  disabled={generatingPdf}
+                  onClick={handleDownloadPdfStatement}
+                >
+                  {generatingPdf ? 'Generating…' : 'Download PDF Statement'}
                 </Btn>
               </div>
             </Card>
@@ -1217,12 +1260,12 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             <Card title="Withdraw funds" subtitle="Reviewed by compliance before release">
               <div className="p-5 space-y-4 max-w-lg">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-[11px] font-bold uppercase text-slate-500">Available</span>
-                  <span className="text-[20px] font-extrabold text-white">
+                  <span className="text-[11px] font-bold uppercase text-[#213532]/60">Available</span>
+                  <span className="text-[20px] font-extrabold text-[#1C412C]">
                     ${investorBalance.toLocaleString('en-US')}
                   </span>
                 </div>
-                <p className="text-[12px] text-slate-500 leading-relaxed">
+                <p className="text-[12px] text-[#213532]/70 leading-relaxed">
                   Submit a request and our compliance team will release the funds to your verified
                   payout details. Identity verification is required before the first withdrawal.
                 </p>
@@ -1235,7 +1278,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             <Card title="Withdrawal requests">
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                  <thead className="bg-white/[.02] border-b border-white/[.06]">
+                  <thead className="bg-[#F5F2E9] border-b border-[#E4DECB]">
                     <tr>
                       <Th>Date</Th>
                       <Th>Amount</Th>
@@ -1243,27 +1286,27 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       <Th>Status</Th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/[.05]">
+                  <tbody className="divide-y divide-[#E4DECB]">
                     {transactions.filter(t => t.type === 'withdrawal').length === 0 && (
                       <tr>
-                        <Td className="py-10 text-center text-slate-600">No withdrawal requests yet.</Td>
+                        <Td className="py-10 text-center text-[#213532]/60">No withdrawal requests yet.</Td>
                       </tr>
                     )}
                     {transactions
                       .filter(t => t.type === 'withdrawal')
                       .map(r => (
-                        <tr key={r.id} className="hover:bg-white/[.02]">
-                          <Td className="text-[12px]">
+                        <tr key={r.id} className="hover:bg-[#F2EEDF]/50">
+                          <Td className="text-[12px] text-[#213532]">
                             {new Date(r.createdAt).toLocaleString('en-US', {
                               year: 'numeric',
                               month: 'short',
                               day: 'numeric',
                             })}
                           </Td>
-                          <Td className="font-bold text-white">
+                          <Td className="font-bold text-[#1C412C]">
                             ${Number(r.amount).toLocaleString('en-US')}
                           </Td>
-                          <Td className="text-[12px] text-slate-400 max-w-[220px] truncate">
+                          <Td className="text-[12px] text-[#213532]/70 max-w-[220px] truncate">
                             {r.destination || '—'}
                           </Td>
                           <Td>
@@ -1288,7 +1331,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
           <Card title="Transaction history">
             <div className="overflow-x-auto">
               <table className="w-full text-left">
-                <thead className="bg-white/[.02] border-b border-white/[.06]">
+                <thead className="bg-[#F5F2E9] border-b border-[#E4DECB]">
                   <tr>
                     <Th>Date</Th>
                     <Th>Type</Th>
@@ -1297,10 +1340,10 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     <Th>Status</Th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/[.05]">
+                <tbody className="divide-y divide-[#E4DECB]">
                   {transactions.length === 0 && (
                     <tr>
-                      <Td className="py-10 text-center text-slate-600">
+                      <Td className="py-10 text-center text-[#213532]/60">
                         No transactions yet.
                       </Td>
                     </tr>
@@ -1308,17 +1351,17 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   {transactions.map(r => {
                     const positive = r.type === 'deposit';
                     return (
-                      <tr key={r.id} className="hover:bg-white/[.02]">
-                        <Td className="text-[12px]">
+                      <tr key={r.id} className="hover:bg-[#F2EEDF]/50">
+                        <Td className="text-[12px] text-[#213532]">
                           {new Date(r.createdAt).toLocaleString('en-US', {
                             year: 'numeric',
                             month: 'short',
                             day: 'numeric',
                           })}
                         </Td>
-                        <Td className="font-semibold text-white capitalize">{r.type}</Td>
-                        <Td className="text-[12px]">{r.method}</Td>
-                        <Td className={positive ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                        <Td className="font-semibold text-[#1C412C] capitalize">{r.type}</Td>
+                        <Td className="text-[12px] text-[#213532]/80">{r.method}</Td>
+                        <Td className={positive ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
                           {positive ? '+' : '-'}${Number(r.amount).toLocaleString('en-US')}
                         </Td>
                         <Td>
@@ -1341,22 +1384,22 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
         {tab === 'support' && (
           <Card title="Support chat" subtitle="Live chat with your personal manager">
-            <div className="p-5 space-y-3 h-72 overflow-y-auto">
-              <div className="max-w-[70%] bg-[#1b1e26] border border-white/[.06] rounded-2xl rounded-tl-sm px-4 py-2.5 text-[13px]">
+            <div className="p-5 space-y-3 h-72 overflow-y-auto bg-white">
+              <div className="max-w-[70%] bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl rounded-tl-sm px-4 py-2.5 text-[13px] text-[#213532]">
                 Good afternoon! How can I help you today?
-                <div className="text-[10px] text-slate-600 mt-1">Manager · 11:02</div>
+                <div className="text-[10px] text-[#213532]/60 mt-1">Manager · 11:02</div>
               </div>
-              <div className="max-w-[70%] ml-auto bg-[#f5b400]/15 border border-[#f5b400]/25 rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13px] text-[#f9d571]">
+              <div className="max-w-[70%] ml-auto bg-[#1C412C] text-[#F5F2E9] rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13px]">
                 Hi! I'd like to increase the leverage on my account.
-                <div className="text-[10px] text-[#f5b400]/60 mt-1">You · 11:04</div>
+                <div className="text-[10px] text-[#F5F2E9]/70 mt-1">You · 11:04</div>
               </div>
               {msgLog.map((m, i) => (
                 <div
                   key={i}
-                  className="max-w-[70%] ml-auto bg-[#f5b400]/15 border border-[#f5b400]/25 rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13px] text-[#f9d571]"
+                  className="max-w-[70%] ml-auto bg-[#1C412C] text-[#F5F2E9] rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13px]"
                 >
                   {m.text}
-                  <div className="text-[10px] text-[#f5b400]/60 mt-1">You</div>
+                  <div className="text-[10px] text-[#F5F2E9]/70 mt-1">You</div>
                 </div>
               ))}
             </div>
@@ -1367,7 +1410,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 setMsgLog(l => [...l, { me: true, text: msg.trim() }]);
                 setMsg('');
               }}
-              className="p-4 border-t border-white/[.06] flex gap-2"
+              className="p-4 border-t border-[#E4DECB] flex gap-2 bg-[#F5F2E9]"
             >
               <Input className="flex-1" placeholder="Type a message..." value={msg} onChange={e => setMsg(e.target.value)} />
               <Btn variant="gold" type="submit" disabled={!msg.trim()}>
@@ -1380,12 +1423,12 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         {tab === 'call' && (
           <Card title="Call your manager" subtitle="Direct WebRTC voice connection — no third-party apps">
             <div className="p-8 flex flex-col items-center text-center gap-4">
-              <div className="w-20 h-20 rounded-full bg-[#f5b400]/15 border border-[#f5b400]/30 flex items-center justify-center">
-                <PhoneCall className="w-9 h-9 text-[#f5b400]" />
+              <div className="w-20 h-20 rounded-full bg-[#1C412C] flex items-center justify-center shadow-md">
+                <PhoneCall className="w-9 h-9 text-[#B08B48]" />
               </div>
               <div>
-                <div className="text-[16px] font-bold text-white">Your personal manager</div>
-                <div className="text-[12px] text-slate-500">Online · answers within a few minutes</div>
+                <div className="text-[16px] font-bold text-[#1C412C]">Your personal manager</div>
+                <div className="text-[12px] text-[#213532]/70">Online · answers within a few minutes</div>
               </div>
               <Btn
                 variant="gold"
@@ -1406,7 +1449,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               >
                 {callRequesting ? 'Sending…' : callRequested ? 'Request sent' : 'Request a call'}
               </Btn>
-              <p className="text-[11px] text-slate-600 max-w-sm">
+              <p className="text-[11px] text-[#213532]/70 max-w-sm leading-relaxed">
                 Your manager calls you from the back office — you will see the caller name
                 on your screen and can accept or decline. During the call they can share
                 their screen to guide you through the platform.
@@ -1420,15 +1463,15 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             <Card title="Personal information">
               <div className="p-5 space-y-3.5 max-w-md">
                 <div>
-                  <label className="text-[11px] font-bold uppercase text-slate-500">Full name</label>
+                  <label className="text-[11px] font-bold uppercase text-[#213532]/60">Full name</label>
                   <Input key={fullName} defaultValue={fullName} className="w-full mt-1.5" />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold uppercase text-slate-500">E-mail</label>
+                  <label className="text-[11px] font-bold uppercase text-[#213532]/60">E-mail</label>
                   <Input key={user?.email || 'email'} defaultValue={user?.email || ''} className="w-full mt-1.5" />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold uppercase text-slate-500">Phone</label>
+                  <label className="text-[11px] font-bold uppercase text-[#213532]/60">Phone</label>
                   <Input placeholder="+1 (555) 000-0000" className="w-full mt-1.5" />
                 </div>
                 <Btn variant="gold" onClick={() => setToast('Profile updated successfully')}>
@@ -1439,11 +1482,11 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             <Card title="Security">
               <div className="p-5 space-y-3.5 max-w-md">
                 <div>
-                  <label className="text-[11px] font-bold uppercase text-slate-500">Current password</label>
+                  <label className="text-[11px] font-bold uppercase text-[#213532]/60">Current password</label>
                   <Input type="password" defaultValue="********" className="w-full mt-1.5" />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold uppercase text-slate-500">New password</label>
+                  <label className="text-[11px] font-bold uppercase text-[#213532]/60">New password</label>
                   <Input type="password" placeholder="Minimum 6 characters" className="w-full mt-1.5" />
                 </div>
                 <Btn variant="ghost" onClick={() => setToast('Password changed successfully')}>
@@ -1460,9 +1503,9 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       </div>
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 bg-[#14161c] border border-[#f5b400]/40 rounded-xl px-4 py-3 shadow-2xl shadow-black/60">
-          <div className="w-2 h-2 rounded-full bg-[#f5b400]" />
-          <span className="text-[13px] text-slate-100">{toast}</span>
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 bg-[#1C412C] border border-[#B08B48] rounded-xl px-4 py-3 shadow-2xl shadow-black/30">
+          <div className="w-2 h-2 rounded-full bg-[#B08B48]" />
+          <span className="text-[13px] text-[#F5F2E9] font-medium">{toast}</span>
         </div>
       )}
     </div>

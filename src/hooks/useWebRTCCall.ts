@@ -44,6 +44,10 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   const [sharingScreen, setSharingScreen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Non-fatal notice (e.g. no microphone → listen-only mode) */
+  const [warning, setWarning] = useState<string | null>(null);
+  /** A local microphone track is present */
+  const [micAvailable, setMicAvailable] = useState(true);
   /** The other side is actually sending a video (screen share) */
   const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
 
@@ -194,6 +198,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   const connect = useCallback(async () => {
     if (!callId || pcRef.current) return;
     setError(null);
+    setWarning(null);
+    setMicAvailable(true);
     setPhase('connecting');
 
     if (!window.isSecureContext) {
@@ -211,9 +217,30 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
       const pc = new RTCPeerConnection({ iceServers });
       pcRef.current = pc;
 
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      localRef.current = mic;
-      mic.getTracks().forEach(t => pc.addTrack(t, mic));
+      /**
+       * The microphone is NOT mandatory. Laptops without a built-in mic (or
+       * with it disabled) used to kill the call instantly with
+       * "No microphone was found on this device". Now we continue as
+       * listen-only: a bare audio transceiver keeps the audio media line
+       * in the offer, so the remote voice still reaches us.
+       */
+      let mic: MediaStream | null = null;
+      try {
+        mic = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      } catch (err) {
+        if (!(err instanceof DOMException && (err.name === 'NotFoundError' || err.name === 'OverconstrainedError'))) {
+          throw err; // blocked / busy — a real error, fail as before
+        }
+        setMicAvailable(false);
+        setWarning('No microphone on this device — listen-only: you can hear the other side, ' +
+          'but they cannot hear you. Connect a headset or use a phone to talk.');
+      }
+      if (mic) {
+        localRef.current = mic;
+        mic.getTracks().forEach(t => pc.addTrack(t, mic));
+      } else {
+        pc.addTransceiver('audio', { direction: 'sendrecv' });
+      }
 
       pc.ontrack = (e) => {
         const [stream] = e.streams;
@@ -356,7 +383,10 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
 
   const toggleMute = useCallback(() => {
     const track = localRef.current?.getAudioTracks()[0];
-    if (!track) return;
+    if (!track) {
+      setWarning('Nothing to mute — no microphone track on this device.');
+      return;
+    }
     track.enabled = !track.enabled;
     setMuted(!track.enabled);
   }, []);
@@ -462,12 +492,16 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     }
     const local = localRef.current;
     const remote = remoteStreamRef.current;
-    if (!local || !callId) return;
+    if (!callId) return;
 
     const tracks = [
-      ...local.getAudioTracks(),
+      ...(local ? local.getAudioTracks() : []),
       ...(remote ? remote.getAudioTracks() : []),
     ];
+    if (!tracks.length) {
+      setError('Nothing to record yet — no audio tracks in the call.');
+      return;
+    }
 
     try {
       const stream = new MediaStream(tracks);
@@ -497,7 +531,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   useEffect(() => cleanup, [cleanup]);
 
   return {
-    phase, error, muted, sharingScreen, recording, hasRemoteVideo,
+    phase, error, warning, muted, micAvailable,
+    sharingScreen, recording, hasRemoteVideo,
     remoteAudioRef, remoteVideoRef,
     connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
   };

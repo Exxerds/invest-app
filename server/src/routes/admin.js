@@ -38,8 +38,63 @@ function auth(requiredRole = 'ADMIN') {
 }
 
 // ------------------------------------------------------------
-//  List users
+//  CREATE USER / CLIENT (CRM action: "Create client")
 // ------------------------------------------------------------
+router.post('/users', auth('STAFF'), async (req, res) => {
+  try {
+    const { name, email, password, phone, balance, role = 'CLIENT', status = 'active' } = req.body || {};
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email and password are required' });
+    }
+    if (String(password).length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const lowerEmail = String(email).toLowerCase().trim();
+    if (await store.findBy('users', 'email', lowerEmail)) {
+      return res.status(409).json({ error: 'A user with this email already exists' });
+    }
+
+    if (phone) {
+      const existingWithPhone = await store.findBy('users', 'phone', String(phone).trim());
+      if (existingWithPhone) {
+        return res.status(409).json({ error: `A user with phone ${phone} already exists (${existingWithPhone.name})` });
+      }
+    }
+
+    const hash = await bcrypt.hash(String(password), 10);
+    const userRole = req.user.role === 'ADMIN' && ['CLIENT', 'MANAGER', 'ADMIN'].includes(role) ? role : 'CLIENT';
+    
+    const user = await store.insert('users', {
+      name: String(name).trim(),
+      email: lowerEmail,
+      phone: String(phone || '').trim(),
+      password: hash,
+      role: userRole,
+      status: ['active', 'pending', 'blocked'].includes(status) ? status : 'active',
+      balance: Number(balance) || 0,
+      created_at: new Date().toISOString(),
+      createdBy: req.user.name,
+    });
+
+    res.json({
+      ok: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        status: user.status,
+        balance: user.balance,
+      },
+      message: `Client ${user.name} created successfully`,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 router.get('/users', auth('STAFF'), async (req, res) => {
   const all = await store.all('users');
   // A manager sees clients only; an administrator sees everyone

@@ -1,20 +1,23 @@
 // ============================================================
-//  Shared dark-gold UI primitives for the CRM / Admin panel
-//  Palette taken from the reference screenshots:
-//    page       #0a0b0e
-//    surface    #14161c
-//    surface-2  #1b1e26
-//    border     rgba(255,255,255,.07)
-//    accent     #f5b400 (gold)
-//    success    #22c55e / danger #ef4444
+//  Shared Oak Haven brand UI primitives for CRM & Investor platform
+//  Palette:
+//    oak-green  #1C412C
+//    oak-gold   #B08B48
+//    oak-slate  #213532
+//    oak-cream  #F5F2E9
+//    oak-line   #E4DECB
+//    card       #FFFFFF
 // ============================================================
 import React from 'react';
 
 export const CRM = {
-  page: '#0a0b0e',
-  surface: '#14161c',
-  surface2: '#1b1e26',
-  gold: '#f5b400',
+  page: '#F5F2E9',
+  surface: '#FFFFFF',
+  surface2: '#FBF9F2',
+  line: '#E4DECB',
+  green: '#1C412C',
+  gold: '#B08B48',
+  slate: '#213532',
 };
 
 export const Card: React.FC<{
@@ -25,13 +28,13 @@ export const Card: React.FC<{
   actions?: React.ReactNode;
 }> = ({ className = '', children, title, subtitle, actions }) => (
   <div
-    className={`bg-[#14161c] border border-white/[.07] rounded-2xl shadow-[0_1px_0_rgba(255,255,255,.03)_inset] ${className}`}
+    className={`bg-white border border-[#E4DECB] rounded-2xl shadow-sm ${className}`}
   >
     {(title || actions) && (
-      <div className="px-5 py-4 border-b border-white/[.06] flex items-center justify-between gap-3">
+      <div className="px-5 py-4 border-b border-[#E4DECB] flex items-center justify-between gap-3">
         <div>
-          {title && <h3 className="text-[15px] font-semibold text-white">{title}</h3>}
-          {subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>}
+          {title && <h3 className="text-[15px] font-semibold text-[#1C412C]">{title}</h3>}
+          {subtitle && <p className="text-[11px] text-[#213532]/70 mt-0.5">{subtitle}</p>}
         </div>
         {actions}
       </div>
@@ -53,11 +56,11 @@ export const Btn: React.FC<
     'inline-flex items-center gap-2 rounded-xl font-semibold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap';
   const sizes = size === 'sm' ? 'px-3 py-1.5 text-[11px]' : 'px-3.5 py-2 text-xs';
   const variants: Record<BtnVariant, string> = {
-    gold: 'bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] shadow-[0_4px_14px_-4px_rgba(245,180,0,.6)]',
-    ghost: 'bg-white/[.05] hover:bg-white/[.09] text-slate-200 border border-white/[.08]',
-    dark: 'bg-[#1b1e26] hover:bg-[#232734] text-slate-300 border border-white/[.06]',
-    danger: 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/25',
-    success: 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/25',
+    gold: 'bg-[#B08B48] hover:bg-[#C59D55] text-white shadow-sm',
+    ghost: 'bg-[#1C412C]/[.06] hover:bg-[#1C412C]/[.12] text-[#213532] border border-[#E4DECB]',
+    dark: 'bg-[#1C412C] hover:bg-[#245238] text-[#F5F2E9] shadow-sm',
+    danger: 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 border border-rose-500/25',
+    success: 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 border border-emerald-500/25',
   };
   return (
     <button className={`${base} ${sizes} ${variants[variant]} ${className}`} {...rest}>
@@ -75,12 +78,12 @@ export const Badge: React.FC<{ tone?: Tone; children: React.ReactNode; className
   className = '',
 }) => {
   const tones: Record<Tone, string> = {
-    gold: 'bg-[#f5b400]/15 text-[#f5b400] border-[#f5b400]/30',
-    green: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-    red: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
-    blue: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
-    violet: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
-    gray: 'bg-white/[.06] text-slate-400 border-white/10',
+    gold: 'bg-[#B08B48]/15 text-[#B08B48] border-[#B08B48]/30',
+    green: 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30',
+    red: 'bg-rose-500/15 text-rose-700 border-rose-500/30',
+    blue: 'bg-sky-500/15 text-sky-700 border-sky-500/30',
+    violet: 'bg-violet-500/15 text-violet-700 border-violet-500/30',
+    gray: 'bg-[#1C412C]/[.06] text-[#213532]/70 border-[#E4DECB]',
   };
   return (
     <span
@@ -96,22 +99,22 @@ export const Field: React.FC<{ label: string; children: React.ReactNode; classNa
   children,
   className = '',
 }) => (
-  <div className={`flex items-center justify-between gap-4 py-3.5 border-b border-white/[.05] last:border-0 ${className}`}>
-    <span className="text-[13px] text-slate-500 shrink-0">{label}</span>
-    <div className="text-[13px] text-slate-100 font-medium text-right min-w-0 truncate">{children}</div>
+  <div className={`flex items-center justify-between gap-4 py-3.5 border-b border-[#E4DECB] last:border-0 ${className}`}>
+    <span className="text-[13px] text-[#213532]/70 shrink-0">{label}</span>
+    <div className="text-[13px] text-[#213532] font-medium text-right min-w-0 truncate">{children}</div>
   </div>
 );
 
 export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ className = '', ...rest }) => (
   <input
-    className={`px-3.5 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl text-[13px] text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-[#f5b400]/50 focus:ring-2 focus:ring-[#f5b400]/15 ${className}`}
+    className={`px-3.5 py-2 bg-white border border-[#E4DECB] rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20 ${className}`}
     {...rest}
   />
 );
 
 export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = ({ className = '', children, ...rest }) => (
   <select
-    className={`px-3 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl text-[13px] text-slate-100 focus:outline-none focus:border-[#f5b400]/50 cursor-pointer ${className}`}
+    className={`px-3 py-2 bg-white border border-[#E4DECB] rounded-xl text-[13px] text-[#213532] focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20 cursor-pointer ${className}`}
     {...rest}
   >
     {children}
@@ -126,22 +129,22 @@ export const Kpi: React.FC<{
   tone?: 'gold' | 'green' | 'red' | 'blue';
 }> = ({ label, value, hint, icon: Icon, tone = 'gold' }) => {
   const ring: Record<string, string> = {
-    gold: 'text-[#f5b400] bg-[#f5b400]/10',
-    green: 'text-emerald-400 bg-emerald-400/10',
-    red: 'text-rose-400 bg-rose-400/10',
-    blue: 'text-sky-400 bg-sky-400/10',
+    gold: 'text-[#B08B48] bg-[#B08B48]/10',
+    green: 'text-emerald-700 bg-emerald-500/10',
+    red: 'text-rose-700 bg-rose-500/10',
+    blue: 'text-sky-700 bg-sky-500/10',
   };
   return (
-    <div className="bg-[#14161c] border border-white/[.07] rounded-2xl p-4 flex items-center gap-3.5">
+    <div className="bg-white border border-[#E4DECB] rounded-2xl p-4 flex items-center gap-3.5 shadow-sm">
       {Icon && (
         <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${ring[tone]}`}>
           <Icon className="w-5 h-5" />
         </div>
       )}
       <div className="min-w-0">
-        <div className="text-xl font-extrabold text-white leading-tight">{value}</div>
-        <div className="text-[11px] text-slate-500 truncate">{label}</div>
-        {hint && <div className="text-[10px] text-emerald-400 mt-0.5">{hint}</div>}
+        <div className="text-xl font-extrabold text-[#1C412C] leading-tight">{value}</div>
+        <div className="text-[11px] text-[#213532]/70 truncate">{label}</div>
+        {hint && <div className="text-[10px] text-emerald-700 mt-0.5">{hint}</div>}
       </div>
     </div>
   );
@@ -149,15 +152,15 @@ export const Kpi: React.FC<{
 
 /** Table shells */
 export const Th: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-  <th className={`py-3 px-5 text-[10px] uppercase tracking-wider font-bold text-slate-500 ${className}`}>{children}</th>
+  <th className={`py-3 px-5 text-[10px] uppercase tracking-wider font-bold text-[#213532]/60 ${className}`}>{children}</th>
 );
 export const Td: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-  <td className={`py-3.5 px-5 text-[13px] text-slate-300 ${className}`}>{children}</td>
+  <td className={`py-3.5 px-5 text-[13px] text-[#213532] ${className}`}>{children}</td>
 );
 
 export const Avatar: React.FC<{ name: string; size?: number; className?: string }> = ({ name, size = 40, className = '' }) => (
   <div
-    className={`rounded-full bg-[#f5b400] text-[#17190f] font-extrabold flex items-center justify-center shrink-0 ${className}`}
+    className={`rounded-full bg-[#1C412C] text-[#F5F2E9] font-extrabold flex items-center justify-center shrink-0 shadow-sm ${className}`}
     style={{ width: size, height: size, fontSize: size * 0.4 }}
   >
     {name

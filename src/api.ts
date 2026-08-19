@@ -109,6 +109,22 @@ export const apiAdminUsers = () =>
     headers: { Authorization: `Bearer ${getToken()}` },
   });
 
+/** Staff creates a new client account directly (active immediately) */
+export const apiAdminCreateUser = (data: {
+  name: string;
+  email: string;
+  password: string;
+  phone?: string;
+  balance?: number;
+  role?: string;
+  status?: string;
+}) =>
+  request<{ ok: true; user: ApiUser; message: string }>('/admin/users', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify(data),
+  });
+
 /** Admin changes password of ANY user */
 export const apiAdminChangePassword = (userId: number, newPassword: string) =>
   request<{ ok: true; message: string }>(`/admin/users/${userId}/password`, {
@@ -562,7 +578,7 @@ export interface ApiStatement {
   client: { id: number; name: string; email: string };
   period: { from: string | null; to: string | null };
   computed: Record<string, number>;
-  figures: Record<string, number> & { notes?: string };
+  figures: Record<string, number>;
   overrides: Record<string, number | string>;
   notes: string;
   trades: {
