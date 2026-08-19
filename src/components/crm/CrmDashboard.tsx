@@ -12,6 +12,7 @@ import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
 import type { ApiKycDoc, ApiNotification, ApiCall, ApiAnalytics, ApiManagerStat } from '../../api';
 import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates } from '../../api';
 import type { ApiUser } from '../../api';
+import { sanitizeDecimal } from '../../utils/number';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -1328,15 +1329,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <label className="text-[11px] font-bold uppercase text-slate-500">{cat}</label>
                         <div className="flex items-center gap-2 mt-1.5">
                           <Input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
-                            max="100"
+                            type="text"
+                            inputMode="decimal"
                             className="w-full"
                             value={marginDraft[cat]}
-                            onChange={e =>
-                              setMarginDraft(m => ({ ...m, [cat]: Number(e.target.value) }))
-                            }
+                            onChange={e => {
+                              const val = sanitizeDecimal(e.target.value);
+                              setMarginDraft(m => ({ ...m, [cat]: val === '' ? 0 : Number(val) }));
+                            }}
                           />
                           <span className="text-[12px] text-slate-500 shrink-0">
                             % · {marginDraft[cat] > 0 ? Math.round(100 / marginDraft[cat]) : '—'}:1
@@ -2255,9 +2255,10 @@ const UserDetails: React.FC<{
               <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Amount ($)</label>
               <Input
                 autoFocus
-                type="number"
+                type="text"
+                inputMode="decimal"
                 value={dialogAmount}
-                onChange={e => setDialogAmount(e.target.value)}
+                onChange={e => setDialogAmount(sanitizeDecimal(e.target.value))}
                 className="w-full text-lg font-extrabold"
               />
               <div className="flex gap-2 mt-2.5">

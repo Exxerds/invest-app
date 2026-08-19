@@ -3,6 +3,7 @@ import type { Project, AssetCategory, Lead } from '../../types';
 import { X, Wallet, ArrowDownRight, UserPlus, PlusCircle, Clock, Loader2, ShieldCheck, Copy, Check } from 'lucide-react';
 import { apiRequestDeposit, apiRequestWithdrawal, apiDepositWallets } from '../../api';
 import type { CryptoType } from '../../api';
+import { sanitizeDecimal, sanitizeInteger, parseNumber } from '../../utils/number';
 
 /* ========================================================
    DEPOSIT MODAL
@@ -19,7 +20,8 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   onClose,
   onRequested
 }) => {
-  const [amount, setAmount] = useState<number>(10000);
+  const [amountStr, setAmountStr] = useState<string>('10000');
+  const amount = parseNumber(amountStr, 0);
   const [method, setMethod] = useState<string>('Crypto gateway (USDT TRC20 / ERC20)');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,12 +133,10 @@ export const DepositModal: React.FC<DepositModalProps> = ({
               Deposit amount ($ USD)
             </label>
             <input
-              type="number"
-              // empty string instead of a stubborn leading 0 when cleared
-              value={amount || ''}
-              onChange={(e) => setAmount(e.target.value === '' ? 0 : Number(e.target.value))}
-              min={0}
-              step={500}
+              type="text"
+              inputMode="decimal"
+              value={amountStr}
+              onChange={(e) => setAmountStr(sanitizeDecimal(e.target.value))}
               placeholder="0"
               className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
@@ -145,8 +145,8 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                 <button
                   key={val}
                   type="button"
-                  onClick={() => setAmount(val)}
-                  className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/[.06] hover:bg-white/[.12] text-slate-300"
+                  onClick={() => setAmountStr(String(val))}
+                  className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/[.06] hover:bg-white/[.12] text-slate-300 cursor-pointer"
                 >
                   +${val.toLocaleString('en-US')}
                 </button>
@@ -279,7 +279,8 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
   userBalance,
   onRequested
 }) => {
-  const [amount, setAmount] = useState<number>(0);
+  const [amountStr, setAmountStr] = useState<string>('');
+  const amount = parseNumber(amountStr, 0);
   const [destination, setDestination] = useState<string>('');
   const [payoutMethod, setPayoutMethod] = useState<string>('Crypto');
   const [cryptoType, setCryptoType] = useState<CryptoType>('BTC');
@@ -380,12 +381,10 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
               Withdrawal amount ($ USD)
             </label>
             <input
-              type="number"
-              value={amount || ''}
-              onChange={(e) => setAmount(e.target.value === '' ? 0 : Number(e.target.value))}
-              max={userBalance}
-              min={0}
-              step={100}
+              type="text"
+              inputMode="decimal"
+              value={amountStr}
+              onChange={(e) => setAmountStr(sanitizeDecimal(e.target.value))}
               placeholder="0"
               className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-lg"
             />
@@ -500,7 +499,7 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('+1 (');
-  const [potentialAmount, setPotentialAmount] = useState(30000);
+  const [potentialAmountStr, setPotentialAmountStr] = useState('30000');
   const [notes, setNotes] = useState('');
   const [manager, setManager] = useState('Laura Bennett (Desk 1)');
 
@@ -511,7 +510,7 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
     onCreateLead({
       name,
       phone,
-      potentialAmount,
+      potentialAmount: parseNumber(potentialAmountStr, 0),
       stage: 'new',
       notes: notes || 'New trading request from the website.',
       manager,
@@ -571,10 +570,11 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
               Potential amount ($ USD)
             </label>
             <input
-              type="number"
-              value={potentialAmount}
-              onChange={(e) => setPotentialAmount(Number(e.target.value))}
-              step={5000}
+              type="text"
+              inputMode="decimal"
+              placeholder="0"
+              value={potentialAmountStr}
+              onChange={(e) => setPotentialAmountStr(sanitizeDecimal(e.target.value))}
               className="w-full px-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold"
             />
           </div>
@@ -646,10 +646,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<AssetCategory>('crypto');
-  const [targetAmount, setTargetAmount] = useState(500000);
-  const [apr, setApr] = useState(25.0);
-  const [termMonths, setTermMonths] = useState(12);
-  const [minCheck, setMinCheck] = useState(1000);
+  const [targetAmountStr, setTargetAmountStr] = useState('500000');
+  const [aprStr, setAprStr] = useState('25.0');
+  const [termMonthsStr, setTermMonthsStr] = useState('12');
+  const [minCheckStr, setMinCheckStr] = useState('1000');
   const [description, setDescription] = useState('');
 
   const getCategoryLabel = (cat: AssetCategory) => {
@@ -678,10 +678,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       title,
       category,
       categoryLabel: getCategoryLabel(category),
-      targetAmount,
-      apr,
-      termMonths,
-      minCheck,
+      targetAmount: parseNumber(targetAmountStr, 500000),
+      apr: parseNumber(aprStr, 25),
+      termMonths: parseNumber(termMonthsStr, 12),
+      minCheck: parseNumber(minCheckStr, 1000),
       riskLevel: category === 'futures' ? 'high' : 'medium',
       description: description || 'Trading asset with high liquidity and institutional quotes.',
       imageUrl: getDefaultImage(category),
@@ -745,10 +745,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 Return (APR %)
               </label>
               <input
-                type="number"
-                step={0.5}
-                value={apr}
-                onChange={(e) => setApr(Number(e.target.value))}
+                type="text"
+                inputMode="decimal"
+                value={aprStr}
+                onChange={(e) => setAprStr(sanitizeDecimal(e.target.value))}
                 className="w-full px-3 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-emerald-400"
               />
             </div>
@@ -760,10 +760,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 Target ($)
               </label>
               <input
-                type="number"
-                step={10000}
-                value={targetAmount}
-                onChange={(e) => setTargetAmount(Number(e.target.value))}
+                type="text"
+                inputMode="decimal"
+                value={targetAmountStr}
+                onChange={(e) => setTargetAmountStr(sanitizeDecimal(e.target.value))}
                 className="w-full px-3 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl"
               />
             </div>
@@ -772,9 +772,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 Term (months)
               </label>
               <input
-                type="number"
-                value={termMonths}
-                onChange={(e) => setTermMonths(Number(e.target.value))}
+                type="text"
+                inputMode="numeric"
+                value={termMonthsStr}
+                onChange={(e) => setTermMonthsStr(sanitizeInteger(e.target.value))}
                 className="w-full px-3 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl"
               />
             </div>
@@ -783,10 +784,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 Min amount ($)
               </label>
               <input
-                type="number"
-                step={500}
-                value={minCheck}
-                onChange={(e) => setMinCheck(Number(e.target.value))}
+                type="text"
+                inputMode="decimal"
+                value={minCheckStr}
+                onChange={(e) => setMinCheckStr(sanitizeDecimal(e.target.value))}
                 className="w-full px-3 py-2 bg-[#0f1116] border border-white/[.08] rounded-xl"
               />
             </div>

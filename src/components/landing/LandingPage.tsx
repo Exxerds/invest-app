@@ -8,6 +8,7 @@
 //  → why us → affiliate → documentation → news → contact.
 // ============================================================
 import React, { useState, useEffect } from 'react';
+import { sanitizeDecimal, parseNumber } from '../../utils/number';
 import { TickerTape, MarketOverview, MiniChart, MarketQuotes, MiniChartLight } from '../investor/TradingViewChart';
 import { OakLogo } from '../brand/Logo';
 import {
@@ -183,7 +184,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
 
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [leverage, setLeverage] = useState(10);
-  const [amount, setAmount] = useState(1000);
+  const [amountStr, setAmountStr] = useState('1000');
+  const amount = parseNumber(amountStr, 0);
 
 
   return (
@@ -518,9 +520,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
                 </div>
                 <label className="text-[10px] text-[#213532]/60">Amount, $</label>
                 <input
-                  type="number"
-                  value={amount}
-                  onChange={e => setAmount(Number(e.target.value))}
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Amount"
+                  value={amountStr}
+                  onChange={e => setAmountStr(sanitizeDecimal(e.target.value))}
                   className="w-full mt-1 px-2.5 py-1.5 bg-white border border-[#1C412C]/15 shadow-sm rounded-lg text-[12px] text-[#1C412C] focus:outline-none focus:border-[#B08B48]/50"
                 />
                 <label className="text-[10px] text-[#213532]/60 mt-2 block">Leverage: {leverage}x</label>

@@ -34,6 +34,7 @@ import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, a
 import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
+import { sanitizeDecimal, parseNumber } from '../../utils/number';
 
 interface InvestorDashboardProps {
   /** Signed-in account — the cabinet shows real data, never a demo persona */
@@ -139,7 +140,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [tab, setTab] = useState<Tab>('dashboard');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
-  const [amount, setAmount] = useState(500);
+  const [amountStr, setAmountStr] = useState('500');
+  const amount = parseNumber(amountStr, 0);
   // Margin requirements per asset class, set by the back office
   const [marginRates, setMarginRates] = useState<Record<string, number>>({});
   const [triggerPrice, setTriggerPrice] = useState('');
@@ -760,7 +762,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         Trigger price
                       </label>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         placeholder={
                           refPrice > 0
                             ? orderType === 'limit'
@@ -769,7 +772,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                             : 'Order price'
                         }
                         value={triggerPrice}
-                        onChange={e => setTriggerPrice(e.target.value)}
+                        onChange={e => setTriggerPrice(sanitizeDecimal(e.target.value))}
                         className="w-full mt-1"
                       />
                       <p className="text-[10px] text-slate-600 mt-1">
@@ -781,9 +784,11 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   <div>
                     <label className="text-[10px] text-slate-500 uppercase font-bold">Amount, $</label>
                     <Input
-                      type="number"
-                      value={amount}
-                      onChange={e => setAmount(Number(e.target.value))}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Amount"
+                      value={amountStr}
+                      onChange={e => setAmountStr(sanitizeDecimal(e.target.value))}
                       className="w-full mt-1"
                     />
                   </div>
@@ -801,20 +806,22 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     <div>
                       <label className="text-[10px] text-slate-500 uppercase font-bold">Stop loss</label>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         placeholder={refPrice > 0 ? (side === 'buy' ? `< ${refPrice.toFixed(2)}` : `> ${refPrice.toFixed(2)}`) : '—'}
                         value={stopLoss}
-                        onChange={e => setStopLoss(e.target.value)}
+                        onChange={e => setStopLoss(sanitizeDecimal(e.target.value))}
                         className="w-full mt-1"
                       />
                     </div>
                     <div>
                       <label className="text-[10px] text-slate-500 uppercase font-bold">Take profit</label>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         placeholder={refPrice > 0 ? (side === 'buy' ? `> ${refPrice.toFixed(2)}` : `< ${refPrice.toFixed(2)}`) : '—'}
                         value={takeProfit}
-                        onChange={e => setTakeProfit(e.target.value)}
+                        onChange={e => setTakeProfit(sanitizeDecimal(e.target.value))}
                         className="w-full mt-1"
                       />
                     </div>

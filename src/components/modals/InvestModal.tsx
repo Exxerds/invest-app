@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Project } from '../../types';
 import { X, TrendingUp, AlertCircle, ArrowRight } from 'lucide-react';
+import { sanitizeDecimal, parseNumber } from '../../utils/number';
 
 interface InvestModalProps {
   project: Project | null;
@@ -19,11 +20,14 @@ export const InvestModal: React.FC<InvestModalProps> = ({
 }) => {
   if (!isOpen || !project) return null;
 
-  const [amount, setAmount] = useState<number>(project.minCheck);
+  const [amountStr, setAmountStr] = useState<string>(String(project.minCheck));
   const [error, setError] = useState<string>('');
+  const amount = parseNumber(amountStr, 0);
 
-  const handleAmountChange = (val: number) => {
-    setAmount(val);
+  const handleAmountChange = (raw: string | number) => {
+    const cleanStr = typeof raw === 'number' ? String(raw) : sanitizeDecimal(raw);
+    setAmountStr(cleanStr);
+    const val = parseNumber(cleanStr, 0);
     if (val > userBalance) {
       setError('Not enough available funds on your balance');
     } else if (val < project.minCheck) {
@@ -84,12 +88,11 @@ export const InvestModal: React.FC<InvestModalProps> = ({
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
               <input
-                type="number"
-                value={amount}
-                onChange={(e) => handleAmountChange(Number(e.target.value))}
-                min={project.minCheck}
-                max={userBalance}
-                step={1000}
+                type="text"
+                inputMode="decimal"
+                value={amountStr}
+                onChange={(e) => handleAmountChange(e.target.value)}
+                placeholder="0"
                 className="w-full pl-9 pr-4 py-3 bg-[#0f1116] border border-white/[.08] rounded-xl font-bold text-lg focus:outline-none focus:ring-2 focus:ring-[#f5b400]/40"
               />
             </div>
