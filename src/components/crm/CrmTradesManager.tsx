@@ -3,7 +3,7 @@
 //  balances, spot/futures positions, PnL, leverage, liquidation.
 //  Dark + gold theme matching the reference screenshots.
 // ============================================================
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Investor } from '../../types';
 import { Plus, Edit3, Wallet, TrendingUp, BarChart3, Zap } from 'lucide-react';
 import { Card, Btn, Badge, Input, Select, Kpi, Th, Td } from './ui';
@@ -72,6 +72,20 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
 
   const [balanceInputStr, setBalanceInputStr] = useState<string>(String(selectedInvestor?.balance || 0));
   const [isEditingBalance, setIsEditingBalance] = useState(false);
+
+  /**
+   * The client list arrives from the server after mount (and can change
+   * later). Whenever the current selection no longer exists, snap the
+   * selector to the first available client so the dropdown is never
+   * left pointing at a ghost.
+   */
+  useEffect(() => {
+    if (investors.length === 0) return;
+    if (!investors.some(i => i.id === selectedInvestorId)) {
+      setSelectedInvestorId(investors[0].id);
+      setBalanceInputStr(String(investors[0].balance ?? 0));
+    }
+  }, [investors, selectedInvestorId]);
 
   const [showNewTradeModal, setShowNewTradeModal] = useState(false);
   const [asset, setAsset] = useState('BTC/USDT (Crypto Spot)');

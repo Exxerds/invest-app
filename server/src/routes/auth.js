@@ -39,7 +39,9 @@ async function findValidToken(token, type) {
 }
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, email: u.email, role: u.role, status: u.status };
+  // `phone` travels along too, so a profile saved in the cabinet
+  // is still there after a page refresh (the cabinet re-reads /me).
+  return { id: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, status: u.status };
 }
 
 function signJwt(u) {

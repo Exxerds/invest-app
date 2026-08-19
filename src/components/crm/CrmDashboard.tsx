@@ -58,6 +58,7 @@ import {
 } from 'lucide-react';
 import { CrmTradesManager } from './CrmTradesManager';
 import type { AdminTrade } from './CrmTradesManager';
+import { OakCrest, OakWordmark } from '../brand/Logo';
 import { Card, Btn, Badge, Field, Input, Select, Kpi, Th, Td, Avatar } from './ui';
 import { ImportLeadsModal } from '../modals/ImportLeadsModal';
 import { CreateClientModal } from '../modals/CreateClientModal';
@@ -387,7 +388,13 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
       });
   }, [users, trades, kycDocuments, clientStatuses]);
 
-  const selectedUser = allClients.find(i => i.id === selectedUserId) || allClients[0];
+  /**
+   * Two id formats circulate: `acc-<userId>` (this component's own
+   * allClients list) and the plain `<userId>` used by the investors
+   * coming from App. Accept both so "Manage/Open" works from anywhere.
+   */
+  const selectedUser =
+    allClients.find(i => i.id === selectedUserId || i.id === `acc-${selectedUserId}`) || allClients[0];
 
   const filteredInvestors = allClients.filter(
     inv =>
@@ -457,14 +464,16 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
     <div className="flex min-h-screen bg-[#F5F2E9] text-[#213532]">
       {/* ==================== SIDEBAR ==================== */}
       <aside className="w-[248px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] hidden lg:flex flex-col sticky top-0 h-screen text-[#F5F2E9]">
-        {/* Logo */}
+        {/* Logo — same brand lockup as the landing page and the client
+            cabinet. The crest is green, so it must sit on the cream disc
+            to stay visible against the dark-green sidebar. */}
         <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/10">
-          <div className="w-9 h-9 rounded-full bg-[#B08B48] flex items-center justify-center shrink-0 shadow-sm">
-            <TrendingUp className="w-5 h-5 text-white" />
+          <div className="w-10 h-10 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0">
+            <OakCrest size={22} />
           </div>
           <div className="leading-tight">
-            <div className="text-[13px] font-extrabold text-[#F5F2E9] font-serif">OAK HAVEN <span className="text-[#B08B48] font-sans">YIELD</span></div>
-            <div className="text-[9px] font-bold text-[#B08B48] tracking-widest">{roleLabel}</div>
+            <OakWordmark tone="light" />
+            <div className="text-[9px] font-bold text-[#B08B48] tracking-widest mt-0.5">{roleLabel}</div>
           </div>
         </div>
 
@@ -971,7 +980,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {activeTab === 'user-details' && selectedUser && (
             <UserDetails
               user={selectedUser}
-              trades={trades.filter(t => t.investorId === selectedUser.id)}
+              trades={trades.filter(
+                t =>
+                  t.investorId === selectedUser.id ||
+                  t.investorId === selectedUser.id.replace(/^acc-/, ''),
+              )}
               phonesHidden={phonesHidden}
               onBack={() => setActiveTab('users')}
               onGoTrading={() => setActiveTab('trading')}
