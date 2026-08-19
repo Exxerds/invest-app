@@ -25,11 +25,13 @@ import {
   Search,
   X,
   Loader2,
+  Store,
 } from 'lucide-react';
 import type { ActiveInvestment } from '../../types';
 import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
+import { OakCrest, OakWordmark } from '../brand/Logo';
 import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall, apiStatement } from '../../api';
 import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
@@ -114,17 +116,20 @@ function livePnlOf(t: ApiTrade, live: number): number {
 }
 
 /**
- * Accrued income grows continuously from APR and elapsed time.
- * The clock restarts at `lastClaimedAt` (or the position's creation date),
- * so claiming profit never double-counts income already paid out.
+ * Live accrued P/L: APR income since the clock restarted (last claim or
+ * creation) plus the market move of the position (current price vs entry).
+ * Unlike the old APR-only accrual it can be negative when the price has
+ * dropped since entry.
  */
-function accruedOf(inv: ActiveInvestment): number {
+function liveAccruedOf(inv: ActiveInvestment, live: number, now: number): number {
+  const amount = Number(inv.amount) || 0;
   const startIso = inv.lastClaimedAt || inv.createdAt || inv.date;
   const start = startIso ? new Date(startIso).getTime() : NaN;
-  if (Number.isNaN(start)) return Number(inv.accruedProfit) || 0;
-  const days = Math.max(0, (Date.now() - start) / 86_400_000);
-  const raw = (Number(inv.amount) || 0) * ((Number(inv.apr) || 0) / 100) * (days / 365);
-  return Math.max(0, Math.round(raw));
+  const days = Number.isNaN(start) ? 0 : Math.max(0, (now - start) / 86_400_000);
+  const aprPart = amount * ((Number(inv.apr) || 0) / 100) * (days / 365);
+  const entry = Number(inv.entryPrice) || 0;
+  const marketPart = entry > 0 && live > 0 ? ((live - entry) / entry) * amount : 0;
+  return Math.round((aprPart + marketPart) * 100) / 100;
 }
 
 const WALLETS: Wallet[] = [];
@@ -183,6 +188,20 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
    * "Current price" column visibly moves like a real quote feed.
    */
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+
+  /** Ticks once per second so the accrued P/L grows in real time. */
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  /** Best available live price for an investment position. */
+  const invPriceOf = (inv: ActiveInvestment): number => {
+    const sym = inv.symbol || inv.tv || inv.projectTitle.split('—')[0].trim();
+    return livePrices[sym] || livePrices[inv.projectTitle] ||
+      (inv.entryPrice ? inv.entryPrice * (1 + (inv.apr / 100) * 0.03) : 0);
+  };
 
 
   /**
@@ -444,23 +463,29 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
    * demo data is gone — that is why every card was stuck at $0.
    */
   const openTrades = myTrades.filter(t => t.status === 'OPEN');
-  const totalInvested = openTrades.reduce((s, t) => s + Number(t.amount || 0), 0);
-  const totalAccrued = openPnl;
+  const investedInPositions = myInvestments.reduce((s, inv) => s + (Number(inv.amount) || 0), 0);
+  const positionsAccrued = myInvestments.reduce(
+    (s, inv) => s + liveAccruedOf(inv, invPriceOf(inv), nowTs),
+    0,
+  );
+  const totalInvested = openTrades.reduce((s, t) => s + Number(t.amount || 0), 0) + investedInPositions;
+  const totalAccrued = openPnl + positionsAccrued;
   const walletsValue = WALLETS.reduce((s, w) => s + w.qty * w.price, 0);
-  // Equity = cash + margin locked in open positions + unrealised P/L
-  const portfolioValue = investorBalance + usedMargin + openPnl + walletsValue;
+  // Equity = cash + margin locked + unrealised P/L + positions + their live P/L
+  const portfolioValue =
+    investorBalance + usedMargin + openPnl + walletsValue + investedInPositions + positionsAccrued;
 
   return (
     <div className="flex min-h-screen bg-[#F5F2E9] text-[#213532]">
       {/* ============ SIDEBAR (Oak Haven green) ============ */}
       <aside className="w-[230px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] hidden lg:flex flex-col sticky top-0 h-screen text-[#F5F2E9]">
         <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/10">
-          <div className="w-9 h-9 rounded-full bg-[#B08B48] flex items-center justify-center shadow-sm">
-            <TrendingUp className="w-5 h-5 text-white" />
+          <div className="w-10 h-10 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0">
+            <OakCrest size={22} />
           </div>
           <div className="leading-tight">
-            <div className="text-[13px] font-extrabold text-[#F5F2E9] font-serif">OAK HAVEN <span className="text-[#B08B48] font-sans">YIELD</span></div>
-            <div className="text-[9px] font-bold text-[#B08B48] tracking-widest">CLIENT</div>
+            <OakWordmark tone="light" />
+            <div className="text-[9px] font-bold text-[#B08B48] tracking-widest mt-0.5">CLIENT</div>
           </div>
         </div>
 
@@ -473,19 +498,28 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         </div>
 
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          {NAV.map(n => {
+          {NAV.map((n, idx) => {
             const Icon = n.icon;
             return (
-              <button
-                key={n.id}
-                onClick={() => setTab(n.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all cursor-pointer ${
-                  tab === n.id ? 'bg-[#B08B48] text-white font-bold shadow-sm' : 'text-[#F5F2E9]/75 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                {n.label}
-              </button>
+              <React.Fragment key={n.id}>
+                <button
+                  onClick={() => setTab(n.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all cursor-pointer ${
+                    tab === n.id ? 'bg-[#B08B48] text-white font-bold shadow-sm' : 'text-[#F5F2E9]/75 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {n.label}
+                </button>
+                {idx === 1 && (
+                  <button
+                    onClick={onOpenCatalog}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all cursor-pointer text-[#F5F2E9]/75 hover:text-white hover:bg-white/10"
+                  >
+                    <Store className="w-4 h-4 shrink-0" /> Market
+                  </button>
+                )}
+              </React.Fragment>
             );
           })}
           <button
@@ -596,7 +630,11 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             </Card>
 
             {/* Active investments */}
-            <Card title="Active positions" subtitle="Your running investments and accruals">
+            <Card
+              title="Active positions"
+              subtitle="Your running investments and accruals"
+              actions={<Btn size="sm" variant="gold" icon={Store} onClick={onOpenCatalog}>Browse markets</Btn>}
+            >
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-[#F5F2E9] border-b border-[#E4DECB]">
@@ -623,9 +661,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       </tr>
                     )}
                     {myInvestments.map(inv => {
-                      const sym = inv.symbol || inv.tv || inv.projectTitle.split('—')[0].trim();
-                      const currentP = livePrices[sym] || livePrices[inv.projectTitle] || (inv.entryPrice ? inv.entryPrice * (1 + (inv.apr / 100) * 0.03) : 0);
-                      const accrued = accruedOf(inv);
+                      const currentP = invPriceOf(inv);
+                      const accrued = liveAccruedOf(inv, currentP, nowTs);
                       return (
                       <tr key={inv.id} className="hover:bg-[#F2EEDF]/50">
                         <Td>
@@ -653,7 +690,10 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                         </Td>
                         <Td className="text-[#B08B48] font-bold">{inv.apr}%</Td>
                         <Td className="text-[12px]">{inv.nextPayoutDate}</Td>
-                        <Td className="text-emerald-700 font-bold">+${accrued.toLocaleString('en-US')}</Td>
+                        <Td className={`font-bold ${accrued >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          {accrued >= 0 ? '+' : '-'}$
+                          {Math.abs(accrued).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Td>
                         <Td className="text-right">
                           <Btn size="sm" variant="gold" onClick={() => onClaimDividends(inv.id, accrued)}>
                             Claim profit

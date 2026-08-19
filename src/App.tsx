@@ -547,38 +547,50 @@ export default function App() {
     }
   };
 
+  /**
+   * Claiming profit CLOSES the position: the server returns principal + P/L
+   * (P/L can be negative — a loss returns less than the stake) and the
+   * position disappears from the dashboard. Legacy local-only positions
+   * (ids like "my-...") have no server record, so the payout is applied
+   * to the balance locally.
+   */
   const handleClaimDividends = async (invId: string, profit: number) => {
+    const inv = myInvestments.find(i => String(i.id) === String(invId));
+    const amount = Number(inv?.amount) || 0;
+    const localPayout = Math.max(0, amount + profit);
+
+    let returned = localPayout;
     try {
-      const numId = Number(invId.replace(/\D/g, ''));
-      if (numId) {
-        const res = await apiClaimInvestmentProfit(numId, profit);
-        if (res.balance !== undefined) setInvestorBalance(res.balance);
-        else setInvestorBalance(prev => prev + profit);
+      if (/^\d+$/.test(String(invId).trim())) {
+        const res = await apiClaimInvestmentProfit(Number(invId), profit);
+        if (typeof res.balance === 'number') {
+          setInvestorBalance(res.balance);
+          returned = res.payout ?? localPayout;
+        } else {
+          setInvestorBalance(prev => prev + profit);
+        }
       } else {
-        setInvestorBalance(prev => prev + profit);
+        // Legacy local-only position — no server record to close
+        setInvestorBalance(prev => prev + localPayout);
       }
     } catch {
-      setInvestorBalance(prev => prev + profit);
+      // Network hiccup: keep the UX working with the local calculation
+      setInvestorBalance(prev => prev + localPayout);
+      returned = localPayout;
     }
 
     setMyInvestments(prev => {
-      const next = prev.map(inv => {
-        if (inv.id === invId) {
-          return {
-            ...inv,
-            accruedProfit: 0,
-            // The accrual clock restarts now, so the next payout only counts
-            // income earned after this claim.
-            lastClaimedAt: new Date().toISOString(),
-          };
-        }
-        return inv;
-      });
+      const next = prev.filter(i => String(i.id) !== String(invId));
       localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
       return next;
     });
 
-    showToast(`✔ Profit +$${profit.toLocaleString('en-US')} moved to available balance!`);
+    showToast(
+      `Position closed: $${returned.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} returned to balance ` +
+      `(${profit >= 0
+        ? `profit +$${profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : `loss -$${Math.abs(profit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`})`,
+    );
   };
 
   /* ========================================================
