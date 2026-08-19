@@ -18,7 +18,7 @@ export interface AdminTrade {
   currentPrice: number;
   leverage: number;
   pnl: number;
-  status: 'OPEN' | 'CLOSED';
+  status: 'OPEN' | 'CLOSED' | 'PENDING';
   /** Trade open time (ISO string, editable by admin/agent) */
   openedAt?: string;
   /** Margin locked for this position (auto or overridden by the desk) */

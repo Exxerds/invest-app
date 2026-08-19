@@ -30,7 +30,7 @@ import type { ActiveInvestment } from '../../types';
 import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
-import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote } from '../../api';
+import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook } from '../../api';
 import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
@@ -50,6 +50,8 @@ interface InvestorDashboardProps {
   onClaimDividends: (id: string, profit: number) => void;
   /** Clears the session and returns to the public site */
   onLogout?: () => void;
+  /** Re-reads the balance from the server after a trade settles */
+  onBalanceChanged?: () => void;
 }
 
 type Tab = 'dashboard' | 'trading' | 'withdrawals' | 'transactions' | 'support' | 'call' | 'profile' | 'statistics';
@@ -77,11 +79,36 @@ type Wallet = { sym: string; name: string; qty: number; price: number; avg: numb
  * Unrealised P/L for an open position, recomputed from the live quote.
  * A 1% move on a 10x position changes the result by 10% of the stake.
  */
+/** BTCUSD -> BTC, so the position size can be shown in units of the asset. */
+function baseOf(symbol: string): string {
+  const s = String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  for (const quote of ['USDT', 'USDC', 'USD']) {
+    if (s.endsWith(quote) && s.length > quote.length) return s.slice(0, -quote.length);
+  }
+  return s;
+}
+
+/** Consistent money formatting across the cabinet. */
+const usd = (v: number) =>
+  `$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Size of a position in units of the asset. */
+function unitsOf(t: ApiTrade): number {
+  const u = Number(t.units) || 0;
+  if (u > 0) return u;
+  const entry = Number(t.entryPrice) || 0;
+  return entry > 0 ? Number(t.amount || 0) / entry : 0;
+}
+
+/**
+ * Unrealised P/L — the same formula the server settles with:
+ * (current - entry) x units x direction.
+ */
 function livePnlOf(t: ApiTrade, live: number): number {
   const entry = Number(t.entryPrice) || 0;
   if (!(live > 0) || !(entry > 0)) return Number(t.pnl) || 0;
   const dir = t.side === 'SHORT' ? -1 : 1;
-  return ((live - entry) / entry) * dir * Number(t.amount || 0) * Number(t.leverage || 1);
+  return (live - entry) * unitsOf(t) * dir;
 }
 const WALLETS: Wallet[] = [];
 
@@ -96,6 +123,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   onOpenWithdrawModal,
   onClaimDividends,
   onLogout,
+  onBalanceChanged,
 }) => {
   /* Display name derived from the signed-in account (no demo persona) */
   const fullName = (user?.name || '').trim();
@@ -112,7 +140,15 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
   const [amount, setAmount] = useState(500);
-  const [leverage, setLeverage] = useState(10);
+  // Margin requirements per asset class, set by the back office
+  const [marginRates, setMarginRates] = useState<Record<string, number>>({});
+  const [triggerPrice, setTriggerPrice] = useState('');
+  // Live order book for the selected instrument
+  const [book, setBook] = useState<{ bids: { price: number; size: number }[]; asks: { price: number; size: number }[] }>(
+    { bids: [], asks: [] },
+  );
+  const [stopLoss, setStopLoss] = useState('');
+  const [takeProfit, setTakeProfit] = useState('');
   const [category, setCategory] = useState<AssetCategory>('Crypto');
   const [symbol, setSymbol] = useState<Instrument>(INSTRUMENTS[0]);
   const [instrumentQuery, setInstrumentQuery] = useState('');
@@ -206,12 +242,39 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       });
     };
 
+    // Ask the server to settle anything that hit its stop / target
+    const settle = async () => {
+      if (!myTrades.some(t => t.status === 'OPEN')) return;
+      try {
+        const r = await apiSettleTrades();
+        if (r.triggered?.length) {
+          const f = r.triggered[0];
+          setToast(`${f.symbol} order filled at ${f.price}`);
+          await reloadTrades();
+        }
+        if (r.closed.length) {
+          const first = r.closed[0];
+          setToast(
+            `${first.symbol} closed by ${first.reason} · ${first.pnl >= 0 ? '+' : '-'}${usd(Math.abs(first.pnl))}`,
+          );
+          await reloadTrades();
+          onBalanceChanged?.();
+        }
+      } catch {
+        /* ignore transient errors */
+      }
+    };
+
     pull();
+    settle();
+    const settleTimer = setInterval(settle, 5000);
     const timer = setInterval(pull, 4000);
     return () => {
       stopped = true;
       clearInterval(timer);
+      clearInterval(settleTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol.symbol, myTrades, myInvestments]);
 
 
@@ -229,32 +292,82 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   }, [reloadTrades]);
 
   /**
-   * Margin maths (standard broker formulas):
-   *   required margin = position size / leverage  → here the entered amount
-   *   free margin     = balance − margin already locked in open trades
-   *   margin level    = equity / used margin × 100
-   *   liquidation     = price where the loss eats the whole margin
-   * The desk can overwrite any of these per position from the CRM.
+   * Margin model, identical to the server:
+   *   units    = amount / price          (0.1 BTC for $6,000 at $60,000)
+   *   notional = units x price           = the amount entered
+   *   margin   = notional x marginRate%  (per asset class, set by the desk)
+   *   P/L      = (current - entry) x units x direction
+   *   liquidation = the price where the loss eats the whole margin
    */
+  useEffect(() => {
+    let stop = false;
+    const pull = async () => {
+      try {
+        const b = await apiOrderBook(symbol.symbol);
+        if (!stop) setBook({ bids: b.bids || [], asks: b.asks || [] });
+      } catch {
+        if (!stop) setBook({ bids: [], asks: [] });
+      }
+    };
+    pull();
+    const t = setInterval(pull, 3000);
+    return () => { stop = true; clearInterval(t); };
+  }, [symbol.symbol]);
+
+  useEffect(() => {
+    apiMarginRates()
+      .then(r => setMarginRates(r.rates))
+      .catch(() => undefined);
+  }, []);
+
   const usedMargin = myTrades
     .filter(t => t.status === 'OPEN')
-    .reduce((sum, t) => sum + (t.leverage > 0 ? t.amount / t.leverage : t.amount), 0);
+    .reduce((sum, t) => sum + (Number(t.margin) || 0), 0);
 
   const openPnl = myTrades
     .filter(t => t.status === 'OPEN')
     .reduce((sum, t) => sum + livePnlOf(t, livePrices[t.symbol] || 0), 0);
   const equity = investorBalance + openPnl;
-  const freeMargin = Math.round(equity - usedMargin - amount);
-  const marginLevel = usedMargin + amount > 0 ? (equity / (usedMargin + amount)) * 100 : 0;
 
-  // A 100% loss of margin happens after a 1/leverage move against the position
   const refPrice = livePrices[symbol.symbol] || 0;
+
+  // Requirement for the instrument currently selected
+  const marginRate = Number(marginRates[symbol.category]) || Number(marginRates.Other) || 10;
+  const impliedLeverage = marginRate > 0 ? 100 / marginRate : 1;
+  const orderUnits = refPrice > 0 ? amount / refPrice : 0;
+  const orderMargin = (amount * marginRate) / 100;
+
+  const freeMargin = Math.round(equity - usedMargin - orderMargin);
+  const marginLevel =
+    usedMargin + orderMargin > 0 ? (equity / (usedMargin + orderMargin)) * 100 : 0;
+
   const liquidationPrice =
-    refPrice > 0 && leverage > 0
+    refPrice > 0 && orderUnits > 0
       ? side === 'buy'
-        ? refPrice * (1 - 1 / leverage)
-        : refPrice * (1 + 1 / leverage)
+        ? Math.max(0, refPrice - orderMargin / orderUnits)
+        : refPrice + orderMargin / orderUnits
       : 0;
+
+  const requiredMargin = orderMargin;
+  const availableForMargin = investorBalance + openPnl - usedMargin;
+  const canAfford = requiredMargin > 0 && requiredMargin <= availableForMargin;
+
+  // Protective levels must sit on the correct side of the entry price
+  const slNum = stopLoss.trim() === '' ? null : Number(stopLoss);
+  const tpNum = takeProfit.trim() === '' ? null : Number(takeProfit);
+  const protectionError = (() => {
+    if (!(refPrice > 0)) return null;
+    if (slNum !== null && Number.isFinite(slNum)) {
+      if (side === 'buy' && slNum >= refPrice) return 'Stop loss must be below the current price';
+      if (side === 'sell' && slNum <= refPrice) return 'Stop loss must be above the current price';
+    }
+    if (tpNum !== null && Number.isFinite(tpNum)) {
+      if (side === 'buy' && tpNum <= refPrice) return 'Take profit must be above the current price';
+      if (side === 'sell' && tpNum >= refPrice) return 'Take profit must be below the current price';
+    }
+    return null;
+  })();
+
   const [toast, setToast] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const [msgLog, setMsgLog] = useState<{ me: boolean; text: string }[]>([]);
@@ -265,10 +378,17 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     return () => clearTimeout(t);
   }, [toast]);
 
-  const totalInvested = myInvestments.reduce((s, i) => s + i.amount, 0);
-  const totalAccrued = myInvestments.reduce((s, i) => s + i.accruedProfit, 0);
+  /**
+   * Headline figures come from the positions that actually exist on the
+   * server. They used to read from `myInvestments`, which is empty now that
+   * demo data is gone — that is why every card was stuck at $0.
+   */
+  const openTrades = myTrades.filter(t => t.status === 'OPEN');
+  const totalInvested = openTrades.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalAccrued = openPnl;
   const walletsValue = WALLETS.reduce((s, w) => s + w.qty * w.price, 0);
-  const portfolioValue = investorBalance + totalInvested + totalAccrued + walletsValue;
+  // Equity = cash + margin locked in open positions + unrealised P/L
+  const portfolioValue = investorBalance + usedMargin + openPnl + walletsValue;
 
   return (
     <div className="flex min-h-screen bg-[#0a0b0e] text-slate-200">
@@ -352,13 +472,13 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         {tab === 'dashboard' && (
           <div className="space-y-5">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <Kpi icon={Wallet} label="Available balance" value={`$${investorBalance.toLocaleString('en-US')}`} tone="green" />
-              <Kpi icon={Layers} label="Portfolio value" value={`$${portfolioValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`} />
-              <Kpi icon={TrendingUp} label="Invested" value={`$${totalInvested.toLocaleString('en-US')}`} tone="blue" />
+              <Kpi icon={Wallet} label="Available balance" value={usd(investorBalance)} tone="green" />
+              <Kpi icon={Layers} label="Portfolio value" value={usd(portfolioValue)} />
+              <Kpi icon={TrendingUp} label="Invested" value={usd(totalInvested)} tone="blue" />
               <Kpi
                 icon={DollarSign}
                 label="Live P/L"
-                value={`${totalAccrued >= 0 ? '+' : '-'}$${Math.abs(totalAccrued).toLocaleString('en-US')}`}
+                value={`${totalAccrued >= 0 ? '+' : '-'}${usd(Math.abs(totalAccrued))}`}
                 tone={totalAccrued >= 0 ? 'green' : 'red'}
               />
             </div>
@@ -371,7 +491,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 <div className="text-right">
                   <div className="text-[10px] text-slate-500 uppercase">Total portfolio</div>
                   <div className="text-[17px] font-extrabold text-[#f5b400]">
-                    ${walletsValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                    {usd(portfolioValue)}
                   </div>
                 </div>
               }
@@ -624,8 +744,25 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
                   {orderType !== 'market' && (
                     <div>
-                      <label className="text-[10px] text-slate-500 uppercase font-bold">Price</label>
-                      <Input type="number" placeholder="Order price" className="w-full mt-1" />
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">
+                        Trigger price
+                      </label>
+                      <Input
+                        type="number"
+                        placeholder={
+                          refPrice > 0
+                            ? orderType === 'limit'
+                              ? side === 'buy' ? `below ${refPrice.toFixed(2)}` : `above ${refPrice.toFixed(2)}`
+                              : side === 'buy' ? `above ${refPrice.toFixed(2)}` : `below ${refPrice.toFixed(2)}`
+                            : 'Order price'
+                        }
+                        value={triggerPrice}
+                        onChange={e => setTriggerPrice(e.target.value)}
+                        className="w-full mt-1"
+                      />
+                      <p className="text-[10px] text-slate-600 mt-1">
+                        The order waits until the market reaches this price.
+                      </p>
                     </div>
                   )}
 
@@ -639,38 +776,61 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     />
                   </div>
 
-                  <div>
-                    <label className="text-[10px] text-slate-500 uppercase font-bold">Leverage: {leverage}x</label>
-                    <input
-                      type="range"
-                      min={1}
-                      max={100}
-                      value={leverage}
-                      onChange={e => setLeverage(Number(e.target.value))}
-                      className="w-full accent-[#f5b400] cursor-pointer mt-1"
-                    />
+                  <div className="flex items-center justify-between text-[11px] bg-white/[.03] border border-white/[.06] rounded-lg px-3 py-2">
+                    <span className="text-slate-500">
+                      Margin requirement · {symbol.category}
+                    </span>
+                    <span className="text-slate-200 font-semibold">
+                      {marginRate}% <span className="text-slate-500">({impliedLeverage.toFixed(0)}:1)</span>
+                    </span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-[10px] text-slate-500 uppercase font-bold">Stop loss</label>
-                      <Input placeholder="—" className="w-full mt-1" />
+                      <Input
+                        type="number"
+                        placeholder={refPrice > 0 ? (side === 'buy' ? `< ${refPrice.toFixed(2)}` : `> ${refPrice.toFixed(2)}`) : '—'}
+                        value={stopLoss}
+                        onChange={e => setStopLoss(e.target.value)}
+                        className="w-full mt-1"
+                      />
                     </div>
                     <div>
                       <label className="text-[10px] text-slate-500 uppercase font-bold">Take profit</label>
-                      <Input placeholder="—" className="w-full mt-1" />
+                      <Input
+                        type="number"
+                        placeholder={refPrice > 0 ? (side === 'buy' ? `> ${refPrice.toFixed(2)}` : `< ${refPrice.toFixed(2)}`) : '—'}
+                        value={takeProfit}
+                        onChange={e => setTakeProfit(e.target.value)}
+                        className="w-full mt-1"
+                      />
                     </div>
                   </div>
+
+                  {protectionError && (
+                    <div className="text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/25 rounded-lg px-2.5 py-1.5">
+                      {protectionError}
+                    </div>
+                  )}
 
                   {/* Margin summary — standard formulas, overridable by an admin later */}
                   <div className="space-y-1.5 pt-2 mt-1 border-t border-white/[.06]">
                     <div className="flex justify-between text-[11px]">
                       <span className="text-slate-500">Position size</span>
-                      <span className="text-white font-bold">${(amount * leverage).toLocaleString('en-US')}</span>
+                      <span className="text-white font-bold">
+                        {refPrice > 0
+                          ? `${(amount / refPrice).toLocaleString('en-US', { maximumFractionDigits: 6 })} ${baseOf(symbol.symbol)}`
+                          : '—'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-500">Position value</span>
+                      <span className="text-slate-200">{usd(amount)}</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
                       <span className="text-slate-500">Required margin</span>
-                      <span className="text-slate-200">${amount.toLocaleString('en-US')}</span>
+                      <span className="text-slate-200">{usd(requiredMargin)}</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
                       <span className="text-slate-500">Free margin</span>
@@ -705,8 +865,19 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     )}
                   </div>
 
+                  {!canAfford && (
+                    <div className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-2 flex items-start gap-2">
+                      <Wallet className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        {availableForMargin <= 0
+                          ? 'Your balance is empty. Make a deposit before opening a position.'
+                          : `Not enough free margin. This order needs $${requiredMargin.toLocaleString('en-US', { maximumFractionDigits: 2 })}, you have $${Math.max(0, availableForMargin).toLocaleString('en-US', { maximumFractionDigits: 2 })}.`}
+                      </span>
+                    </div>
+                  )}
+
                   <button
-                    disabled={placing}
+                    disabled={placing || !canAfford || !!protectionError}
                     onClick={async () => {
                       setPlacing(true);
                       try {
@@ -724,15 +895,27 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                           symbol: symbol.symbol,
                           tv: symbol.tv,
                           name: symbol.name,
+                          category: symbol.category,
                           side: side === 'buy' ? 'LONG' : 'SHORT',
+                          // Dollar value; the server converts it into units
+                          notional: amount,
                           amount,
-                          leverage,
                           entryPrice: entry,
+                          orderType,
+                          triggerPrice: orderType === 'market' ? null : Number(triggerPrice) || 0,
+                          stopLoss: slNum,
+                          takeProfit: tpNum,
                           openedAt: new Date().toISOString(),
-                          pnl: 0,
                         });
                         await reloadTrades();
-                        setToast(`${side === 'buy' ? 'Long' : 'Short'} position opened on ${symbol.symbol}`);
+                        setStopLoss('');
+                        setTakeProfit('');
+                        setTriggerPrice('');
+                        setToast(
+                          orderType === 'market'
+                            ? `${side === 'buy' ? 'Long' : 'Short'} position opened on ${symbol.symbol}`
+                            : `${orderType === 'limit' ? 'Limit' : 'Stop'} order placed — waiting for ${triggerPrice}`,
+                        );
                       } catch (err) {
                         setToast(err instanceof Error ? err.message : 'Could not open the position');
                       } finally {
@@ -744,10 +927,90 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                     }`}
                   >
                     {placing && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {side === 'buy' ? 'Open Long' : 'Open Short'}
+                    {!canAfford
+                      ? 'Insufficient balance'
+                      : orderType !== 'market'
+                      ? `Place ${orderType} order`
+                      : side === 'buy'
+                      ? 'Open Long'
+                      : 'Open Short'}
                   </button>
                 </div>
               </Card>
+
+              {/* Live order book straight from the exchange */}
+              <Card title="Order book" subtitle={`${symbol.symbol} · live depth`}>
+                <div className="p-4">
+                  {book.asks.length === 0 && book.bids.length === 0 ? (
+                    <div className="py-8 text-center text-[12px] text-slate-600">
+                      Depth is not published for this instrument.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="space-y-0.5">
+                        {[...book.asks].slice(0, 6).reverse().map((a, i) => (
+                          <div key={`a${i}`} className="flex justify-between text-[11px] font-mono">
+                            <span className="text-rose-400">{a.price.toLocaleString('en-US')}</span>
+                            <span className="text-slate-500">{a.size.toFixed(4)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="text-center text-[13px] font-bold text-white border-y border-white/[.06] py-1.5">
+                        {refPrice > 0 ? refPrice.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—'}
+                      </div>
+                      <div className="space-y-0.5">
+                        {book.bids.slice(0, 6).map((b2, i) => (
+                          <div key={`b${i}`} className="flex justify-between text-[11px] font-mono">
+                            <span className="text-emerald-400">{b2.price.toLocaleString('en-US')}</span>
+                            <span className="text-slate-500">{b2.size.toFixed(4)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+
+              {/* Limit / stop orders waiting for their price */}
+              {myTrades.some(t => t.status === 'PENDING') && (
+                <Card title="Pending orders" subtitle="Waiting for the market to reach the trigger">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-white/[.02] border-b border-white/[.06]">
+                        <tr>
+                          <Th>Pair</Th><Th>Type</Th><Th>Side</Th>
+                          <Th>Trigger</Th><Th>Size</Th><Th className="text-right">Action</Th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/[.05]">
+                        {myTrades.filter(t => t.status === 'PENDING').map(t => (
+                          <tr key={t.id} className="hover:bg-white/[.02]">
+                            <Td className="font-semibold text-white">{t.symbol}</Td>
+                            <Td><Badge tone="gold">{t.orderType}</Badge></Td>
+                            <Td><Badge tone={t.side === 'SHORT' ? 'red' : 'green'}>{t.side}</Badge></Td>
+                            <Td className="font-mono text-[12px]">{Number(t.triggerPrice).toLocaleString('en-US')}</Td>
+                            <Td className="text-[12px]">{usd(Number(t.notional) || 0)}</Td>
+                            <Td className="text-right">
+                              <Btn
+                                size="sm"
+                                variant="danger"
+                                onClick={async () => {
+                                  await apiCloseTrade(t.id);
+                                  await reloadTrades();
+                                  onBalanceChanged?.();
+                                  setToast('Order cancelled');
+                                }}
+                              >
+                                Cancel
+                              </Btn>
+                            </Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              )}
 
               <Card title="Open positions" className="xl:col-span-2">
                 <div className="overflow-x-auto">
@@ -756,7 +1019,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                       <tr>
                         <Th>Pair</Th>
                         <Th>Side</Th>
-                        <Th>Leverage</Th>
+                        <Th>Position size</Th>
+                        <Th>Margin</Th>
                         <Th>Entry</Th>
                         <Th>Opened</Th>
                         <Th>P/L</Th>
@@ -778,6 +1042,9 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                           const live = livePrices[t.symbol] || 0;
                           const entry = Number(t.entryPrice) || 0;
                           const livePnl = livePnlOf(t, live);
+                          // Size in units of the asset, e.g. 0.1 BTC
+                          const positionUnits = unitsOf(t);
+                          const notional = positionUnits * (live > 0 ? live : entry);
                           const fmt = (v: number) =>
                             v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toPrecision(6);
                           return (
@@ -788,7 +1055,27 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                                 {t.side}
                               </Badge>
                             </Td>
-                            <Td>{t.leverage}x</Td>
+                            <Td className="font-mono text-[12px]">
+                              {positionUnits > 0 ? (
+                                <>
+                                  <span className="text-white">
+                                    {positionUnits.toLocaleString('en-US', { maximumFractionDigits: 6 })}
+                                  </span>{' '}
+                                  <span className="text-slate-500">{baseOf(t.symbol)}</span>
+                                  <div className="text-[10px] text-slate-500">
+                                    {usd(notional)}
+                                  </div>
+                                </>
+                              ) : (
+                                '—'
+                              )}
+                            </Td>
+                            <Td className="text-[12px]">
+                              {usd(Number(t.margin) || 0)}
+                              {t.marginRate ? (
+                                <div className="text-[10px] text-slate-500">{t.marginRate}%</div>
+                              ) : null}
+                            </Td>
                             <Td className="font-mono text-[12px]">{entry > 0 ? fmt(entry) : '—'}</Td>
                             <Td className="text-[12px] text-slate-400">
                               {t.openedAt
@@ -808,9 +1095,15 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                                 size="sm"
                                 variant="danger"
                                 onClick={async () => {
-                                  await apiCloseTrade(t.id);
+                                  const res = await apiCloseTrade(t.id);
                                   await reloadTrades();
-                                  setToast(`Position ${t.symbol} closed`);
+                                  // Closing settles the P/L into the cash
+                                  // balance, so pull the new figure in
+                                  onBalanceChanged?.();
+                                  const settled = Number(res?.trade?.pnl ?? 0);
+                                  setToast(
+                                    `${t.symbol} closed · ${settled >= 0 ? '+' : '-'}${usd(Math.abs(settled))}`,
+                                  );
                                 }}
                               >
                                 Close

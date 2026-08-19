@@ -9,8 +9,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Investor, Lead, TransactionRequest, LeadStage, CrmSettings, ClientNote } from '../../types';
 import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
-import type { ApiKycDoc, ApiNotification } from '../../api';
-import { fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets } from '../../api';
+import type { ApiKycDoc, ApiNotification, ApiCall, ApiAnalytics, ApiManagerStat } from '../../api';
+import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates } from '../../api';
 import type { ApiUser } from '../../api';
 import {
   LayoutDashboard,
@@ -19,13 +19,13 @@ import {
   Ban,
   ArrowDownToLine,
   PhoneCall,
+  Ear,
   Settings,
   LogOut,
   Kanban,
   Plus,
   CheckCircle,
   CheckCircle2,
-  Clock,
   UserPlus,
   ArrowRight,
   ArrowLeft,
@@ -35,10 +35,6 @@ import {
   EyeOff,
   Loader2,
   X,
-  Mic,
-  MonitorPlay,
-  Radio,
-  PlayCircle,
   BarChart3,
   Bell,
   Phone,
@@ -59,7 +55,6 @@ import {
   Download,
   Circle,
 } from 'lucide-react';
-import { CRM_AUM_MONTHS } from '../../data/mockData';
 import { CrmTradesManager } from './CrmTradesManager';
 import type { AdminTrade } from './CrmTradesManager';
 import { Card, Btn, Badge, Field, Input, Select, Kpi, Th, Td, Avatar } from './ui';
@@ -92,6 +87,10 @@ interface CrmDashboardProps {
   onLogout: () => void;
   /** Admin: sign in as a client to see their cabinet */
   onImpersonateUser?: (user: ApiUser) => void;
+  /** Start a WebRTC call with a client */
+  onPlaceCall?: (client: ApiUser, callerName: string) => void;
+  /** Join a live call as a supervisor (whisper mode) */
+  onWhisper?: (call: ApiCall) => void;
   onRejectRequest: (requestId: string) => void;
   projects: Project[];
   onOpenNewProjectModal: () => void;
@@ -195,6 +194,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onApproveRequest,
   onLogout,
   onImpersonateUser,
+  onPlaceCall,
+  onWhisper,
   onRejectRequest,
   onOpenNewProjectModal,
   trades,
@@ -275,6 +276,15 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const [letterAudience, setLetterAudience] = useState('All clients');
   const [sendingLetter, setSendingLetter] = useState(false);
   const [walletDraft, setWalletDraft] = useState<Record<string, string>>({ BTC: '', ETH: '', USDC: '' });
+  const [marginDraft, setMarginDraft] = useState<Record<string, number>>({});
+  const [savingMargin, setSavingMargin] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'settings') return;
+    apiMarginRates()
+      .then(r => setMarginDraft(r.rates))
+      .catch(() => undefined);
+  }, [activeTab]);
   const [savingWallets, setSavingWallets] = useState(false);
 
   // Load the configured deposit addresses when Settings opens
@@ -319,28 +329,53 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
 
 
   /**
-   * Client list = demo portfolio records + everyone who actually registered
-   * on the site. Real sign-ups have no trading history yet, so they show up
-   * with zero balances until the trading data moves to the database too.
+   * The client list comes from the database only — real accounts with the
+   * balances the back office actually credited and the positions they hold.
+   * Sample records were removed so nothing on this screen is invented.
    */
   const allClients: Investor[] = React.useMemo(() => {
-    const known = new Set(investors.map(i => i.email.toLowerCase()));
-    const registered: Investor[] = users
-      .filter(u => u.role === 'CLIENT' && !known.has(u.email.toLowerCase()))
-      .map(u => ({
-        id: `acc-${u.id}`,
-        name: u.name,
-        email: u.email,
-        phone: '—',
-        kycStatus: u.status === 'active' ? 'verified' : 'pending',
-        balance: 0,
-        invested: 0,
-        totalProfit: 0,
-        registrationDate: (u.created_at || '').slice(0, 10),
-        manager: 'No manager (super-admin)',
-      }));
-    return [...investors, ...registered];
-  }, [investors, users]);
+    const kycByUser = new Map<number, string>();
+    for (const d of kycDocuments) {
+      // "verified" requires all three documents approved
+      const current = kycByUser.get(d.userId);
+      if (d.status === 'rejected') kycByUser.set(d.userId, 'rejected');
+      else if (d.status === 'pending' && current !== 'rejected') kycByUser.set(d.userId, 'pending');
+      else if (!current) kycByUser.set(d.userId, 'approved');
+    }
+
+    return users
+      .filter(u => u.role === 'CLIENT')
+      .map(u => {
+        const mine = trades.filter(t => t.investorId === `acc-${u.id}` || t.investorId === String(u.id));
+        const invested = mine
+          .filter(t => t.status === 'OPEN')
+          .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+        const profit = mine.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
+
+        const approvedCount = kycDocuments.filter(
+          d => d.userId === u.id && d.status === 'approved',
+        ).length;
+
+        return {
+          id: `acc-${u.id}`,
+          name: u.name,
+          email: u.email,
+          phone: (u as ApiUser & { phone?: string }).phone || '—',
+          kycStatus: approvedCount >= 3
+            ? 'verified'
+            : kycByUser.get(u.id) === 'rejected'
+            ? 'rejected'
+            : kycDocuments.some(d => d.userId === u.id)
+            ? 'pending'
+            : 'none',
+          balance: Number((u as ApiUser & { balance?: number }).balance) || 0,
+          invested,
+          totalProfit: profit,
+          registrationDate: (u.created_at || '').slice(0, 10),
+          manager: clientStatuses[`acc-${u.id}`] ? '' : 'Unassigned',
+        } as Investor;
+      });
+  }, [users, trades, kycDocuments, clientStatuses]);
 
   const selectedUser = allClients.find(i => i.id === selectedUserId) || allClients[0];
 
@@ -353,7 +388,6 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
 
   const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
   const totalAum = investors.reduce((s, i) => s + i.balance + i.invested, 0);
-  const totalProfit = investors.reduce((s, i) => s + i.totalProfit, 0);
   const openTrades = trades.filter(t => t.status === 'OPEN').length;
 
   const openUser = (id: string) => {
@@ -1221,47 +1255,18 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           )}
 
           {/* ===================== CALLS ===================== */}
-          {activeTab === 'calls' && <CallsPanel investors={investors} phonesHidden={phonesHidden} />}
-
-          {/* ===================== ANALYTICS ===================== */}
-          {activeTab === 'analytics' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                <Kpi icon={Wallet} label="AUM" value={`$${(totalAum / 1000).toFixed(1)}K`} hint="+14%" />
-                <Kpi icon={TrendingUp} label="Total PnL" value={`+$${totalProfit.toLocaleString('en-US')}`} tone="green" />
-                <Kpi icon={Users} label="FTD" value="80.8%" tone="blue" />
-                <Kpi icon={PhoneCall} label="Call rate" value="8.1%" tone="gold" />
-                <Kpi icon={BarChart3} label="Win rate" value="62.4%" tone="green" />
-              </div>
-              <Card title="AUM dynamics" subtitle="Assets under management, $M">
-                <div className="p-5">
-                  {(() => {
-                    const max = Math.max(...CRM_AUM_MONTHS.map(m => m.aum)) * 1.15;
-                    return (
-                      <div className="flex items-end gap-3 h-56">
-                        {CRM_AUM_MONTHS.map(m => (
-                          <div key={m.month} className="flex-1 h-full flex flex-col items-center">
-                            {/* bar area — fixed height so the % below resolves correctly */}
-                            <div className="flex-1 w-full flex flex-col justify-end items-center gap-1.5">
-                              <span className="text-[10px] text-slate-400 font-semibold">{m.aum}</span>
-                              <div
-                                className="w-full rounded-t-lg bg-gradient-to-t from-[#f5b400]/25 to-[#f5b400] transition-all hover:from-[#f5b400]/40"
-                                style={{ height: `${(m.aum / max) * 100}%` }}
-                                title={`${m.month}: $${m.aum}M · ${m.activeInvestors} active clients`}
-                              />
-                            </div>
-                            <span className="text-[10px] text-slate-600 mt-2">{m.month}</span>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </Card>
-            </div>
+          {activeTab === 'calls' && (
+            <CallsPanel
+              investors={investors}
+              phonesHidden={phonesHidden}
+              users={users}
+              onPlaceCall={(c, name) => onPlaceCall?.(c, name)}
+              onWhisper={(c) => onWhisper?.(c)}
+            />
           )}
 
-          {/* ===================== SETTINGS ===================== */}
+          {/* ===================== ANALYTICS ===================== */}
+          {activeTab === 'analytics' && <AnalyticsPanel onNotify={onNotify} />}
           {activeTab === 'settings' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Card
@@ -1303,6 +1308,59 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     }}
                   >
                     {savingWallets ? 'Saving...' : 'Save addresses'}
+                  </Btn>
+                </div>
+              </Card>
+
+              <Card
+                title="Margin requirements"
+                subtitle="Share of a position's value the client must post as margin"
+                className="lg:col-span-2"
+              >
+                <div className="p-5 space-y-4">
+                  <p className="text-[12px] text-slate-500 max-w-2xl">
+                    Lower percentage means higher leverage. 30% is roughly 3:1, 0.2% is 500:1.
+                    Changes apply to positions opened from now on.
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {Object.keys(marginDraft).map(cat => (
+                      <div key={cat}>
+                        <label className="text-[11px] font-bold uppercase text-slate-500">{cat}</label>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            max="100"
+                            className="w-full"
+                            value={marginDraft[cat]}
+                            onChange={e =>
+                              setMarginDraft(m => ({ ...m, [cat]: Number(e.target.value) }))
+                            }
+                          />
+                          <span className="text-[12px] text-slate-500 shrink-0">
+                            % · {marginDraft[cat] > 0 ? Math.round(100 / marginDraft[cat]) : '—'}:1
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Btn
+                    variant="gold"
+                    disabled={savingMargin}
+                    onClick={async () => {
+                      setSavingMargin(true);
+                      try {
+                        await apiSaveMarginRates(marginDraft);
+                        onNotify('Margin requirements updated.');
+                      } catch (err) {
+                        onNotify(err instanceof Error ? err.message : 'Could not save the rates');
+                      } finally {
+                        setSavingMargin(false);
+                      }
+                    }}
+                  >
+                    {savingMargin ? 'Saving...' : 'Save margin rates'}
                   </Btn>
                 </div>
               </Card>
@@ -1595,7 +1653,17 @@ const UserDetails: React.FC<{
     {
       icon: BellRing,
       label: 'Push notification',
-      onClick: () => onNotify('The client will receive this as an in-app notification.'),
+      onClick: async () => {
+        if (!account) return onNotify('This client does not have a platform account.');
+        const text = window.prompt(`Push notification for ${shortName}:`);
+        if (!text?.trim()) return;
+        try {
+          const r = await apiPushSend(account.id, 'Oak Haven Yield', text.trim());
+          onNotify(r.message);
+        } catch (err) {
+          onNotify(err instanceof Error ? err.message : 'Could not send the notification');
+        }
+      },
     },
     {
       icon: KeyRound,
@@ -2234,155 +2302,209 @@ const UserDetails: React.FC<{
 };
 
 /* ============================================================
-   CALLS PANEL — WebRTC demo: prompter, screen share, recording
+   ANALYTICS — every figure is computed from the database
+   (PDF p.16). Nothing on this screen is hard-coded any more.
    ============================================================ */
-const CallsPanel: React.FC<{ investors: Investor[]; phonesHidden: boolean }> = ({ investors, phonesHidden }) => {
-  const [active, setActive] = useState<Investor | null>(null);
-  const [playingCall, setPlayingCall] = useState<string | null>(null);
-  const [prompter, setPrompter] = useState(false);
-  const [screen, setScreen] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [seconds, setSeconds] = useState(0);
-  const [callerName, setCallerName] = useState('Oak Haven Yield Support');
+const AnalyticsPanel: React.FC<{ onNotify: (m: string) => void }> = ({ onNotify }) => {
+  const [data, setData] = useState<ApiAnalytics | null>(null);
+  const [managers, setManagers] = useState<ApiManagerStat[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setSeconds(s => s + 1), 1000);
-    return () => clearInterval(t);
-  }, [active]);
+    let stop = false;
+    const pull = async () => {
+      try {
+        const [a, m] = await Promise.all([apiAnalytics(), apiManagerStats()]);
+        if (stop) return;
+        setData(a);
+        setManagers(m.managers);
+      } catch (err) {
+        if (!stop) onNotify(err instanceof Error ? err.message : 'Could not load analytics');
+      } finally {
+        if (!stop) setLoading(false);
+      }
+    };
+    pull();
+    const t = setInterval(pull, 20000);
+    return () => { stop = true; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const mmss = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  if (loading || !data) {
+    return (
+      <Card title="Analytics">
+        <div className="p-10 text-center text-[13px] text-slate-500">Loading figures…</div>
+      </Card>
+    );
+  }
+
+  const money = (n: number) =>
+    `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  const mins = (sec: number) =>
+    `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  const maxDeposit = Math.max(...data.months.map(m => m.deposits), 1);
+
+  const stageLabels: Record<string, string> = {
+    new: 'New', contact: 'Contacted', kyc: 'KYC', active: 'Active',
+  };
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi icon={PhoneCall} label="Total calls" value="145" />
-        <Kpi icon={CheckCircle} label="Answered" value="140" tone="green" />
-        <Kpi icon={Ban} label="Missed" value="5" tone="red" />
-        <Kpi icon={Clock} label="Avg. duration" value="1:24" tone="blue" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <Kpi icon={Wallet} label="AUM" value={money(data.money.aum)} />
+        <Kpi
+          icon={TrendingUp}
+          label="Net P/L"
+          value={money(data.trading.netPnl)}
+          tone={data.trading.netPnl >= 0 ? 'green' : 'red'}
+        />
+        <Kpi icon={Users} label="FTD" value={`${data.clients.ftd}%`} tone="blue"
+             hint={`${data.clients.funded} of ${data.clients.total} funded`} />
+        <Kpi icon={PhoneCall} label="Answer rate" value={`${data.calls.answerRate}%`} tone="gold"
+             hint={`${data.calls.answered}/${data.calls.total} calls`} />
+        <Kpi icon={BarChart3} label="Win rate" value={`${data.trading.winRate}%`}
+             tone={data.trading.winRate >= 50 ? 'green' : 'red'}
+             hint={`${data.trading.closed} closed`} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card title="Call management" subtitle="Start a call and control the conversation" className="lg:col-span-2">
-          <div className="p-5 space-y-4">
-            <div>
-              <label className="text-[11px] font-bold uppercase text-slate-500">Caller name shown to the client</label>
-              <Input value={callerName} onChange={e => setCallerName(e.target.value)} className="w-full mt-1.5" />
-            </div>
-
-            {active ? (
-              <div className="bg-[#1b1e26] border border-white/[.06] rounded-2xl p-5">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
-                    <PhoneCall className="w-6 h-6 text-emerald-400 animate-pulse" />
-                  </div>
-                  <div>
-                    <div className="text-[15px] font-bold text-white">{active.name}</div>
-                    <div className="text-[12px] text-slate-500 font-mono">
-                      {phonesHidden ? maskPhone(active.phone) : active.phone}
-                    </div>
-                    <div className="text-[12px] text-emerald-400 font-mono mt-0.5">{mmss} · in progress</div>
-                  </div>
-                  <div className="ml-auto flex gap-2">
-                    <Btn variant={prompter ? 'gold' : 'ghost'} icon={Mic} onClick={() => setPrompter(v => !v)}>
-                      Prompter
-                    </Btn>
-                    <Btn variant={screen ? 'gold' : 'ghost'} icon={MonitorPlay} onClick={() => setScreen(v => !v)}>
-                      Screen
-                    </Btn>
-                    <Btn variant={recording ? 'danger' : 'ghost'} icon={Radio} onClick={() => setRecording(v => !v)}>
-                      {recording ? 'Recording' : 'Record'}
-                    </Btn>
-                    <Btn
-                      variant="danger"
-                      onClick={() => {
-                        setActive(null);
-                        setSeconds(0);
-                        setPrompter(false);
-                        setScreen(false);
-                        setRecording(false);
-                      }}
-                    >
-                      End
-                    </Btn>
-                  </div>
-                </div>
-                {prompter && (
-                  <div className="mt-4 bg-[#f5b400]/10 border border-[#f5b400]/25 rounded-xl p-3.5 text-[12px] text-[#f9d571]">
-                    <strong>Prompter mode:</strong> the supervisor hears the manager and can whisper — the client does not hear it.
-                  </div>
-                )}
-                {screen && (
-                  <div className="mt-3 bg-[#0f1116] border border-white/[.08] rounded-xl h-40 flex items-center justify-center text-[12px] text-slate-600">
-                    <MonitorPlay className="w-5 h-5 mr-2" /> Screen sharing is active (getDisplayMedia)
-                  </div>
-                )}
+        <Card title="Deposits" subtitle="Last six months" className="lg:col-span-2">
+          <div className="p-5">
+            {data.months.every(m => m.deposits === 0) ? (
+              <div className="py-16 text-center text-[13px] text-slate-600">
+                No deposits recorded yet.
               </div>
             ) : (
-              <div className="bg-[#1b1e26] border border-dashed border-white/[.1] rounded-2xl p-8 text-center text-[12px] text-slate-600">
-                No active calls. Pick a client on the right to start.
+              <div className="flex items-end gap-3 h-56">
+                {data.months.map(m => (
+                  <div key={m.key} className="flex-1 h-full flex flex-col items-center">
+                    <div className="flex-1 w-full flex flex-col justify-end items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-semibold">
+                        {m.deposits > 0 ? money(m.deposits) : ''}
+                      </span>
+                      <div
+                        className="w-full rounded-t-lg bg-gradient-to-t from-[#f5b400]/25 to-[#f5b400]"
+                        style={{ height: `${(m.deposits / maxDeposit) * 100}%` }}
+                        title={`${m.month}: ${money(m.deposits)} · ${m.count} payment(s)`}
+                      />
+                    </div>
+                    <span className="text-[10px] text-slate-500 mt-2">{m.month}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </Card>
 
-        <Card title="Clients" subtitle="Click to call">
-          <div className="p-4 space-y-2 max-h-96 overflow-y-auto">
-            {investors.map(inv => (
-              <button
-                key={inv.id}
-                onClick={() => {
-                  setActive(inv);
-                  setSeconds(0);
-                }}
-                className="w-full flex items-center gap-3 bg-[#1b1e26] border border-white/[.06] rounded-xl p-3 hover:border-[#f5b400]/40 transition-colors cursor-pointer text-left"
-              >
-                <Avatar name={inv.name} size={32} />
-                <div className="min-w-0">
-                  <div className="text-[13px] font-semibold text-white truncate">{inv.name}</div>
-                  <div className="text-[11px] text-slate-500 font-mono">{phonesHidden ? maskPhone(inv.phone) : inv.phone}</div>
-                </div>
-                <PhoneCall className="w-4 h-4 text-[#f5b400] ml-auto shrink-0" />
-              </button>
+        <Card title="Money flow">
+          <div className="p-5 space-y-3">
+            {[
+              ['Deposits', money(data.money.deposits), 'text-emerald-400'],
+              ['Withdrawals', money(data.money.withdrawals), 'text-rose-400'],
+              ['Net', money(data.money.net), data.money.net >= 0 ? 'text-emerald-400' : 'text-rose-400'],
+              ['Average deposit', money(data.money.avgDeposit), 'text-slate-200'],
+              ['Pending requests', String(data.money.pendingRequests), 'text-[#f5b400]'],
+            ].map(([label, value, cls]) => (
+              <div key={label} className="flex justify-between text-[12px]">
+                <span className="text-slate-500">{label}</span>
+                <span className={`font-bold ${cls}`}>{value}</span>
+              </div>
             ))}
           </div>
         </Card>
       </div>
 
-      <Card title="Call history" subtitle="Records available for quality control">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card title="Clients">
+          <div className="p-5 space-y-3">
+            {[
+              ['Total', data.clients.total],
+              ['Active', data.clients.active],
+              ['Awaiting confirmation', data.clients.pending],
+              ['Blocked', data.clients.blocked],
+              ['Funded at least once', data.clients.funded],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="flex justify-between text-[12px]">
+                <span className="text-slate-500">{label}</span>
+                <span className="font-bold text-white">{value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Trading">
+          <div className="p-5 space-y-3">
+            {[
+              ['Positions total', data.trading.total],
+              ['Open', data.trading.open],
+              ['Pending orders', data.trading.pending],
+              ['Volume', money(data.trading.volume)],
+              ['Profit factor', data.trading.profitFactor || '—'],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="flex justify-between text-[12px]">
+                <span className="text-slate-500">{label}</span>
+                <span className="font-bold text-white">{value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Lead funnel" subtitle={`Potential ${money(data.leads.potential)}`}>
+          <div className="p-5 space-y-3">
+            {['new', 'contact', 'kyc', 'active'].map(stage => {
+              const count = data.leads.byStage[stage] || 0;
+              const share = data.leads.total ? (count / data.leads.total) * 100 : 0;
+              return (
+                <div key={stage}>
+                  <div className="flex justify-between text-[11px] mb-1">
+                    <span className="text-slate-500">{stageLabels[stage]}</span>
+                    <span className="text-slate-300 font-semibold">{count}</span>
+                  </div>
+                  <div className="h-1.5 bg-white/[.06] rounded-full overflow-hidden">
+                    <div className="h-full bg-[#f5b400]" style={{ width: `${share}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      </div>
+
+      {/* Staff monitoring — PDF p.15 */}
+      <Card title="Manager performance" subtitle="Calls, leads and activity per person">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left">
             <thead className="bg-white/[.02] border-b border-white/[.06]">
               <tr>
-                <Th>Client</Th>
-                <Th>Direction</Th>
-                <Th>Date</Th>
-                <Th>Duration</Th>
-                <Th>Status</Th>
-                <Th className="text-right">Record</Th>
+                <Th>Manager</Th><Th>Calls</Th><Th>Answered</Th><Th>Talk time</Th>
+                <Th>Leads</Th><Th>Converted</Th><Th>Actions</Th><Th>Last active</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[.05]">
-              {investors.slice(0, 5).map((inv, i) => (
-                <tr key={inv.id} className="hover:bg-white/[.02]">
-                  <Td className="font-semibold text-white">{inv.name}</Td>
-                  <Td>
-                    <Badge tone={i % 2 ? 'blue' : 'gold'}>{i % 2 ? 'incoming' : 'outgoing'}</Badge>
+              {managers.length === 0 && (
+                <tr><Td className="py-8 text-center text-slate-600">No staff activity yet</Td></tr>
+              )}
+              {managers.map(m => (
+                <tr key={m.id} className="hover:bg-white/[.02]">
+                  <Td className="font-semibold text-white">
+                    {m.name}
+                    <div className="text-[10px] text-slate-500">{m.role}</div>
                   </Td>
-                  <Td className="text-[12px]">2026-08-{10 + i} 14:2{i}</Td>
-                  <Td className="font-mono text-[12px]">0{i + 1}:1{i}</Td>
+                  <Td>{m.calls}</Td>
                   <Td>
-                    <Badge tone={i === 3 ? 'red' : 'green'}>{i === 3 ? 'missed' : 'answered'}</Badge>
+                    {m.answered}
+                    {m.calls > 0 && <span className="text-slate-500 text-[11px]"> · {m.answerRate}%</span>}
                   </Td>
-                  <Td className="text-right">
-                    <Btn
-                      size="sm"
-                      variant="ghost"
-                      icon={PlayCircle}
-                      onClick={() => setPlayingCall(playingCall === inv.id ? null : inv.id)}
-                    >
-                      {playingCall === inv.id ? 'Playing…' : 'Play'}
-                    </Btn>
+                  <Td>{mins(m.talkTimeSec)}</Td>
+                  <Td>{m.leads}</Td>
+                  <Td>{m.converted}</Td>
+                  <Td>{m.actions}</Td>
+                  <Td className="text-[11px] text-slate-500">
+                    {m.lastActive
+                      ? new Date(m.lastActive).toLocaleString('en-US', {
+                          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                        })
+                      : '—'}
                   </Td>
                 </tr>
               ))}
@@ -2390,6 +2512,195 @@ const CallsPanel: React.FC<{ investors: Investor[]; phonesHidden: boolean }> = (
           </table>
         </div>
       </Card>
+    </div>
+  );
+};
+
+/* ============================================================
+   CALLS PANEL — real WebRTC calls (PDF p.4-5, video 2)
+   Place a call, share the screen, record it, and let a supervisor
+   join in WHISPER mode where only the manager hears them.
+   ============================================================ */
+const CallsPanel: React.FC<{
+  investors: Investor[];
+  phonesHidden: boolean;
+  users: ApiUser[];
+  onPlaceCall: (client: ApiUser, callerName: string) => void;
+  onWhisper: (call: ApiCall) => void;
+}> = ({ phonesHidden, users, onPlaceCall, onWhisper }) => {
+  const [callerName, setCallerName] = useState('Oak Haven Yield Support');
+  const [log, setLog] = useState<(ApiCall & { hasRecording: boolean })[]>([]);
+  const [stats, setStats] = useState({ total: 0, answered: 0, missed: 0, avgSec: 0 });
+  const [live, setLive] = useState<ApiCall[]>([]);
+  const [playing, setPlaying] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+
+  const clients = users.filter(u => u.role === 'CLIENT');
+
+  const refresh = async () => {
+    try {
+      const r = await apiCallLog();
+      setLog(r.calls);
+      setStats(r.stats);
+    } catch { /* ignore */ }
+    try {
+      const inbox = await apiCallInbox();
+      setLive(inbox.calls.filter(c => c.status === 'active' || c.status === 'ringing'));
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  const shown = clients.filter(c =>
+    !query.trim() ||
+    c.name.toLowerCase().includes(query.toLowerCase()) ||
+    c.email.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  const fmtDur = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi icon={PhoneCall} label="Calls total" value={String(stats.total)} />
+        <Kpi icon={CheckCircle2} label="Answered" value={String(stats.answered)} tone="green" />
+        <Kpi icon={X} label="Missed" value={String(stats.missed)} tone="red" />
+        <Kpi icon={History} label="Avg duration" value={fmtDur(stats.avgSec)} tone="gold" />
+      </div>
+
+      {/* A supervisor can attach to any call that is currently running */}
+      {live.length > 0 && (
+        <Card title="Live calls" subtitle="Join in whisper mode — the client will not hear you">
+          <div className="p-5 space-y-2">
+            {live.map(c => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between bg-[#1b1e26] border border-white/[.06] rounded-xl px-4 py-3"
+              >
+                <div>
+                  <div className="text-[13px] font-semibold text-white">
+                    {c.managerName} → {c.clientName}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {c.status === 'ringing' ? 'Ringing…' : 'In progress'}
+                    {c.whisperName ? ` · ${c.whisperName} is coaching` : ''}
+                  </div>
+                </div>
+                <Btn size="sm" variant="ghost" icon={Ear} onClick={() => onWhisper(c)}>
+                  Whisper
+                </Btn>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card title="Place a call" subtitle="The client sees the caller name you choose">
+          <div className="p-5 space-y-3">
+            <div>
+              <label className="text-[11px] font-bold uppercase text-slate-500">Caller name</label>
+              <Input
+                className="w-full mt-1.5"
+                value={callerName}
+                onChange={e => setCallerName(e.target.value)}
+              />
+            </div>
+            <Input
+              className="w-full"
+              placeholder="Search a client…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+            <div className="max-h-[280px] overflow-y-auto space-y-2">
+              {shown.length === 0 && (
+                <div className="text-[12px] text-slate-600 py-6 text-center">No clients yet</div>
+              )}
+              {shown.map(c => (
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between bg-[#1b1e26] border border-white/[.06] rounded-xl px-3.5 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-semibold text-white truncate">{c.name}</div>
+                    <div className="text-[11px] text-slate-500 truncate">
+                      {phonesHidden ? '•••• hidden' : c.email}
+                    </div>
+                  </div>
+                  <Btn size="sm" variant="gold" icon={PhoneCall} onClick={() => onPlaceCall(c, callerName)}>
+                    Call
+                  </Btn>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Call history" subtitle="Recordings are kept with the call">
+          <div className="overflow-x-auto max-h-[420px]">
+            <table className="w-full text-left">
+              <thead className="bg-white/[.02] border-b border-white/[.06] sticky top-0">
+                <tr>
+                  <Th>When</Th>
+                  <Th>Client</Th>
+                  <Th>Manager</Th>
+                  <Th>Duration</Th>
+                  <Th className="text-right">Recording</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[.05]">
+                {log.length === 0 && (
+                  <tr>
+                    <Td className="py-10 text-center text-slate-600">No calls yet</Td>
+                  </tr>
+                )}
+                {log.map(c => (
+                  <tr key={c.id} className="hover:bg-white/[.02]">
+                    <Td className="text-[12px]">
+                      {new Date(c.startedAt).toLocaleString('en-US', {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                      })}
+                    </Td>
+                    <Td className="font-semibold text-white text-[12px]">{c.clientName}</Td>
+                    <Td className="text-[12px]">{c.managerName}</Td>
+                    <Td className="text-[12px]">
+                      {c.answeredAt ? fmtDur(c.durationSec) : <Badge tone="red">missed</Badge>}
+                    </Td>
+                    <Td className="text-right">
+                      {c.hasRecording ? (
+                        <Btn
+                          size="sm"
+                          variant="ghost"
+                          onClick={async () => {
+                            try {
+                              const r = await apiCallRecording(c.id);
+                              setPlaying(r.data);
+                            } catch { /* ignore */ }
+                          }}
+                        >
+                          Play
+                        </Btn>
+                      ) : (
+                        <span className="text-[11px] text-slate-600">—</span>
+                      )}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {playing && (
+            <div className="p-4 border-t border-white/[.06]">
+              <audio src={playing} controls autoPlay className="w-full" />
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 };

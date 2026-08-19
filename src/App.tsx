@@ -12,8 +12,10 @@ import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
 import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
-import { apiLeads, apiCreateLead, apiUpdateLead, apiAddLeadComment, apiImpersonate, apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
-import type { ApiTrade, ApiTransaction } from './api';
+import { apiStartCall, apiWhisper, apiCallInbox, apiCallStatus, apiNotes, apiAddNote, apiCrmSettings, apiSaveCrmSettings, apiClientStatuses, apiSetClientStatus, apiLeads, apiCreateLead, apiUpdateLead, apiAddLeadComment, apiImpersonate, apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq } from './api';
+import type { ApiTrade, ApiTransaction, ApiCall } from './api';
+import { CallDock, IncomingCall } from './components/calls/CallPanel';
+import { enablePushNotifications } from './push';
 import { 
   DepositModal, 
   WithdrawModal, 
@@ -22,7 +24,6 @@ import {
 } from './components/modals/OperationsModals';
 import { 
   INITIAL_PROJECTS, 
-  INITIAL_INVESTORS, 
   INITIAL_REQUESTS 
 } from './data/mockData';
 import type { 
@@ -61,7 +62,8 @@ export default function App() {
   const [myTransactions, setMyTransactions] = useState<ApiTransaction[]>([]);
   const [allTransactions, setAllTransactions] = useState<ApiTransaction[]>([]);
   const [myInvestments, setMyInvestments] = useState<ActiveInvestment[]>([]);
-  const [investors, setInvestors] = useState<Investor[]>(INITIAL_INVESTORS);
+  // Client records are derived from the database inside the CRM
+  const [investors, setInvestors] = useState<Investor[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [requests] = useState<TransactionRequest[]>(INITIAL_REQUESTS);
 
@@ -141,6 +143,12 @@ export default function App() {
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [resetToken, setResetToken] = useState<string | null>(null);
+  /* ---- calls (WebRTC) ---- */
+  const [incomingCall, setIncomingCall] = useState<ApiCall | null>(null);
+  const [activeCall, setActiveCall] = useState<ApiCall | null>(null);
+  const [callRole, setCallRole] = useState<'manager' | 'client' | 'supervisor'>('client');
+  const [callInitiator, setCallInitiator] = useState(false);
+
   const [impersonating, setImpersonating] = useState<boolean>(
     () => !!localStorage.getItem(ADMIN_TOKEN_KEY),
   );
@@ -150,6 +158,12 @@ export default function App() {
      - /confirm-email?token=...  (email confirmation)
      - /reset-password?token=... (password reset)
   ======================================================== */
+  // Register for browser notifications once the client is signed in
+  useEffect(() => {
+    if (!isLoggedIn || currentUser?.role !== 'CLIENT') return;
+    enablePushNotifications().catch(() => undefined);
+  }, [isLoggedIn, currentUser?.role]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const path = window.location.pathname;
@@ -226,6 +240,15 @@ export default function App() {
           /* ignore transient errors */
         }
         await reloadLeads();
+        await reloadNotes();
+        try {
+          const st = await apiClientStatuses();
+          setClientStatuses(st.statuses);
+        } catch { /* ignore */ }
+        try {
+          const cs = await apiCrmSettings();
+          setSettings(cs.settings);
+        } catch { /* ignore */ }
       } else {
         // Clients pull their own documents so the KYC badge is truthful
         try {
@@ -243,6 +266,26 @@ export default function App() {
           /* ignore transient errors */
         }
       }
+      // Ringing / live calls addressed to me
+      try {
+        const inbox = await apiCallInbox();
+        const ringing = inbox.calls.find(c => c.status === 'ringing');
+        const live = inbox.calls.find(c => c.status === 'active');
+
+        if (activeCall) {
+          // Keep the whisper badge fresh while the call runs
+          const same = inbox.calls.find(c => c.id === activeCall.id);
+          if (same) setActiveCall(same);
+          else setActiveCall(null);
+        } else if (ringing && ringing.clientId === currentUser?.id) {
+          setIncomingCall(ringing);
+        } else if (live && live.clientId === currentUser?.id) {
+          setIncomingCall(null);
+        }
+      } catch {
+        /* ignore transient errors */
+      }
+
       try {
         const n = await apiNotifications();
         setNotifications(n.notifications);
@@ -661,22 +704,44 @@ export default function App() {
     return [...adminTrades, ...mapped];
   }, [adminTrades, serverTrades]);
 
-  const handleAddClientNote = (clientId: string, text: string) => {
-    const note: ClientNote = {
-      id: `note-${Date.now()}`,
-      clientId,
-      author: currentUser?.name || 'Agent',
-      authorRole: currentUser?.role === 'ADMIN' ? 'ADMIN' : 'MANAGER',
-      text,
-      createdAt: new Date().toISOString(),
-    };
-    setClientNotes(prev => [...prev, note]);
-    showToast('✔ Note saved to the client card.');
+  /** Notes live on the server, so they survive a refresh. */
+  const reloadNotes = async () => {
+    if (!getToken()) return;
+    try {
+      const res = await apiNotes();
+      setClientNotes(
+        res.notes.map(n => ({
+          id: String(n.id),
+          clientId: n.clientId,
+          author: n.author,
+          authorRole: n.authorRole === 'ADMIN' ? 'ADMIN' : 'MANAGER',
+          text: n.text,
+          createdAt: n.createdAt,
+        })) as ClientNote[],
+      );
+    } catch {
+      /* ignore transient errors */
+    }
   };
 
-  const handleSetClientStatus = (clientId: string, status: string) => {
-    setClientStatuses(prev => ({ ...prev, [clientId]: status }));
-    showToast(`✔ Client status set to «${status}».`);
+  const handleAddClientNote = async (clientId: string, text: string) => {
+    try {
+      await apiAddNote(clientId, text);
+      await reloadNotes();
+      showToast('✔ Note saved to the client card.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the note', 'info');
+    }
+  };
+
+  const handleSetClientStatus = async (clientId: string, status: string) => {
+    try {
+      const res = await apiSetClientStatus(clientId, status);
+      setClientStatuses(res.statuses);
+      showToast(`✔ Client status set to «${status}».`);
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the status', 'info');
+    }
   };
 
   /** Admin or agent approves / rejects a document — persisted on the server */
@@ -691,12 +756,21 @@ export default function App() {
     }
   };
 
-  const handleToggleHidePhones = () => {
-    if (currentUser?.role !== 'ADMIN' && !isLoggedIn) return;
-    setSettings(prev => ({ ...prev, hidePhonesFromAgents: !prev.hidePhonesFromAgents }));
-    showToast(settings.hidePhonesFromAgents
-      ? '✔ Phone numbers are now visible to agents.'
-      : '✔ Phone numbers hidden from agents (admins see full numbers).');
+  const handleToggleHidePhones = async () => {
+    if (currentUser?.role !== 'ADMIN') {
+      showToast('Only an administrator can change this setting.', 'info');
+      return;
+    }
+    const next = !settings.hidePhonesFromAgents;
+    try {
+      const res = await apiSaveCrmSettings(next);
+      setSettings(res.settings);
+      showToast(next
+        ? '✔ Phone numbers are now hidden from agents.'
+        : '✔ Agents can see full phone numbers again.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the setting', 'info');
+    }
   };
 
   return (
@@ -705,6 +779,37 @@ export default function App() {
         activeTab === 'landing' ? 'bg-[#F5F2E9] text-[#213532]' : 'bg-[#0e0f13] text-slate-200'
       }`}
     >
+      {/* Incoming call — client side */}
+      {incomingCall && !activeCall && (
+        <IncomingCall
+          call={incomingCall}
+          onAccept={async () => {
+            setCallRole('client');
+            setCallInitiator(false);
+            setActiveCall(incomingCall);
+            setIncomingCall(null);
+          }}
+          onDecline={async () => {
+            try {
+              await apiCallStatus(incomingCall.id, 'declined');
+            } catch {
+              /* the prompt closes either way */
+            }
+            setIncomingCall(null);
+          }}
+        />
+      )}
+
+      {activeCall && (
+        <CallDock
+          call={activeCall}
+          role={callRole}
+          initiator={callInitiator}
+          whisperName={activeCall.whisperName}
+          onClosed={() => setActiveCall(null)}
+        />
+      )}
+
       {/* Impersonation banner — always visible so nobody forgets they are
           looking at somebody else's account */}
       {impersonating && (
@@ -774,6 +879,7 @@ export default function App() {
             onOpenWithdrawModal={() => setIsWithdrawModalOpen(true)}
             onClaimDividends={handleClaimDividends}
             onLogout={handleLogout}
+            onBalanceChanged={refreshMyFinances}
           />
         )}
 
@@ -813,6 +919,28 @@ export default function App() {
               })) as TransactionRequest[],
               ...requests,
             ]}
+            onPlaceCall={async (client, callerName) => {
+              try {
+                const res = await apiStartCall(client.id, callerName);
+                setCallRole('manager');
+                setCallInitiator(true);
+                setActiveCall(res.call);
+                showToast(`Calling ${client.name}…`);
+              } catch (err) {
+                showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not start the call', 'info');
+              }
+            }}
+            onWhisper={async (call) => {
+              try {
+                const res = await apiWhisper(call.id, true);
+                setCallRole('supervisor');
+                setCallInitiator(true);
+                setActiveCall(res.call);
+                showToast('Joined in whisper mode — the client cannot hear you');
+              } catch (err) {
+                showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not join', 'info');
+              }
+            }}
             onImpersonateUser={async (u) => {
               // Keep the admin session so we can switch back afterwards
               try {

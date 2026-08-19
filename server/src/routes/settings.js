@@ -11,6 +11,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
+import { DEFAULT_MARGIN_RATES, MARGIN_CATEGORIES } from '../margin.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -103,6 +104,43 @@ router.put('/deposit-wallets/:userId', auth, adminOnly, async (req, res) => {
   const value = normalise(req.body?.wallets);
   await writeSetting(`depositWallets:${userId}`, value, req.user.name);
   res.json({ ok: true, wallets: value });
+});
+
+/* ---------------- margin requirements ---------------- */
+
+/**
+ * Percentage of a position's value that must be posted as margin,
+ * per asset class. Everyone may read them (the terminal needs them to
+ * price an order); only an admin may change them.
+ */
+router.get('/margin-rates', auth, async (req, res) => {
+  const rec = await store.byField('settings', 'key', 'marginRates');
+  const saved = rec?.value || {};
+  const rates = MARGIN_CATEGORIES.reduce(
+    (acc, c) => ({ ...acc, [c]: Number(saved[c]) > 0 ? Number(saved[c]) : DEFAULT_MARGIN_RATES[c] }),
+    {},
+  );
+  res.json({ rates, defaults: DEFAULT_MARGIN_RATES, categories: MARGIN_CATEGORIES });
+});
+
+router.put('/margin-rates', auth, adminOnly, async (req, res) => {
+  const incoming = req.body?.rates || {};
+  const value = {};
+
+  for (const c of MARGIN_CATEGORIES) {
+    const n = Number(incoming[c]);
+    if (!Number.isFinite(n) || n <= 0 || n > 100) {
+      return res.status(400).json({ error: `${c}: margin must be between 0.01% and 100%` });
+    }
+    value[c] = Math.round(n * 100) / 100;
+  }
+
+  const rec = await store.byField('settings', 'key', 'marginRates');
+  const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
+  if (rec) await store.update('settings', rec.id, payload);
+  else await store.insert('settings', { key: 'marginRates', ...payload });
+
+  res.json({ ok: true, rates: value });
 });
 
 export default router;

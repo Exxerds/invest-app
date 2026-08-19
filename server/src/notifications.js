@@ -9,6 +9,7 @@
 //  are kept; older ones are trimmed to stop the file growing.
 // ============================================================
 import * as store from './db.js';
+import { pushToUser } from './routes/push.js';
 
 const KEEP = 200;
 
@@ -33,6 +34,11 @@ export async function notify({ audience, userId, kind, title, message, link }) {
     read: false,
     createdAt: new Date().toISOString(),
   });
+
+  // Mirror client-facing alerts to the browser, if push is switched on
+  if (audience === 'client' && userId) {
+    pushToUser(userId, { title, body: message }).catch(() => undefined);
+  }
 
   // keep the collection bounded
   const all = await store.all('notifications');

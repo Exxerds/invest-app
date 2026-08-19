@@ -59,7 +59,7 @@ async function getPool() {
  * so both backends behave the same and no migration is needed when the
  * shape of a record changes.
  */
-const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactions', 'leads', 'settings'];
+const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactions', 'leads', 'settings', 'notes', 'messages', 'activity', 'calls', 'signals', 'pushSubs'];
 
 async function ensureSchema() {
   if (g.__ohySchema) return g.__ohySchema;
@@ -85,6 +85,10 @@ async function ensureSchema() {
     await p.query(`CREATE INDEX IF NOT EXISTS kyc_user_txt_idx ON kyc ((data->>'userId'))`);
     await p.query(`CREATE INDEX IF NOT EXISTS notif_user_idx ON notifications ((data->>'userId'))`);
     await p.query(`CREATE INDEX IF NOT EXISTS notif_audience_idx ON notifications ((data->>'audience'))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS notes_client_idx ON notes ((data->>'clientId'))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS msg_thread_idx ON messages ((data->>'threadId'))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS settings_key_idx ON settings ((data->>'key'))`);
+    await p.query(`CREATE INDEX IF NOT EXISTS signals_call_idx ON signals ((data->>'callId'))`);
   })();
   return g.__ohySchema;
 }
@@ -157,7 +161,7 @@ const pgStore = {
 /* ============================================================
    JSON-FILE BACKEND (local development)
    ============================================================ */
-let data = { users: [], tokens: [], kyc: [], notifications: [], trades: [], transactions: [], leads: [], settings: [], _seq: 1 };
+let data = { users: [], tokens: [], kyc: [], notifications: [], trades: [], transactions: [], leads: [], settings: [], notes: [], messages: [], activity: [], calls: [], signals: [], pushSubs: [], _seq: 1 };
 
 function loadFile() {
   try {

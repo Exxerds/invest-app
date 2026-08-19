@@ -21,6 +21,11 @@ import tradeRoutes from './routes/trades.js';
 import transactionRoutes from './routes/transactions.js';
 import leadRoutes from './routes/leads.js';
 import mailingRoutes from './routes/mailing.js';
+import workspaceRoutes from './routes/workspace.js';
+import callRoutes from './routes/calls.js';
+import analyticsRoutes from './routes/analytics.js';
+import pushRoutes from './routes/push.js';
+import statementRoutes from './routes/statements.js';
 import settingsRoutes from './routes/settings.js';
 import { seedUsers } from './seed.js';
 
@@ -193,6 +198,11 @@ app.use('/api/trades', tradeRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/mailing', mailingRoutes);
+app.use('/api/workspace', workspaceRoutes);
+app.use('/api/calls', callRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/push', pushRoutes);
+app.use('/api/statements', statementRoutes);
 app.use('/api/settings', settingsRoutes);
 
 // Unknown API route → JSON 404 (never fall through to the SPA)

@@ -7,6 +7,9 @@ export interface ApiUser {
   id: number;
   name: string;
   email: string;
+  /** Credited by the back office; absent for staff accounts */
+  balance?: number;
+  phone?: string;
   role: 'CLIENT' | 'MANAGER' | 'ADMIN';
   status: 'pending' | 'active' | 'blocked';
   created_at?: string;
@@ -222,6 +225,15 @@ export const apiSearchSymbols = (q: string) =>
 // ---------- trades ----------
 
 export interface ApiTrade {
+  /** Size in units of the asset (0.1 = 0.1 BTC) */
+  units?: number;
+  notional?: number;
+  marginRate?: number;
+  category?: string;
+  exitPrice?: number;
+  closeReason?: string;
+  orderType?: 'market' | 'limit' | 'stop';
+  triggerPrice?: number | null;
   id: number;
   userId: number;
   userName: string;
@@ -237,7 +249,7 @@ export interface ApiTrade {
   stopLoss: number | null;
   takeProfit: number | null;
   pnl: number;
-  status: 'OPEN' | 'CLOSED';
+  status: 'OPEN' | 'CLOSED' | 'PENDING';
   openedAt: string;
   margin?: number;
   liquidationPrice?: number;
@@ -252,7 +264,14 @@ export const apiMyTrades = () =>
 export const apiAllTrades = () =>
   request<{ trades: ApiTrade[] }>('/trades/all', { headers: authHeader() });
 
-export const apiOpenTrade = (data: Partial<ApiTrade> & { symbol: string; amount: number }) =>
+export const apiOpenTrade = (
+  data: Partial<ApiTrade> & {
+    symbol: string;
+    amount: number;
+    orderType?: 'market' | 'limit' | 'stop';
+    triggerPrice?: number | null;
+  },
+) =>
   request<{ ok: true; trade: ApiTrade }>('/trades', {
     method: 'POST',
     headers: authHeader(),
@@ -268,7 +287,7 @@ export const apiUpdateTrade = (id: number, patch: Partial<ApiTrade>) =>
   });
 
 export const apiCloseTrade = (id: number) =>
-  request<{ ok: true; trade: ApiTrade }>(`/trades/${id}/close`, {
+  request<{ ok: true; trade: ApiTrade; balance: number | null }>(`/trades/${id}/close`, {
     method: 'POST',
     headers: authHeader(),
   });
@@ -447,4 +466,263 @@ export const apiImpersonate = (userId: number) =>
   request<{ ok: true; token: string; user: ApiUser }>(`/admin/users/${userId}/impersonate`, {
     method: 'POST',
     headers: authHeader(),
+  });
+
+// ---------- margin requirements ----------
+
+export type MarginCategory = 'Crypto' | 'Stocks' | 'Indices' | 'Commodities' | 'Currencies' | 'Other';
+
+export const apiMarginRates = () =>
+  request<{
+    rates: Record<MarginCategory, number>;
+    defaults: Record<MarginCategory, number>;
+    categories: MarginCategory[];
+  }>('/settings/margin-rates', { headers: authHeader() });
+
+export const apiSaveMarginRates = (rates: Record<string, number>) =>
+  request<{ ok: true; rates: Record<MarginCategory, number> }>('/settings/margin-rates', {
+    method: 'PUT',
+    headers: authHeader(),
+    body: JSON.stringify({ rates }),
+  });
+
+/** Closes any position that hit its stop loss, take profit or liquidation. */
+export const apiSettleTrades = () =>
+  request<{
+    ok: true;
+    closed: { id: number; symbol: string; reason: string; pnl: number }[];
+    triggered: { id: number; symbol: string; price: number }[];
+  }>(
+    '/trades/settle',
+    { method: 'POST', headers: authHeader() },
+  );
+
+// ---------- workspace: notes, chat, CRM settings, activity ----------
+
+export interface ApiNote {
+  id: number; clientId: string; author: string; authorRole: string;
+  text: string; createdAt: string;
+}
+export interface ApiMessage {
+  id: number; threadId: number; fromStaff: boolean; author: string;
+  text: string; createdAt: string;
+}
+export interface ApiActivity {
+  id: number; actorName: string; actorRole: string; action: string;
+  target: string; details: string; createdAt: string;
+}
+
+export const apiNotes = () =>
+  request<{ notes: ApiNote[] }>('/workspace/notes', { headers: authHeader() });
+
+export const apiAddNote = (clientId: string, text: string) =>
+  request<{ ok: true; note: ApiNote }>('/workspace/notes', {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ clientId, text }),
+  });
+
+/** Staff pass a clientId; a client omits it and gets their own thread. */
+export const apiMessages = (clientId?: number) =>
+  request<{ messages?: ApiMessage[]; threads?: ApiMessage[] }>(
+    `/workspace/messages${clientId ? `?clientId=${clientId}` : ''}`,
+    { headers: authHeader() },
+  );
+
+export const apiSendMessage = (text: string, clientId?: number) =>
+  request<{ ok: true; message: ApiMessage }>('/workspace/messages', {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ text, clientId }),
+  });
+
+export const apiCrmSettings = () =>
+  request<{ settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
+    headers: authHeader(),
+  });
+
+export const apiSaveCrmSettings = (hidePhonesFromAgents: boolean) =>
+  request<{ ok: true; settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
+    method: 'PUT', headers: authHeader(), body: JSON.stringify({ hidePhonesFromAgents }),
+  });
+
+export const apiClientStatuses = () =>
+  request<{ statuses: Record<string, string> }>('/workspace/client-status', { headers: authHeader() });
+
+export const apiSetClientStatus = (clientId: string, status: string) =>
+  request<{ ok: true; statuses: Record<string, string> }>('/workspace/client-status', {
+    method: 'PUT', headers: authHeader(), body: JSON.stringify({ clientId, status }),
+  });
+
+export const apiActivity = (target?: string) =>
+  request<{ activity: ApiActivity[] }>(
+    `/workspace/activity${target ? `?target=${encodeURIComponent(target)}` : ''}`,
+    { headers: authHeader() },
+  );
+
+// ---------- statements ----------
+
+export interface ApiStatement {
+  client: { id: number; name: string; email: string };
+  period: { from: string | null; to: string | null };
+  computed: Record<string, number>;
+  figures: Record<string, number> & { notes?: string };
+  overrides: Record<string, number | string>;
+  notes: string;
+  trades: {
+    symbol: string; side: string; units: number; notional: number;
+    entryPrice: number; exitPrice: number | null; pnl: number;
+    status: string; openedAt: string; closedAt: string | null;
+  }[];
+  transactions: { type: string; amount: number; method: string; status: string; createdAt: string }[];
+  issuedAt: string;
+}
+
+export const apiStatement = (userId: number, from?: string, to?: string) => {
+  const qs = new URLSearchParams();
+  if (from) qs.set('from', from);
+  if (to) qs.set('to', to);
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request<ApiStatement>(`/statements/${userId}${suffix}`, { headers: authHeader() });
+};
+
+export const apiSaveStatementOverrides = (userId: number, overrides: Record<string, unknown>) =>
+  request<{ ok: true; overrides: Record<string, number | string> }>(
+    `/statements/${userId}/override`,
+    { method: 'PUT', headers: authHeader(), body: JSON.stringify({ overrides }) },
+  );
+
+// ---------- calls (WebRTC) ----------
+
+export interface ApiCall {
+  id: number; managerId: number; managerName: string;
+  clientId: number; clientName: string; callerName: string;
+  status: 'ringing' | 'active' | 'ended';
+  whisperBy: number | null; whisperName?: string | null;
+  screenShare: boolean; declined?: boolean;
+  startedAt: string; answeredAt: string | null; endedAt: string | null;
+  durationSec: number;
+}
+
+export interface ApiSignal {
+  id: number; callId: number; from: number;
+  role: string; kind: string; payload: string; createdAt: string;
+}
+
+export const apiIceServers = () =>
+  request<{ iceServers: RTCIceServer[] }>('/calls/ice-servers', { headers: authHeader() });
+
+export const apiStartCall = (clientId: number, callerName: string) =>
+  request<{ ok: true; call: ApiCall }>('/calls', {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ clientId, callerName }),
+  });
+
+export const apiCallInbox = () =>
+  request<{ calls: ApiCall[] }>('/calls/inbox', { headers: authHeader() });
+
+export const apiPostSignal = (callId: number, kind: string, payload: string, role: string) =>
+  request<{ ok: true; id: number }>(`/calls/${callId}/signal`, {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ kind, payload, role }),
+  });
+
+export const apiReadSignals = (callId: number, after: number) =>
+  request<{ signals: ApiSignal[]; lastId: number }>(`/calls/${callId}/signals?after=${after}`, {
+    headers: authHeader(),
+  });
+
+export const apiCallStatus = (
+  callId: number,
+  status: 'active' | 'ended' | 'declined',
+  extra?: { screenShare?: boolean },
+) =>
+  request<{ ok: true; call: ApiCall }>(`/calls/${callId}/status`, {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ status, ...extra }),
+  });
+
+export const apiWhisper = (callId: number, join: boolean) =>
+  request<{ ok: true; call: ApiCall }>(`/calls/${callId}/whisper`, {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ join }),
+  });
+
+export const apiUploadRecording = (callId: number, data: string) =>
+  request<{ ok: true }>(`/calls/${callId}/recording`, {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ data }),
+  });
+
+export const apiCallLog = () =>
+  request<{
+    calls: (ApiCall & { hasRecording: boolean })[];
+    stats: { total: number; answered: number; missed: number; avgSec: number };
+  }>('/calls/log', { headers: authHeader() });
+
+export const apiCallRecording = (callId: number) =>
+  request<{ data: string }>(`/calls/${callId}/recording`, { headers: authHeader() });
+
+// ---------- live market data ----------
+
+export const apiOrderBook = (symbol: string) =>
+  request<{ symbol: string; bids: { price: number; size: number }[]; asks: { price: number; size: number }[] }>(
+    `/symbols/orderbook?symbol=${encodeURIComponent(symbol)}`,
+  );
+
+export const apiCandles = (symbol: string, granularity = 3600) =>
+  request<{
+    symbol: string;
+    granularity: number;
+    candles: { time: number; open: number; high: number; low: number; close: number; volume: number }[];
+  }>(`/symbols/candles?symbol=${encodeURIComponent(symbol)}&granularity=${granularity}`);
+
+// ---------- analytics (computed from the database) ----------
+
+export interface ApiAnalytics {
+  clients: { total: number; active: number; pending: number; blocked: number; funded: number; ftd: number };
+  money: { aum: number; deposits: number; withdrawals: number; net: number; avgDeposit: number; pendingRequests: number };
+  trading: { total: number; open: number; pending: number; closed: number; winRate: number; volume: number; netPnl: number; profitFactor: number };
+  calls: { total: number; answered: number; missed: number; answerRate: number; avgSec: number; recorded: number };
+  leads: { total: number; byStage: Record<string, number>; potential: number };
+  months: { month: string; key: string; deposits: number; count: number }[];
+}
+
+export const apiAnalytics = () =>
+  request<ApiAnalytics>('/analytics/overview', { headers: authHeader() });
+
+export interface ApiManagerStat {
+  id: number; name: string; role: string; calls: number; answered: number;
+  answerRate: number; talkTimeSec: number; leads: number; converted: number;
+  actions: number; lastActive: string | null;
+}
+
+export const apiManagerStats = () =>
+  request<{ managers: ApiManagerStat[] }>('/analytics/managers', { headers: authHeader() });
+
+// ---------- lead import & duplicate control ----------
+
+export const apiImportLeads = (
+  rows: { name: string; phone?: string; email?: string; potentialAmount?: number; notes?: string }[],
+  assignTo?: string[],
+) =>
+  request<{
+    ok: true; imported: number;
+    duplicates: { row: number; name: string; reason: string }[];
+    invalid: { row: number; reason: string }[];
+    message: string;
+  }>('/leads/import', {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ rows, assignTo }),
+  });
+
+export const apiCheckDuplicate = (phone?: string, email?: string) =>
+  request<{ duplicate: { type: string; field: string; match: string } | null }>(
+    '/leads/check-duplicate',
+    { method: 'POST', headers: authHeader(), body: JSON.stringify({ phone, email }) },
+  );
+
+// ---------- web push ----------
+
+export const apiPushKey = () =>
+  request<{ enabled: boolean; publicKey: string }>('/push/key');
+
+export const apiPushSubscribe = (subscription: PushSubscriptionJSON) =>
+  request<{ ok: true; enabled: boolean }>('/push/subscribe', {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ subscription }),
+  });
+
+export const apiPushSend = (userId: number, title: string, body: string) =>
+  request<{ ok: true; sent: number; message: string }>('/push/send', {
+    method: 'POST', headers: authHeader(), body: JSON.stringify({ userId, title, body }),
   });

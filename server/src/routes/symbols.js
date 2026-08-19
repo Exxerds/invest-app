@@ -205,4 +205,81 @@ router.get('/quote', async (req, res) => {
   }
 });
 
+/* ============================================================
+   ORDER BOOK & CANDLES (Coinbase Exchange, no key required)
+   Binance is unusable here: it blocks US IP ranges and Vercel
+   runs in the US, so every call came back with an eligibility
+   error. Coinbase serves both endpoints from the same host.
+   ============================================================ */
+
+/** BTCUSD, BINANCE:BTCUSDT, BTC/USD -> BTC-USD */
+function toProduct(raw) {
+  let x = String(raw || '').toUpperCase().trim();
+  if (x.includes(':')) x = x.split(':').pop();
+  x = x.replace(/[^A-Z0-9]/g, '');
+  for (const q of ['USDT', 'USDC', 'USD']) {
+    if (x.endsWith(q) && x.length > q.length) return `${x.slice(0, -q.length)}-USD`;
+  }
+  return `${x}-USD`;
+}
+
+const bookCache = new Map();
+const BOOK_TTL = 2500;
+
+router.get('/orderbook', async (req, res) => {
+  const product = toProduct(req.query.symbol);
+  const hit = bookCache.get(product);
+  if (hit && Date.now() - hit.at < BOOK_TTL) return res.json(hit.data);
+
+  const raw = await getJson(
+    `https://api.exchange.coinbase.com/products/${product}/book?level=2`,
+    6000,
+  );
+  if (!raw?.bids) return res.json({ symbol: req.query.symbol, bids: [], asks: [] });
+
+  const take = (rows) =>
+    (rows || []).slice(0, 12).map(([price, size]) => ({
+      price: Number(price),
+      size: Number(size),
+    }));
+
+  const data = { symbol: req.query.symbol, bids: take(raw.bids), asks: take(raw.asks) };
+  if (bookCache.size > 60) bookCache.clear();
+  bookCache.set(product, { data, at: Date.now() });
+  res.json(data);
+});
+
+const candleCache = new Map();
+const CANDLE_TTL = 30_000;
+
+router.get('/candles', async (req, res) => {
+  const product = toProduct(req.query.symbol);
+  // 1m, 5m, 15m, 1h, 6h, 1d — the granularities Coinbase accepts
+  const allowed = [60, 300, 900, 3600, 21600, 86400];
+  const g = allowed.includes(Number(req.query.granularity)) ? Number(req.query.granularity) : 3600;
+  const key = `${product}:${g}`;
+
+  const hit = candleCache.get(key);
+  if (hit && Date.now() - hit.at < CANDLE_TTL) return res.json(hit.data);
+
+  const raw = await getJson(
+    `https://api.exchange.coinbase.com/products/${product}/candles?granularity=${g}`,
+    8000,
+  );
+  if (!Array.isArray(raw)) return res.json({ symbol: req.query.symbol, candles: [] });
+
+  // Coinbase returns [time, low, high, open, close, volume], newest first
+  const candles = raw
+    .slice(0, 200)
+    .map(([time, low, high, open, close, volume]) => ({
+      time, open, high, low, close, volume,
+    }))
+    .sort((a, b) => a.time - b.time);
+
+  const data = { symbol: req.query.symbol, granularity: g, candles };
+  if (candleCache.size > 60) candleCache.clear();
+  candleCache.set(key, { data, at: Date.now() });
+  res.json(data);
+});
+
 export default router;

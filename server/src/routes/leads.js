@@ -38,6 +38,31 @@ async function auth(req, res, next) {
 
 const clean = (v, max = 200) => String(v ?? '').slice(0, max);
 
+/** Digits only, so +1 (415) 555-0182 and 14155550182 match. */
+const normPhone = (v) => String(v ?? '').replace(/\D/g, '');
+const normEmail = (v) => String(v ?? '').trim().toLowerCase();
+
+/**
+ * Duplicate Control (PDF p.13).
+ * A lead is a duplicate when the phone or the e-mail already exists —
+ * either in the funnel or among registered platform accounts.
+ */
+async function findDuplicate({ phone, email }, { leads, users }) {
+  const p = normPhone(phone);
+  const e = normEmail(email);
+  if (!p && !e) return null;
+
+  for (const l of leads) {
+    if (p && normPhone(l.phone) === p) return { type: 'lead', field: 'phone', match: l.name };
+    if (e && normEmail(l.email) === e) return { type: 'lead', field: 'email', match: l.name };
+  }
+  for (const u of users) {
+    if (e && normEmail(u.email) === e) return { type: 'client', field: 'email', match: u.name };
+    if (p && u.phone && normPhone(u.phone) === p) return { type: 'client', field: 'phone', match: u.name };
+  }
+  return null;
+}
+
 router.get('/', auth, async (req, res) => {
   const leads = await store.all('leads');
   res.json({ leads: leads.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
@@ -46,6 +71,18 @@ router.get('/', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   const b = req.body || {};
   if (!clean(b.name).trim()) return res.status(400).json({ error: 'Name is required' });
+
+  // Duplicate protection — can be overridden deliberately
+  if (!b.force) {
+    const [leads, users] = await Promise.all([store.all('leads'), store.all('users')]);
+    const dup = await findDuplicate({ phone: b.phone, email: b.email }, { leads, users });
+    if (dup) {
+      return res.status(409).json({
+        error: `Duplicate: this ${dup.field} already belongs to ${dup.match} (${dup.type}).`,
+        duplicate: dup,
+      });
+    }
+  }
 
   const lead = await store.insert('leads', {
     name: clean(b.name, 120).trim(),
@@ -110,6 +147,78 @@ router.delete('/:id', auth, async (req, res) => {
   const removed = await store.removeWhere('leads', (l) => l.id === id);
   if (!removed) return res.status(404).json({ error: 'Lead not found' });
   res.json({ ok: true });
+});
+
+/* ---------------- bulk import (PDF p.12, 14) ---------------- */
+
+/**
+ * Import leads from a pasted CSV.
+ * Duplicates are skipped and reported rather than silently dropped, and
+ * the rows can be spread across managers round-robin.
+ */
+router.post('/import', auth, async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 2000) : [];
+  if (!rows.length) return res.status(400).json({ error: 'Nothing to import' });
+
+  const assignees = Array.isArray(req.body?.assignTo) && req.body.assignTo.length
+    ? req.body.assignTo.map(a => clean(a, 120))
+    : [req.user.name];
+
+  const [existingLeads, users] = await Promise.all([store.all('leads'), store.all('users')]);
+  const pool = [...existingLeads];
+
+  const imported = [];
+  const duplicates = [];
+  const invalid = [];
+
+  for (const [i, row] of rows.entries()) {
+    const name = clean(row.name, 120).trim();
+    if (!name) {
+      invalid.push({ row: i + 1, reason: 'missing name' });
+      continue;
+    }
+
+    const dup = await findDuplicate({ phone: row.phone, email: row.email }, { leads: pool, users });
+    if (dup) {
+      duplicates.push({ row: i + 1, name, reason: `${dup.field} matches ${dup.match}` });
+      continue;
+    }
+
+    const lead = await store.insert('leads', {
+      name,
+      phone: clean(row.phone, 40),
+      email: normEmail(row.email),
+      potentialAmount: Number(row.potentialAmount) || 0,
+      stage: clean(row.stage, 60) || 'new',
+      notes: clean(row.notes, 2000),
+      manager: assignees[imported.length % assignees.length],
+      comments: [],
+      source: 'import',
+      createdBy: req.user.name,
+      createdAt: new Date().toISOString(),
+    });
+
+    pool.push(lead);
+    imported.push(lead);
+  }
+
+  res.json({
+    ok: true,
+    imported: imported.length,
+    duplicates,
+    invalid,
+    message: `Imported ${imported.length}, skipped ${duplicates.length} duplicate(s), ${invalid.length} invalid row(s).`,
+  });
+});
+
+/** Check a phone / e-mail before the agent finishes typing. */
+router.post('/check-duplicate', auth, async (req, res) => {
+  const [leads, users] = await Promise.all([store.all('leads'), store.all('users')]);
+  const dup = await findDuplicate(
+    { phone: req.body?.phone, email: req.body?.email },
+    { leads, users },
+  );
+  res.json({ duplicate: dup });
 });
 
 export default router;

@@ -48,6 +48,9 @@ router.get('/users', auth('ADMIN'), async (req, res) => {
     email: u.email,
     role: u.role,
     status: u.status,
+    // The CRM shows real balances, so they travel with the account
+    balance: Number(u.balance) || 0,
+    phone: u.phone || '',
     created_at: u.created_at,
   }));
   res.json({ users });
