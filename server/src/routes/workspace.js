@@ -65,7 +65,8 @@ export async function logActivity({ actor, action, target, details }) {
 router.get('/investments', auth, async (req, res) => {
   const userId = req.user.id;
   const all = await store.manyByField('investments', 'userId', userId);
-  res.json({ investments: all });
+  // Only live positions — closed ones live in the transaction history
+  res.json({ investments: all.filter(i => i.status !== 'closed') });
 });
 
 router.post('/investments', auth, async (req, res) => {
@@ -109,16 +110,27 @@ router.post('/investments/:id/claim', auth, async (req, res) => {
   const id = Number(req.params.id);
   const inv = await store.byId('investments', id);
   if (!inv || inv.userId !== req.user.id) return res.status(404).json({ error: 'Investment not found' });
-
+  if (inv.status === 'closed') return res.status(400).json({ error: 'Position already closed' });
+  const amount = Number(inv.amount) || 0;
+  let profit = Number(req.body?.profit);
+  if (!Number.isFinite(profit)) profit = Number(inv.accruedProfit) || 0;
+  profit = Math.max(-amount, Math.min(profit, amount * 5));   // защита от абьюза
+  profit = Math.round(profit * 100) / 100;
+  const payout = Math.max(0, Math.round((amount + profit) * 100) / 100);
   const user = await store.byId('users', req.user.id);
-  const profit = Number(req.body?.profit) || Number(inv.accruedProfit) || 0;
-  if (profit <= 0) return res.json({ ok: true, profit: 0, balance: user?.balance || 0 });
-
-  const nextBalance = Math.round(((Number(user?.balance) || 0) + profit) * 100) / 100;
+  const nextBalance = Math.round(((Number(user?.balance) || 0) + payout) * 100) / 100;
   await store.update('users', req.user.id, { balance: nextBalance });
-  await store.update('investments', id, { accruedProfit: 0, lastClaimedAt: new Date().toISOString() });
-
-  res.json({ ok: true, profit, balance: nextBalance });
+  await store.update('investments', id, {
+    status: 'closed', accruedProfit: 0, finalProfit: profit, payout,
+    lastClaimedAt: new Date().toISOString(), closedAt: new Date().toISOString(),
+  });
+  await store.insert('transactions', {
+    userId: req.user.id, userName: req.user.name, userEmail: req.user.email,
+    type: 'deposit', amount: payout,
+    method: `Position closed — ${inv.projectTitle} (P/L ${profit >= 0 ? '+' : '-'}$${Math.abs(profit).toLocaleString('en-US')})`,
+    status: 'approved', createdAt: new Date().toISOString(), balanceAfter: nextBalance,
+  });
+  res.json({ ok: true, closed: true, profit, payout, balance: nextBalance });
 });
 
 router.get('/notes', auth, staffOnly, async (req, res) => {

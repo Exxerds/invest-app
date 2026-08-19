@@ -585,11 +585,14 @@ export const apiCreateInvestment = (data: Record<string, unknown>) =>
   });
 
 export const apiClaimInvestmentProfit = (id: number | string, profit?: number) =>
-  request<{ ok: true; profit: number; balance: number }>(`/workspace/investments/${id}/claim`, {
-    method: 'POST',
-    headers: authHeader(),
-    body: JSON.stringify({ profit }),
-  });
+  request<{ ok: true; closed?: boolean; profit: number; payout?: number; balance: number }>(
+    `/workspace/investments/${id}/claim`,
+    {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify({ profit }),
+    },
+  );
 
 // ---------- statements ----------
 
