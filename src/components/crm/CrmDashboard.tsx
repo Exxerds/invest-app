@@ -59,6 +59,10 @@ import {
 import { CrmTradesManager } from './CrmTradesManager';
 import type { AdminTrade } from './CrmTradesManager';
 import { Card, Btn, Badge, Field, Input, Select, Kpi, Th, Td, Avatar } from './ui';
+import { ImportLeadsModal } from '../modals/ImportLeadsModal';
+import { CreateClientModal } from '../modals/CreateClientModal';
+import { StatementModal } from '../modals/StatementModal';
+import { Upload } from 'lucide-react';
 
 type CrmTab =
   | 'dashboard'
@@ -227,6 +231,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const [openGroup, setOpenGroup] = useState<string | null>('Users');
   const [searchInvestor, setSearchInvestor] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string>(investors[0]?.id ?? '');
+
+  // Lead import and client creation modals
+  const [isCreateClientOpen, setIsCreateClientOpen] = useState(false);
+  const [isImportLeadsOpen, setIsImportLeadsOpen] = useState(false);
+  const [statementModalUser, setStatementModalUser] = useState<{ id: number; name: string } | null>(null);
 
   // Lead comments modal
   const [commentLead, setCommentLead] = useState<Lead | null>(null);
@@ -688,14 +697,20 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {activeTab !== 'user-details' && (
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-extrabold text-white tracking-tight">{header.title}</h1>
-                <p className="text-[12px] text-slate-500 mt-0.5">{header.sub}</p>
+                <h1 className="text-2xl font-extrabold text-[#1C412C] font-serif tracking-tight">{header.title}</h1>
+                <p className="text-[12px] text-[#213532]/70 mt-0.5">{header.sub}</p>
               </div>
-              <div className="flex items-center gap-2">
-                <Btn variant="ghost" icon={UserPlus} onClick={onOpenNewLeadModal}>
+              <div className="flex flex-wrap items-center gap-2">
+                <Btn variant="gold" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
+                  Create client
+                </Btn>
+                <Btn variant="ghost" icon={Upload} onClick={() => setIsImportLeadsOpen(true)}>
+                  Import leads
+                </Btn>
+                <Btn variant="ghost" icon={Plus} onClick={onOpenNewLeadModal}>
                   Add lead
                 </Btn>
-                <Btn variant="gold" icon={Plus} onClick={onOpenNewProjectModal}>
+                <Btn variant="ghost" icon={Plus} onClick={onOpenNewProjectModal}>
                   New asset
                 </Btn>
               </div>
@@ -715,14 +730,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <Card title="Online chat" subtitle="Unanswered messages" className="lg:col-span-1">
                   <div className="p-5">
-                    <div className="text-3xl font-extrabold text-[#f5b400]">0</div>
-                    <p className="text-[11px] text-slate-500 mt-1">No unanswered messages</p>
+                    <div className="text-3xl font-extrabold text-[#B08B48]">0</div>
+                    <p className="text-[11px] text-[#213532]/70 mt-1">No unanswered messages</p>
                   </div>
                 </Card>
                 <Card title="Withdrawals" subtitle="Pending processing">
                   <div className="p-5">
-                    <div className="text-3xl font-extrabold text-white">{pendingRequestsCount}</div>
-                    <p className="text-[11px] text-slate-500 mt-1">requests in queue</p>
+                    <div className="text-3xl font-extrabold text-[#1C412C]">{pendingRequestsCount}</div>
+                    <p className="text-[11px] text-[#213532]/70 mt-1">requests in queue</p>
                     <Btn size="sm" variant="ghost" className="mt-3" onClick={() => setActiveTab('withdrawals')}>
                       Open
                     </Btn>
@@ -730,16 +745,16 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 </Card>
                 <Card title="Deposits" subtitle="Total volume">
                   <div className="p-5">
-                    <div className="text-2xl font-extrabold text-emerald-400">${totalAum.toLocaleString('en-US')}</div>
-                    <p className="text-[11px] text-slate-500 mt-1">{requests.filter(r => r.type === 'deposit').length} deposits</p>
+                    <div className="text-2xl font-extrabold text-emerald-700">${totalAum.toLocaleString('en-US')}</div>
+                    <p className="text-[11px] text-[#213532]/70 mt-1">{requests.filter(r => r.type === 'deposit').length} deposits</p>
                   </div>
                 </Card>
                 <Card title="Quick registration" subtitle="Create a client account">
                   <div className="p-5 space-y-2">
-                    <Btn variant="gold" size="sm" icon={UserPlus} onClick={onOpenNewLeadModal}>
+                    <Btn variant="gold" size="sm" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
                       Create client
                     </Btn>
-                    <p className="text-[11px] text-slate-500">Automatic welcome e-mail with credentials</p>
+                    <p className="text-[11px] text-[#213532]/70">Automatic account creation with active access</p>
                   </div>
                 </Card>
               </div>
@@ -828,14 +843,19 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               title={`All users (${investors.length})`}
               subtitle="Platform accounts, balances and access"
               actions={
-                <div className="relative w-64">
-                  <Search className="w-4 h-4 text-[#213532]/40 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <Input
-                    placeholder="Search by name, e-mail, phone..."
-                    value={searchInvestor}
-                    onChange={e => setSearchInvestor(e.target.value)}
-                    className="w-full pl-9"
-                  />
+                <div className="flex flex-wrap items-center gap-3">
+                  <Btn variant="gold" size="sm" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
+                    Create client
+                  </Btn>
+                  <div className="relative w-64">
+                    <Search className="w-4 h-4 text-[#213532]/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <Input
+                      placeholder="Search by name, e-mail, phone..."
+                      value={searchInvestor}
+                      onChange={e => setSearchInvestor(e.target.value)}
+                      className="w-full pl-9"
+                    />
+                  </div>
                 </div>
               }
             >
@@ -975,6 +995,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               onImpersonate={onImpersonateUser}
               onUpdateUserStatus={onUpdateUserStatus}
               isAdmin={isAdmin}
+              onOpenStatementModal={(id, name) => setStatementModalUser({ id, name })}
             />
           )}
 
@@ -1122,58 +1143,75 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
 
           {/* ===================== LEADS ===================== */}
           {activeTab === 'leads' && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {(
-                [
-                  { id: 'new', title: 'NEW', tone: 'blue' },
-                  { id: 'contact', title: 'CALLBACK', tone: 'gold' },
-                  { id: 'kyc', title: 'DEP', tone: 'violet' },
-                  { id: 'active', title: 'ACTIVE', tone: 'green' },
-                ] as { id: LeadStage; title: string; tone: 'blue' | 'gold' | 'violet' | 'green' }[]
-              ).map(col => (
-                <div key={col.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl p-3 shadow-sm">
-                  <div className="flex items-center justify-between px-1 pb-3">
-                    <Badge tone={col.tone}>{col.title}</Badge>
-                    <span className="text-[11px] text-[#213532]/60 font-semibold">{leads.filter(l => l.stage === col.id).length}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {leads
-                      .filter(l => l.stage === col.id)
-                      .map(lead => (
-                        <div key={lead.id} className="bg-white border border-[#E4DECB] rounded-xl p-3 shadow-xs hover:border-[#B08B48]/50 transition-colors">
-                          <div className="font-semibold text-[#1C412C] text-[13px]">{lead.name}</div>
-                          <div className="text-[11px] text-[#213532]/70 font-mono">
-                            {phonesHidden ? maskPhone(lead.phone) : lead.phone}
-                          </div>
-                          <div className="text-[12px] text-[#B08B48] font-bold mt-1">
-                            ${lead.potentialAmount.toLocaleString('en-US')}
-                          </div>
-                          <div className="text-[10px] text-[#213532]/60 mt-1">{lead.manager}</div>
-                          <div className="flex items-center gap-1.5 mt-2.5">
-                            <button
-                              onClick={() => onMoveLeadStage(lead.id, 'prev')}
-                              className="p-1.5 rounded-lg bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12] cursor-pointer"
-                            >
-                              <ArrowLeft className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => setCommentLead(lead)}
-                              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-[#1C412C]/[.06] text-[#213532] text-[10px] font-bold hover:bg-[#1C412C]/[.12] cursor-pointer"
-                            >
-                              <MessageSquare className="w-3 h-3" /> {lead.comments.length}
-                            </button>
-                            <button
-                              onClick={() => onMoveLeadStage(lead.id, 'next')}
-                              className="p-1.5 rounded-lg bg-[#B08B48] text-white hover:bg-[#C59D55] cursor-pointer shadow-sm"
-                            >
-                              <ArrowRight className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-[#E4DECB] shadow-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-[#1C412C]">Sales Pipeline</span>
+                  <Badge tone="gray">{leads.length} active leads</Badge>
                 </div>
-              ))}
+                <div className="flex items-center gap-2">
+                  <Btn variant="ghost" size="sm" icon={Upload} onClick={() => setIsImportLeadsOpen(true)}>
+                    Import CSV
+                  </Btn>
+                  <Btn variant="gold" size="sm" icon={Plus} onClick={onOpenNewLeadModal}>
+                    Add Lead
+                  </Btn>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {(
+                  [
+                    { id: 'new', title: 'NEW', tone: 'blue' },
+                    { id: 'contact', title: 'CALLBACK', tone: 'gold' },
+                    { id: 'kyc', title: 'DEP', tone: 'violet' },
+                    { id: 'active', title: 'ACTIVE', tone: 'green' },
+                  ] as { id: LeadStage; title: string; tone: 'blue' | 'gold' | 'violet' | 'green' }[]
+                ).map(col => (
+                  <div key={col.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl p-3 shadow-sm">
+                    <div className="flex items-center justify-between px-1 pb-3">
+                      <Badge tone={col.tone}>{col.title}</Badge>
+                      <span className="text-[11px] text-[#213532]/60 font-semibold">{leads.filter(l => l.stage === col.id).length}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {leads
+                        .filter(l => l.stage === col.id)
+                        .map(lead => (
+                          <div key={lead.id} className="bg-white border border-[#E4DECB] rounded-xl p-3 shadow-xs hover:border-[#B08B48]/50 transition-colors">
+                            <div className="font-semibold text-[#1C412C] text-[13px]">{lead.name}</div>
+                            <div className="text-[11px] text-[#213532]/70 font-mono">
+                              {phonesHidden ? maskPhone(lead.phone) : lead.phone}
+                            </div>
+                            <div className="text-[12px] text-[#B08B48] font-bold mt-1">
+                              ${lead.potentialAmount.toLocaleString('en-US')}
+                            </div>
+                            <div className="text-[10px] text-[#213532]/60 mt-1">{lead.manager}</div>
+                            <div className="flex items-center gap-1.5 mt-2.5">
+                              <button
+                                onClick={() => onMoveLeadStage(lead.id, 'prev')}
+                                className="p-1.5 rounded-lg bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12] cursor-pointer"
+                              >
+                                <ArrowLeft className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => setCommentLead(lead)}
+                                className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-[#1C412C]/[.06] text-[#213532] text-[10px] font-bold hover:bg-[#1C412C]/[.12] cursor-pointer"
+                              >
+                                <MessageSquare className="w-3 h-3" /> {lead.comments.length}
+                              </button>
+                              <button
+                                onClick={() => onMoveLeadStage(lead.id, 'next')}
+                                className="p-1.5 rounded-lg bg-[#B08B48] text-white hover:bg-[#C59D55] cursor-pointer shadow-sm"
+                              >
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1512,6 +1550,38 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           )}
         </Modal>
       )}
+
+      {/* ===== MODAL: Import Leads ===== */}
+      <ImportLeadsModal
+        isOpen={isImportLeadsOpen}
+        onClose={() => setIsImportLeadsOpen(false)}
+        managers={users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name).length ? users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name) : ['Laura Bennett (Senior Advisor)', 'Daniel Foster (Desk 2)', 'Oleg Vasilyev (Desk 3)']}
+        onImportSuccess={(count) => {
+          onNotify(`✔ Successfully imported ${count} leads into the pipeline.`);
+        }}
+      />
+
+      {/* ===== MODAL: Create Client ===== */}
+      <CreateClientModal
+        isOpen={isCreateClientOpen}
+        onClose={() => setIsCreateClientOpen(false)}
+        managers={users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name).length ? users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name) : ['Laura Bennett (Senior Advisor)', 'Daniel Foster (Desk 2)', 'Oleg Vasilyev (Desk 3)']}
+        onClientCreated={(newUser) => {
+          onNotify(`✔ Client ${newUser.name} created successfully.`);
+          setActiveTab('users');
+        }}
+      />
+
+      {/* ===== MODAL: Statement Generator & Overrides ===== */}
+      {statementModalUser && (
+        <StatementModal
+          isOpen={!!statementModalUser}
+          userId={statementModalUser.id}
+          userName={statementModalUser.name}
+          onClose={() => setStatementModalUser(null)}
+          onNotify={onNotify}
+        />
+      )}
     </div>
   );
 };
@@ -1543,6 +1613,7 @@ const UserDetails: React.FC<{
   onImpersonate?: (user: ApiUser) => void;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
   isAdmin: boolean;
+  onOpenStatementModal?: (userId: number, userName: string) => void;
 }> = ({
   user,
   trades,
@@ -1565,6 +1636,7 @@ const UserDetails: React.FC<{
   onImpersonate,
   onUpdateUserStatus,
   isAdmin,
+  onOpenStatementModal,
 }) => {
   const [moreOpen, setMoreOpen] = useState(false);
   // Real block state comes from the platform account, not local UI state
@@ -1643,6 +1715,14 @@ const UserDetails: React.FC<{
       .catch(() => undefined);
   }, [account, isAdmin]);
   const moreItems = [
+    {
+      icon: FileText,
+      label: 'Statement (PDF / Edit)',
+      onClick: () => {
+        const id = account?.id || Number(user.id.replace(/\D/g, '')) || 1;
+        onOpenStatementModal?.(id, shortName);
+      },
+    },
     {
       icon: FileText,
       label: 'View user logs',
@@ -1950,15 +2030,19 @@ const UserDetails: React.FC<{
 
           <Card title="PDF statement" subtitle="Editable trading report">
             <div className="p-5 space-y-2">
-              <p className="text-[12px] text-slate-500">
+              <p className="text-[12px] text-[#213532]/70">
                 Adjust fields and download a ready statement for the client in one click.
               </p>
               <Btn
-                variant="ghost"
+                variant="gold"
+                size="sm"
                 icon={Download}
-                onClick={() => onNotify('Statement export will be available shortly.')}
+                onClick={() => {
+                  const id = account?.id || Number(user.id.replace(/\D/g, '')) || 1;
+                  onOpenStatementModal?.(id, shortName);
+                }}
               >
-                Download PDF
+                Statement Editor & PDF
               </Btn>
             </div>
           </Card>

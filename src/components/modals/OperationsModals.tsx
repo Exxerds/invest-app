@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Project, AssetCategory, Lead } from '../../types';
-import { X, Wallet, ArrowDownRight, UserPlus, PlusCircle, Clock, Loader2, ShieldCheck, Copy, Check } from 'lucide-react';
-import { apiRequestDeposit, apiRequestWithdrawal, apiDepositWallets } from '../../api';
+import { X, Wallet, ArrowDownRight, UserPlus, PlusCircle, Clock, Loader2, ShieldCheck, Copy, Check, AlertCircle } from 'lucide-react';
+import { apiRequestDeposit, apiRequestWithdrawal, apiDepositWallets, apiCheckDuplicate } from '../../api';
 import type { CryptoType } from '../../api';
 import { sanitizeDecimal, sanitizeInteger, parseNumber } from '../../utils/number';
 
@@ -499,9 +499,35 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('+1 (');
+  const [email, setEmail] = useState('');
   const [potentialAmountStr, setPotentialAmountStr] = useState('30000');
   const [notes, setNotes] = useState('');
   const [manager, setManager] = useState('Laura Bennett (Desk 1)');
+  const [dupWarning, setDupWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const cleanEmail = email.trim();
+    if (cleanPhone.length < 5 && !cleanEmail.includes('@')) {
+      setDupWarning(null);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiCheckDuplicate(cleanPhone.length >= 5 ? phone : undefined, cleanEmail.includes('@') ? cleanEmail : undefined);
+        if (res.duplicate) {
+          setDupWarning(`Warning: this ${res.duplicate.field} already matches ${res.duplicate.match} (${res.duplicate.type}).`);
+        } else {
+          setDupWarning(null);
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 400);
+
+    return () => clearTimeout(t);
+  }, [phone, email]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -512,7 +538,7 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
       phone,
       potentialAmount: parseNumber(potentialAmountStr, 0),
       stage: 'new',
-      notes: notes || 'New trading request from the website.',
+      notes: (email ? `Email: ${email}\n` : '') + (notes || 'New trading request from the website.'),
       manager,
       comments: []
     });
@@ -540,7 +566,7 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-sm">
           <div>
             <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
-              Full name
+              Full name *
             </label>
             <input
               type="text"
@@ -554,7 +580,7 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
-              Phone
+              Phone *
             </label>
             <input
               type="text"
@@ -564,6 +590,26 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
               className="w-full px-4 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
             />
           </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
+              Email
+            </label>
+            <input
+              type="email"
+              placeholder="client@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-4 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
+            />
+          </div>
+
+          {dupWarning && (
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>{dupWarning}</span>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">

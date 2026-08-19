@@ -30,15 +30,16 @@ import type { ActiveInvestment } from '../../types';
 import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
-import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall } from '../../api';
+import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall, apiStatement } from '../../api';
 import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
 import { sanitizeDecimal, parseNumber } from '../../utils/number';
+import { openStatementWindow } from '../../utils/statement';
 
 interface InvestorDashboardProps {
   /** Signed-in account — the cabinet shows real data, never a demo persona */
-  user?: { name: string; email: string } | null;
+  user?: { id?: number; name: string; email: string } | null;
   /** True once an admin approved the client's KYC documents */
   kycVerified?: boolean;
   /** Real deposit / withdrawal requests from the server */
@@ -212,6 +213,32 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
   /* ---- positions live on the server ---- */
   const [myTrades, setMyTrades] = useState<ApiTrade[]>([]);
+  const [statementPeriod, setStatementPeriod] = useState<'Last week' | 'Last month' | 'Last year' | 'All time'>('Last month');
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  const handleDownloadPdfStatement = async () => {
+    setGeneratingPdf(true);
+    try {
+      setToast('Generating official PDF statement…');
+      let fromDate: string | undefined = undefined;
+      const now = new Date();
+      if (statementPeriod === 'Last week') {
+        fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      } else if (statementPeriod === 'Last month') {
+        fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      } else if (statementPeriod === 'Last year') {
+        fromDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      const stmt = await apiStatement(user?.id || 1, fromDate, now.toISOString());
+      openStatementWindow(stmt);
+      setToast('Statement opened in a new tab! Print or save as PDF.');
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not generate statement');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
 
   /**
    * Real quotes for the selected instrument and for every open position,
@@ -1193,17 +1220,34 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               </Card>
             </div>
             <Card title="PDF statement" subtitle="Download your trading report">
-              <div className="p-5 flex items-center justify-between gap-4">
+              <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <Select defaultValue="Last month">
-                    <option>Last week</option>
-                    <option>Last month</option>
-                    <option>Last year</option>
+                  <Select
+                    value={statementPeriod}
+                    onChange={e => setStatementPeriod(e.target.value as any)}
+                  >
+                    <option value="Last week">Last week</option>
+                    <option value="Last month">Last month</option>
+                    <option value="Last year">Last year</option>
+                    <option value="All time">All time</option>
                   </Select>
-                  <span className="text-[12px] text-[#213532]/70">12.06.2026 — 12.07.2026</span>
+                  <span className="text-[12px] text-[#213532]/70 font-medium">
+                    {statementPeriod === 'Last week'
+                      ? 'Last 7 days'
+                      : statementPeriod === 'Last month'
+                      ? 'Last 30 days'
+                      : statementPeriod === 'Last year'
+                      ? 'Last 12 months'
+                      : 'All recorded activity'}
+                  </span>
                 </div>
-                <Btn variant="gold" icon={Download} onClick={() => setToast('PDF statement is being generated…')}>
-                  Download PDF
+                <Btn
+                  variant="gold"
+                  icon={Download}
+                  disabled={generatingPdf}
+                  onClick={handleDownloadPdfStatement}
+                >
+                  {generatingPdf ? 'Generating…' : 'Download PDF Statement'}
                 </Btn>
               </div>
             </Card>
