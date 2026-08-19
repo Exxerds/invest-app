@@ -221,4 +221,34 @@ router.post('/users/:id/impersonate', auth('ADMIN'), async (req, res) => {
   });
 });
 
+/* ------------------------------------------------------------
+   RESET PORTFOLIO — wipe test positions for a fresh account
+   Admin only, CLIENT only. Removes all trades + investments,
+   zeroes the cash balance and writes an audit withdrawal so the
+   history does not go silent.
+   ------------------------------------------------------------ */
+router.post('/users/:id/reset-portfolio', auth('ADMIN'), async (req, res) => {
+  const id = Number(req.params.id);
+  const user = await store.byId('users', id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.role !== 'CLIENT') return res.status(400).json({ error: 'Only client portfolios can be reset' });
+
+  const deletedTrades = await store.removeWhere('trades', t => Number(t.userId) === id);
+  const deletedInvestments = await store.removeWhere('investments', inv => Number(inv.userId) === id);
+  await store.update('users', id, { balance: 0 });
+  await store.insert('transactions', {
+    userId: user.id,
+    userName: user.name,
+    userEmail: user.email,
+    type: 'withdrawal',
+    amount: 0,
+    method: `Portfolio reset by ${req.user.name} (test data cleanup)`,
+    status: 'approved',
+    createdAt: new Date().toISOString(),
+    balanceAfter: 0,
+  });
+
+  res.json({ ok: true, deletedTrades, deletedInvestments });
+});
+
 export default router;

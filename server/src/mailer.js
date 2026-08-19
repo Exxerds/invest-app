@@ -33,7 +33,7 @@ const transporter = hasSmtp
   : null;
 
 export const FROM_EMAIL = process.env.SMTP_FROM || 'Oak Haven Yield <no-reply@oakhavenyield.com>';
-export const SITE_URL = process.env.SITE_URL || 'http://localhost:3000';
+export const SITE_URL = process.env.SITE_URL || 'https://oakhavenyield.com';
 
 /**
  * Public address used in e-mail links.
@@ -85,15 +85,25 @@ export async function sendMail({ to, subject, html }) {
 
 /** Branded HTML e-mail layout (Oak Haven Yield: cream / forest green / warm gold) */
 export function letterLayout(title, contentHtml) {
+  const logoUrl = `${SITE_URL.replace(/\/$/, '')}/logo.svg`;
   return `<!DOCTYPE html>
 <html lang="en"><body style="margin:0;padding:0;background:#F5F2E9;font-family:Georgia,'Times New Roman',serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F2E9;padding:32px 12px;">
     <tr><td align="center">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e0d2;border-radius:14px;overflow:hidden;">
-        <tr><td style="background:#1C412C;padding:24px 28px;">
-          <span style="color:#F5F2E9;font-size:22px;font-weight:bold;letter-spacing:1px;">OAK HAVEN</span>
-          <span style="color:#B08B48;font-size:22px;font-weight:bold;letter-spacing:1px;"> YIELD</span>
-          <div style="color:#cfd8d2;font-size:11px;letter-spacing:2px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">INVESTMENT ADVISORY</div>
+        <tr><td style="background:#1C412C;padding:20px 28px;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td style="vertical-align:middle;padding-right:12px;">
+              <img src="${logoUrl}" width="34" height="41" alt="Oak Haven Yield" style="display:block;vertical-align:middle">
+            </td>
+            <td style="vertical-align:middle;">
+              <div style="line-height:1.1;">
+                <span style="color:#F5F2E9;font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:bold;">Oak Haven</span>
+                <span style="color:#B08B48;font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:bold;font-style:italic;"> Yield</span>
+              </div>
+              <div style="color:#cfd8d2;font-size:11px;letter-spacing:2px;margin-top:2px;font-family:Arial,Helvetica,sans-serif;">Investment Advisory</div>
+            </td>
+          </tr></table>
         </td></tr>
         <tr><td style="height:3px;background:#B08B48;"></td></tr>
         <tr><td style="padding:28px;font-family:Arial,Helvetica,sans-serif;">
@@ -103,7 +113,7 @@ export function letterLayout(title, contentHtml) {
         <tr><td style="padding:18px 28px;background:#F5F2E9;color:#6b7a72;font-size:12px;border-top:1px solid #e5e0d2;font-family:Arial,Helvetica,sans-serif;">
           Oak Haven Yield &middot; 300 Delaware Ave, Wilmington, DE 19801, USA<br>
           This message was generated automatically &mdash; please do not reply to it.<br>
-          &copy; ${new Date().getFullYear()} Oak Haven Yield. All rights reserved.
+          &copy; 2010 Oak Haven Yield. All rights reserved.
         </td></tr>
       </table>
     </td></tr>

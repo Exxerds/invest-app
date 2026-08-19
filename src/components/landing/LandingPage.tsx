@@ -11,6 +11,7 @@ import React, { useState, useEffect } from 'react';
 import { sanitizeDecimal, parseNumber } from '../../utils/number';
 import { TickerTape, MarketOverview, MiniChart, MarketQuotes, MiniChartLight } from '../investor/TradingViewChart';
 import { OakLogo } from '../brand/Logo';
+import { apiSubmitPublicLead } from '../../api';
 import {
   TrendingUp,
   ChevronDown,
@@ -186,6 +187,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
   const [leverage, setLeverage] = useState(10);
   const [amountStr, setAmountStr] = useState('1000');
   const amount = parseNumber(amountStr, 0);
+
+  // Landing "Send message" — real CRM lead
+  const [leadName, setLeadName] = useState('');
+  const [leadEmail, setLeadEmail] = useState('');
+  const [leadPhone, setLeadPhone] = useState('');
+  const [leadMessage, setLeadMessage] = useState('');
+  const [leadLoading, setLeadLoading] = useState(false);
+  const [leadSuccess, setLeadSuccess] = useState(false);
+  const [leadError, setLeadError] = useState<string | null>(null);
 
 
   return (
@@ -970,20 +980,40 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
           </div>
 
           <form
-            onSubmit={e => {
+            onSubmit={async e => {
               e.preventDefault();
-              alert('Thank you! Our manager will contact you shortly.');
+              if (leadLoading) return;
+              setLeadError(null);
+              setLeadSuccess(false);
+              setLeadLoading(true);
+              try {
+                const params = new URLSearchParams(window.location.search);
+                const src = params.get('utm_campaign') || params.get('utm_source') || 'Landing';
+                await apiSubmitPublicLead({ name: leadName, email: leadEmail, phone: leadPhone, message: leadMessage, source: src });
+                setLeadSuccess(true);
+                setLeadName(''); setLeadEmail(''); setLeadPhone(''); setLeadMessage('');
+              } catch (err) {
+                setLeadError(err instanceof Error ? err.message : 'Could not send message');
+              } finally {
+                setLeadLoading(false);
+              }
             }}
             className="bg-white border border-[#1C412C]/12 shadow-sm rounded-2xl p-6 space-y-3.5"
           >
+            {leadSuccess && (
+              <div className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[13px]">
+                Thank you! Our manager will contact you shortly.
+              </div>
+            )}
             <div className="grid sm:grid-cols-2 gap-3.5">
-              <input required placeholder="Full name" className="px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
-              <input required type="email" placeholder="E-mail" className="px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
+              <input required placeholder="Full name" value={leadName} onChange={e => setLeadName(e.target.value)} className="px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
+              <input required type="email" placeholder="E-mail" value={leadEmail} onChange={e => setLeadEmail(e.target.value)} className="px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
             </div>
-            <input placeholder="Phone number" className="w-full px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
-            <textarea rows={5} placeholder="Your message" className="w-full px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20 resize-none" />
-            <button className="w-full py-3 rounded-xl bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] font-bold text-[14px] cursor-pointer transition-colors">
-              Send message
+            <input placeholder="Phone number" value={leadPhone} onChange={e => setLeadPhone(e.target.value)} className="w-full px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
+            <textarea rows={5} placeholder="Your message" value={leadMessage} onChange={e => setLeadMessage(e.target.value)} className="w-full px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20 resize-none" />
+            {leadError && <div className="text-[12px] text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{leadError}</div>}
+            <button disabled={leadLoading} className="w-full py-3 rounded-xl bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] font-bold text-[14px] cursor-pointer transition-colors disabled:opacity-50">
+              {leadLoading ? 'Sending...' : 'Send message'}
             </button>
           </form>
         </div>

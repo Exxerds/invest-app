@@ -149,6 +149,12 @@ export const apiSetUserBalance = (userId: number, balance: number) =>
     body: JSON.stringify({ balance }),
   });
 
+export const apiResetUserPortfolio = (userId: number) =>
+  request<{ ok: true; deletedTrades: number; deletedInvestments: number }>(`/admin/users/${userId}/reset-portfolio`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+
 // ---------- KYC documents ----------
 
 export interface ApiKycDoc {
@@ -429,6 +435,12 @@ export const apiAddLeadComment = (id: number, text: string) =>
     method: 'POST',
     headers: authHeader(),
     body: JSON.stringify({ text }),
+  });
+
+export const apiSubmitPublicLead = (data: { name: string; email: string; phone?: string; message?: string; source?: string }) =>
+  request<{ ok: true; id: number }>('/leads/public', {
+    method: 'POST',
+    body: JSON.stringify(data),
   });
 
 // ---------- deposit wallets ----------
@@ -805,3 +817,52 @@ export const apiPushSend = (userId: number, title: string, body: string) =>
   request<{ ok: true; sent: number; message: string }>('/push/send', {
     method: 'POST', headers: authHeader(), body: JSON.stringify({ userId, title, body }),
   });
+
+// ---------- support chat (real) ----------
+export interface ApiSupportConversation {
+  clientId: number;
+  name: string;
+  email: string;
+  online: boolean;
+  unreadForStaff: number;
+  lastMessageAt: string | null;
+  lastPreview: string;
+  createdAt: string | null;
+}
+export interface ApiSupportMessage {
+  id: number;
+  clientId: number;
+  from: 'client' | 'staff';
+  senderName: string;
+  text: string;
+  createdAt: string;
+  readByClient?: boolean;
+  readByStaff?: boolean;
+  readBy?: string;
+}
+
+export const apiSupportConversations = () =>
+  request<{ conversations: ApiSupportConversation[] }>('/support/conversations', { headers: authHeader() });
+
+export const apiSupportMessages = (clientId?: number) =>
+  request<{ messages: ApiSupportMessage[] }>(
+    `/support/messages${clientId ? `?clientId=${clientId}` : ''}`,
+    { headers: authHeader() },
+  );
+
+export const apiSendSupportMessage = (data: { clientId?: number; text: string }) =>
+  request<{ ok: true; message: ApiSupportMessage }>('/support/messages', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify(data),
+  });
+
+export const apiSupportRead = (clientId: number) =>
+  request<{ ok: true; updated: number }>('/support/read', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({ clientId }),
+  });
+
+export const apiSupportPresence = () =>
+  request<{ ok: true }>('/support/presence', { method: 'POST', headers: authHeader() });

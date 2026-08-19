@@ -27,6 +27,7 @@ import analyticsRoutes from './routes/analytics.js';
 import pushRoutes from './routes/push.js';
 import statementRoutes from './routes/statements.js';
 import settingsRoutes from './routes/settings.js';
+import supportRoutes from './routes/support.js';
 import { seedUsers } from './seed.js';
 
 dotenv.config();
@@ -204,6 +205,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/statements', statementRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/support', supportRoutes);
 
 // Unknown API route → JSON 404 (never fall through to the SPA)
 app.use('/api', (req, res) => res.status(404).json({ error: 'Unknown API endpoint' }));
