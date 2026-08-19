@@ -1,5 +1,5 @@
 // ============================================================
-//  Live call widgets.
+//  Live call widgets — styled in Oak Haven brand theme.
 //
 //  CallDock      — the in-call controls, shared by both sides
 //  IncomingCall  — full-screen prompt in the client's cabinet
@@ -97,27 +97,27 @@ export const CallDock: React.FC<DockProps> = ({
 
   return (
     <div
-      className="fixed z-[70] w-[320px] bg-[#14161c] border border-[#f5b400]/30 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden"
+      className="fixed z-[70] w-[320px] bg-white border border-[#E4DECB] rounded-2xl shadow-2xl shadow-black/20 overflow-hidden"
       style={pos ? { left: pos.x, top: pos.y } : { right: 20, bottom: 96 }}
     >
-      <div className="px-4 py-3 bg-[#0f1116] border-b border-white/[.06] flex items-center gap-2.5">
+      <div className="px-4 py-3 bg-[#F5F2E9] border-b border-[#E4DECB] flex items-center gap-2.5">
         <button
           onMouseDown={startDrag}
           title="Drag to move"
-          className="shrink-0 -ml-1 text-slate-600 hover:text-slate-300 cursor-grab active:cursor-grabbing"
+          className="shrink-0 -ml-1 text-[#213532]/60 hover:text-[#1C412C] cursor-grab active:cursor-grabbing"
         >
           <GripVertical className="w-4 h-4" />
         </button>
-        <div className="w-9 h-9 rounded-full bg-[#f5b400]/15 border border-[#f5b400]/30 flex items-center justify-center">
+        <div className="w-9 h-9 rounded-full bg-[#1C412C] flex items-center justify-center">
           {phase === 'connecting' ? (
-            <Loader2 className="w-4 h-4 text-[#f5b400] animate-spin" />
+            <Loader2 className="w-4 h-4 text-[#B08B48] animate-spin" />
           ) : (
-            <Phone className="w-4 h-4 text-[#f5b400]" />
+            <Phone className="w-4 h-4 text-[#B08B48]" />
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-bold text-white truncate">{title}</div>
-          <div className="text-[11px] text-slate-500">
+          <div className="text-[13px] font-bold text-[#1C412C] truncate">{title}</div>
+          <div className="text-[11px] text-[#213532]/70">
             {phase === 'connecting' && (role === 'supervisor' ? 'Waiting for the manager…' : 'Connecting…')}
             {phase === 'active' && fmt(seconds)}
             {phase === 'failed' && 'Call failed'}
@@ -125,32 +125,32 @@ export const CallDock: React.FC<DockProps> = ({
           </div>
         </div>
         {recording && (
-          <span className="flex items-center gap-1 text-[10px] font-bold text-rose-400">
-            <Circle className="w-2 h-2 fill-rose-400" /> REC
+          <span className="flex items-center gap-1 text-[10px] font-bold text-rose-600">
+            <Circle className="w-2 h-2 fill-rose-600" /> REC
           </span>
         )}
       </div>
 
       {/* Only the manager is told a supervisor is listening */}
       {whisperName && role === 'manager' && (
-        <div className="px-4 py-2 bg-violet-500/10 border-b border-violet-500/20 text-[11px] text-violet-300 flex items-center gap-1.5">
+        <div className="px-4 py-2 bg-violet-500/10 border-b border-violet-500/20 text-[11px] text-violet-800 flex items-center gap-1.5 font-medium">
           <Ear className="w-3.5 h-3.5" /> {whisperName} is coaching you — the client cannot hear them
         </div>
       )}
 
       {role === 'supervisor' && (
-        <div className="px-4 py-2 bg-violet-500/10 border-b border-violet-500/20 text-[11px] text-violet-300 flex items-center gap-1.5">
+        <div className="px-4 py-2 bg-violet-500/10 border-b border-violet-500/20 text-[11px] text-violet-800 flex items-center gap-1.5 font-medium">
           <Ear className="w-3.5 h-3.5" /> Only {call.managerName} hears you
         </div>
       )}
 
       {error && (
-        <div className="px-4 py-2 bg-rose-500/10 text-[11px] text-rose-400 flex items-start gap-2">
-          <span className="flex-1">{error}</span>
+        <div className="px-4 py-2 bg-rose-500/10 text-[11px] text-rose-700 flex items-start gap-2 border-b border-rose-500/20">
+          <span className="flex-1 font-medium">{error}</span>
           {phase === 'failed' && (
             <button
               onClick={() => void connect()}
-              className="shrink-0 px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold hover:bg-rose-500/30 cursor-pointer"
+              className="shrink-0 px-2 py-0.5 rounded bg-rose-600 text-white font-bold hover:bg-rose-700 cursor-pointer text-[10px]"
             >
               Retry
             </button>
@@ -159,7 +159,7 @@ export const CallDock: React.FC<DockProps> = ({
       )}
 
       {warning && (
-        <div className="px-4 py-2 bg-amber-500/10 border-t border-amber-500/20 text-[11px] text-amber-300">
+        <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-[11px] text-amber-900 font-medium leading-tight">
           {warning}
         </div>
       )}
@@ -175,17 +175,17 @@ export const CallDock: React.FC<DockProps> = ({
       />
       <audio ref={remoteAudioRef} autoPlay />
 
-      <div className="p-3 flex items-center justify-center gap-2">
+      <div className="p-3 bg-white flex items-center justify-center gap-2">
         <button
           onClick={toggleMute}
           disabled={!micAvailable}
           title={!micAvailable ? 'No microphone on this device' : muted ? 'Unmute' : 'Mute'}
           className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
             !micAvailable
-              ? 'bg-white/[.03] text-slate-600 cursor-not-allowed'
+              ? 'bg-[#1C412C]/[.04] text-[#213532]/30 cursor-not-allowed'
               : muted
-              ? 'bg-rose-500/20 text-rose-400 cursor-pointer'
-              : 'bg-white/[.06] text-slate-300 hover:bg-white/[.12] cursor-pointer'
+              ? 'bg-rose-500/15 text-rose-600 cursor-pointer'
+              : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12] cursor-pointer'
           }`}
         >
           {muted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
@@ -197,7 +197,7 @@ export const CallDock: React.FC<DockProps> = ({
               onClick={toggleScreenShare}
               title="Share screen"
               className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                sharingScreen ? 'bg-[#f5b400]/20 text-[#f5b400]' : 'bg-white/[.06] text-slate-300 hover:bg-white/[.12]'
+                sharingScreen ? 'bg-[#B08B48] text-white' : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12]'
               }`}
             >
               <MonitorUp className="w-4 h-4" />
@@ -206,10 +206,10 @@ export const CallDock: React.FC<DockProps> = ({
               onClick={toggleRecording}
               title={recording ? 'Stop recording' : 'Record call'}
               className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                recording ? 'bg-rose-500/20 text-rose-400' : 'bg-white/[.06] text-slate-300 hover:bg-white/[.12]'
+                recording ? 'bg-rose-500/15 text-rose-600' : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12]'
               }`}
             >
-              <Circle className={`w-4 h-4 ${recording ? 'fill-rose-400' : ''}`} />
+              <Circle className={`w-4 h-4 ${recording ? 'fill-rose-600' : ''}`} />
             </button>
           </>
         )}
@@ -217,7 +217,7 @@ export const CallDock: React.FC<DockProps> = ({
         <button
           onClick={hangUp}
           title="Hang up"
-          className="w-10 h-10 rounded-full bg-rose-500 hover:bg-rose-400 text-white flex items-center justify-center cursor-pointer"
+          className="w-10 h-10 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center cursor-pointer shadow-sm"
         >
           <PhoneOff className="w-4 h-4" />
         </button>
@@ -233,24 +233,24 @@ interface IncomingProps {
 }
 
 export const IncomingCall: React.FC<IncomingProps> = ({ call, onAccept, onDecline }) => (
-  <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div className="bg-[#14161c] border border-[#f5b400]/30 rounded-3xl p-8 w-[340px] text-center shadow-2xl">
-      <div className="w-20 h-20 rounded-full bg-[#f5b400]/15 border border-[#f5b400]/30 mx-auto flex items-center justify-center animate-pulse">
-        <Phone className="w-9 h-9 text-[#f5b400]" />
+  <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div className="bg-white border border-[#E4DECB] rounded-3xl p-8 w-[340px] text-center shadow-2xl">
+      <div className="w-20 h-20 rounded-full bg-[#1C412C] mx-auto flex items-center justify-center shadow-md animate-pulse">
+        <Phone className="w-9 h-9 text-[#B08B48]" />
       </div>
-      <div className="mt-5 text-[11px] uppercase tracking-widest text-slate-500">Incoming call</div>
-      <div className="mt-1 text-[19px] font-bold text-white">{call.callerName}</div>
+      <div className="mt-5 text-[11px] uppercase tracking-widest font-bold text-[#213532]/60">Incoming call</div>
+      <div className="mt-1 text-[19px] font-bold text-[#1C412C]">{call.callerName}</div>
 
       <div className="mt-7 flex items-center justify-center gap-4">
         <button
           onClick={onDecline}
-          className="w-14 h-14 rounded-full bg-rose-500 hover:bg-rose-400 text-white flex items-center justify-center cursor-pointer"
+          className="w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center cursor-pointer shadow-md transition-transform hover:scale-105"
         >
           <PhoneOff className="w-6 h-6" />
         </button>
         <button
           onClick={onAccept}
-          className="w-14 h-14 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white flex items-center justify-center cursor-pointer"
+          className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center cursor-pointer shadow-md transition-transform hover:scale-105"
         >
           <Phone className="w-6 h-6" />
         </button>

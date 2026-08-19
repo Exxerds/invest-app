@@ -810,11 +810,7 @@ export default function App() {
   };
 
   return (
-    <div
-      className={`min-h-screen flex flex-col ${
-        activeTab === 'landing' ? 'bg-[#F5F2E9] text-[#213532]' : 'bg-[#0e0f13] text-slate-200'
-      }`}
-    >
+    <div className="min-h-screen flex flex-col bg-[#F5F2E9] text-[#213532]">
       {/* Incoming call — client side */}
       {incomingCall && !activeCall && (
         <IncomingCall
@@ -1118,11 +1114,11 @@ export default function App() {
         <div className="fixed bottom-5 right-5 z-50 animate-bounce">
           <div className={`px-4 py-3 rounded-2xl shadow-xl border flex items-center gap-2.5 max-w-md ${
             toastMessage.type === 'success'
-              ? 'bg-slate-900 text-white border-slate-800'
-              : 'bg-white text-slate-800 border-slate-200'
+              ? 'bg-[#1C412C] text-[#F5F2E9] border-[#1C412C]'
+              : 'bg-white text-[#213532] border-[#E4DECB]'
           }`}>
             <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-              toastMessage.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-blue-100 text-blue-600'
+              toastMessage.type === 'success' ? 'bg-[#B08B48] text-white' : 'bg-[#1C412C]/10 text-[#1C412C]'
             }`}>
               <CheckCircle2 className="w-4 h-4" />
             </div>

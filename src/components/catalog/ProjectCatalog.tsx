@@ -37,21 +37,21 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
     switch (risk) {
       case 'low':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-emerald-100 text-emerald-800">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-500/15 text-emerald-700 border border-emerald-500/30">
             <ShieldCheck className="w-3.5 h-3.5" />
             Low risk
           </span>
         );
       case 'medium':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-amber-100 text-amber-800">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-500/15 text-amber-800 border border-amber-500/30">
             <Clock className="w-3.5 h-3.5" />
             Medium risk
           </span>
         );
       case 'high':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-purple-100 text-purple-800">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-rose-500/15 text-rose-700 border border-rose-500/30">
             <ShieldAlert className="w-3.5 h-3.5" />
             High risk
           </span>
@@ -62,97 +62,66 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
   return (
     <div className="space-y-6">
       {/* Header banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-8 rounded-3xl shadow-lg relative overflow-hidden">
+      <div className="bg-[#1C412C] text-[#F5F2E9] p-8 rounded-3xl shadow-sm relative overflow-hidden border border-[#1C412C]">
         <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#B08B48]/20 border border-[#B08B48]/40 text-[#B08B48] text-xs font-semibold mb-3">
             <Sparkles className="w-3.5 h-3.5" />
             Trading asset marketplace
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight">
+          <h1 className="font-serif text-3xl font-extrabold tracking-tight">
             Trade verified assets with returns up to 45% APR
           </h1>
-          <p className="text-slate-300 text-sm mt-2">
+          <p className="text-[#F5F2E9]/80 text-sm mt-2 leading-relaxed">
             Every asset passes a 4-stage compliance audit and legal review. You can invest online —
             the trade is automatically registered in the CRM.
           </p>
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="mt-6 flex flex-wrap items-center gap-3 relative z-10">
           <button
             onClick={onSwitchToCrm}
-            className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl text-xs font-medium transition-all flex items-center gap-2 cursor-pointer"
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-[#F5F2E9] rounded-xl text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer"
           >
-            <PlusCircle className="w-4 h-4 text-blue-400" />
+            <PlusCircle className="w-4 h-4 text-[#B08B48]" />
             <span>+ Create a new asset in the CRM panel</span>
           </button>
         </div>
       </div>
 
       {/* Filter and search bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="bg-white p-4 rounded-2xl border border-[#E4DECB] shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         {/* Category tabs */}
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setSelectedCategory('all')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              selectedCategory === 'all'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            All assets ({projects.length})
-          </button>
-          <button
-            onClick={() => setSelectedCategory('crypto')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              selectedCategory === 'crypto'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            Crypto
-          </button>
-          <button
-            onClick={() => setSelectedCategory('futures')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              selectedCategory === 'futures'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            Futures
-          </button>
-          <button
-            onClick={() => setSelectedCategory('forex')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              selectedCategory === 'forex'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            Forex & Metals
-          </button>
-          <button
-            onClick={() => setSelectedCategory('pool')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              selectedCategory === 'pool'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            Algorithmic Pools
-          </button>
+          {[
+            { id: 'all', label: `All assets (${projects.length})` },
+            { id: 'crypto', label: 'Crypto' },
+            { id: 'futures', label: 'Futures' },
+            { id: 'forex', label: 'Forex & Metals' },
+            { id: 'pool', label: 'Algorithmic Pools' },
+          ].map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                selectedCategory === cat.id
+                  ? 'bg-[#1C412C] text-[#F5F2E9] shadow-sm'
+                  : 'bg-[#1C412C]/[.05] text-[#213532]/80 hover:bg-[#1C412C]/[.10] border border-[#E4DECB]'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
         </div>
 
         {/* Search */}
         <div className="relative w-full md:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-[#213532]/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search assets..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-[#E4DECB] rounded-xl text-sm text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20"
           />
         </div>
       </div>
@@ -169,18 +138,18 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
           return (
             <div
               key={project.id}
-              className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between overflow-hidden"
+              className="bg-white rounded-2xl border border-[#E4DECB] shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between overflow-hidden"
             >
               <div>
                 {/* Image / Header */}
-                <div className="relative h-48 w-full overflow-hidden bg-slate-100">
+                <div className="relative h-48 w-full overflow-hidden bg-[#F5F2E9]">
                   <img
                     src={project.imageUrl}
                     alt={project.title}
                     className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                   />
                   <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-900/80 backdrop-blur-md text-white">
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#1C412C]/90 backdrop-blur-md text-[#F5F2E9]">
                       {project.categoryLabel}
                     </span>
                   </div>
@@ -192,12 +161,12 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                 {/* Content */}
                 <div className="p-5 space-y-3">
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-bold text-slate-900 text-lg line-clamp-1">
+                    <h3 className="font-bold text-[#1C412C] text-lg line-clamp-1">
                       {project.title}
                     </h3>
                   </div>
 
-                  <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                  <p className="text-xs text-[#213532]/70 line-clamp-2 leading-relaxed">
                     {project.description}
                   </p>
 
@@ -206,7 +175,7 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                     {project.tags.map((tag, idx) => (
                       <span
                         key={idx}
-                        className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[11px] font-medium"
+                        className="px-2 py-0.5 rounded bg-[#1C412C]/[.06] text-[#213532]/80 text-[11px] font-medium border border-[#E4DECB]"
                       >
                         {tag}
                       </span>
@@ -214,22 +183,22 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                   </div>
 
                   {/* Key Stats */}
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#E4DECB]">
                     <div>
-                      <div className="text-[11px] text-slate-400">Return</div>
-                      <div className="text-sm font-extrabold text-emerald-600">
+                      <div className="text-[11px] text-[#213532]/60">Return</div>
+                      <div className="text-sm font-extrabold text-emerald-700">
                         {project.apr}% APR
                       </div>
                     </div>
                     <div>
-                      <div className="text-[11px] text-slate-400">Term</div>
-                      <div className="text-sm font-bold text-slate-800">
+                      <div className="text-[11px] text-[#213532]/60">Term</div>
+                      <div className="text-sm font-bold text-[#213532]">
                         {project.termMonths} mo
                       </div>
                     </div>
                     <div>
-                      <div className="text-[11px] text-slate-400">Min amount</div>
-                      <div className="text-sm font-bold text-slate-800">
+                      <div className="text-[11px] text-[#213532]/60">Min amount</div>
+                      <div className="text-sm font-bold text-[#213532]">
                         ${project.minCheck.toLocaleString('en-US')}
                       </div>
                     </div>
@@ -238,20 +207,20 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                   {/* Progress Bar */}
                   <div className="pt-2">
                     <div className="flex justify-between text-xs font-semibold mb-1">
-                      <span className="text-slate-700">
+                      <span className="text-[#213532]">
                         Raised: ${project.raisedAmount.toLocaleString('en-US')}
                       </span>
-                      <span className="text-blue-600">{percentRaised}%</span>
+                      <span className="text-[#B08B48] font-bold">{percentRaised}%</span>
                     </div>
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div className="w-full bg-[#EFEAD9] h-2 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${
-                          isClosed ? 'bg-slate-400' : 'bg-blue-600'
+                          isClosed ? 'bg-[#213532]/40' : 'bg-[#B08B48]'
                         }`}
                         style={{ width: `${percentRaised}%` }}
                       ></div>
                     </div>
-                    <div className="flex justify-between text-[11px] text-slate-400 mt-1">
+                    <div className="flex justify-between text-[11px] text-[#213532]/60 mt-1">
                       <span>Target: ${project.targetAmount.toLocaleString('en-US')}</span>
                       <span>{isClosed ? 'Round closed' : 'Round open'}</span>
                     </div>
@@ -264,7 +233,7 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                 {isClosed ? (
                   <button
                     disabled
-                    className="w-full py-3 bg-slate-100 text-slate-400 font-semibold rounded-xl text-sm cursor-not-allowed flex items-center justify-center gap-2"
+                    className="w-full py-3 bg-[#EFEAD9] text-[#213532]/50 font-semibold rounded-xl text-sm cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     <span>Round closed</span>
@@ -272,7 +241,7 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                 ) : (
                   <button
                     onClick={() => onOpenInvestModal(project)}
-                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3 bg-[#B08B48] hover:bg-[#C59D55] text-white font-semibold rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <span>Invest now</span>
                     <ArrowRight className="w-4 h-4" />

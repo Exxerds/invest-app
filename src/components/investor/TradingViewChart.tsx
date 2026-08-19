@@ -14,8 +14,8 @@
 import { useEffect, useRef, memo } from 'react';
 
 const THEME = {
-  backgroundColor: 'rgba(15, 17, 22, 1)',
-  gridColor: 'rgba(245, 180, 0, 0.06)',
+  backgroundColor: 'rgba(255, 255, 255, 1)',
+  gridColor: 'rgba(228, 222, 203, 0.4)',
 };
 
 /** Injects a TradingView widget script into a container */
@@ -62,7 +62,7 @@ export const AdvancedChart = memo(({ symbol, height = 480 }: { symbol: string; h
       symbol,
       interval: 'D',
       timezone: 'Etc/UTC',
-      theme: 'dark',
+      theme: 'light',
       style: '1',
       locale: 'en',
       hide_side_toolbar: false,
@@ -90,11 +90,14 @@ export const MiniChart = memo(({ symbol, height = 220 }: { symbol: string; heigh
       height,
       locale: 'en',
       dateRange: '3M',
-      colorTheme: 'dark',
+      colorTheme: 'light',
       isTransparent: true,
       autosize: false,
       chartOnly: false,
       noTimeScale: false,
+      trendLineColor: 'rgba(176, 139, 72, 1)',
+      underLineColor: 'rgba(176, 139, 72, 0.15)',
+      underLineBottomColor: 'rgba(176, 139, 72, 0)',
     },
     [symbol, height],
   );
@@ -119,7 +122,7 @@ export const TickerTape = memo(() => {
     showSymbolLogo: true,
     isTransparent: true,
     displayMode: 'adaptive',
-    colorTheme: 'dark',
+    colorTheme: 'light',
     locale: 'en',
   });
 
@@ -173,7 +176,7 @@ export const MarketOverview = memo(({ height = 460 }: { height?: number }) => {
   const ref = useWidget(
     'https://s3.tradingview.com/external-embedding/embed-widget-market-overview.js',
     {
-      colorTheme: 'dark',
+      colorTheme: 'light',
       dateRange: '3M',
       showChart: true,
       locale: 'en',
@@ -182,17 +185,15 @@ export const MarketOverview = memo(({ height = 460 }: { height?: number }) => {
       showFloatingTooltip: true,
       width: '100%',
       height,
-      plotLineColorGrowing: 'rgba(245, 180, 0, 1)',
-      plotLineColorFalling: 'rgba(239, 68, 68, 1)',
-      gridLineColor: 'rgba(255, 255, 255, 0.06)',
-      scaleFontColor: 'rgba(148, 163, 184, 1)',
-      belowLineFillColorGrowing: 'rgba(245, 180, 0, 0.12)',
-      belowLineFillColorFalling: 'rgba(239, 68, 68, 0.12)',
-      belowLineFillColorGrowingBottom: 'rgba(245, 180, 0, 0)',
-      belowLineFillColorFallingBottom: 'rgba(239, 68, 68, 0)',
-      symbolActiveColor: 'rgba(245, 180, 0, 0.12)',
-      // The widget shows all four tabs itself, so it behaves exactly like
-      // the one on tradingview.com
+      plotLineColorGrowing: 'rgba(28, 65, 44, 1)',
+      plotLineColorFalling: 'rgba(225, 29, 72, 1)',
+      gridLineColor: 'rgba(228, 222, 203, 0.4)',
+      scaleFontColor: 'rgba(33, 53, 50, 0.7)',
+      belowLineFillColorGrowing: 'rgba(176, 139, 72, 0.15)',
+      belowLineFillColorFalling: 'rgba(225, 29, 72, 0.12)',
+      belowLineFillColorGrowingBottom: 'rgba(176, 139, 72, 0)',
+      belowLineFillColorFallingBottom: 'rgba(225, 29, 72, 0)',
+      symbolActiveColor: 'rgba(176, 139, 72, 0.15)',
       tabs: MARKET_TABS.map(t => ({ title: t, symbols: TAB_SYMBOLS[t] })),
     },
     [height],

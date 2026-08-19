@@ -43,15 +43,15 @@ const Modal: React.FC<{ title: string; subtitle?: string; onClose: () => void; c
   onClose,
   children,
 }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-    <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div className="bg-white border border-[#E4DECB] rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
       <div>
-        <h3 className="text-[16px] font-bold text-white">{title}</h3>
-        {subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>}
+        <h3 className="text-[16px] font-bold text-[#1C412C]">{title}</h3>
+        {subtitle && <p className="text-[11px] text-[#213532]/70 mt-0.5">{subtitle}</p>}
       </div>
       {children}
       <div className="pt-1 text-right">
-        <button onClick={onClose} className="text-[11px] text-slate-600 hover:text-slate-400 cursor-pointer">
+        <button onClick={onClose} className="text-[11px] text-[#213532]/60 hover:text-[#1C412C] cursor-pointer">
           Close
         </button>
       </div>
@@ -246,7 +246,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
       >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
-            <thead className="bg-white/[.02] border-b border-white/[.06]">
+            <thead className="bg-[#F5F2E9] border-b border-[#E4DECB]">
               <tr>
                 <Th>Instrument</Th>
                 <Th>Side</Th>
@@ -257,20 +257,20 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                 <Th className="text-right">Control</Th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[.05]">
+            <tbody className="divide-y divide-[#E4DECB]">
               {clientTrades.map(t => (
-                <tr key={t.id} className="hover:bg-white/[.02] transition-colors">
-                  <Td className="font-semibold text-white">{t.asset}</Td>
+                <tr key={t.id} className="hover:bg-[#F2EEDF]/50 transition-colors">
+                  <Td className="font-semibold text-[#1C412C]">{t.asset}</Td>
                   <Td>
                     <Badge tone={t.type === 'LONG' ? 'green' : t.type === 'SHORT' ? 'red' : 'blue'}>{t.type}</Badge>
                   </Td>
-                  <Td className="font-extrabold text-white">${t.amount.toLocaleString('en-US')}</Td>
+                  <Td className="font-extrabold text-[#1C412C]">${t.amount.toLocaleString('en-US')}</Td>
                   <Td>
-                    <div className="text-[12px]">${t.entryPrice.toLocaleString('en-US')}</div>
-                    <div className="text-[11px] text-slate-600">Leverage {t.leverage}x</div>
+                    <div className="text-[12px] text-[#213532]">${t.entryPrice.toLocaleString('en-US')}</div>
+                    <div className="text-[11px] text-[#213532]/60">Leverage {t.leverage}x</div>
                   </Td>
                   <Td>
-                    <span className={`font-extrabold ${t.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <span className={`font-extrabold ${t.pnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                       {t.pnl >= 0 ? '+' : ''}
                       {t.pnl.toLocaleString('en-US')} $
                     </span>
@@ -289,7 +289,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                         </Btn>
                       </div>
                     ) : (
-                      <span className="text-[11px] text-slate-600">Completed</span>
+                      <span className="text-[11px] text-[#213532]/60">Completed</span>
                     )}
                   </Td>
                 </tr>
@@ -297,7 +297,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
             </tbody>
           </table>
           {clientTrades.length === 0 && (
-            <div className="p-10 text-center text-[12px] text-slate-600">
+            <div className="p-10 text-center text-[12px] text-[#213532]/60">
               No positions yet. Click «Open trade for client» to create the first one.
             </div>
           )}
@@ -314,7 +314,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
           <div className="space-y-3.5 max-h-[60vh] overflow-y-auto pr-1">
             {/* Side */}
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Side</label>
+              <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Side</label>
               <div className="grid grid-cols-3 gap-2">
                 {(['LONG', 'SHORT', 'SPOT'] as const).map(side => (
                   <button
@@ -324,11 +324,11 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                     className={`py-2 rounded-xl text-[12px] font-bold cursor-pointer transition-colors ${
                       editForm.type === side
                         ? side === 'SHORT'
-                          ? 'bg-rose-500 text-white'
+                          ? 'bg-rose-600 text-white'
                           : side === 'LONG'
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-sky-500 text-white'
-                        : 'bg-white/[.05] text-slate-400 hover:bg-white/[.1]'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-sky-600 text-white'
+                        : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12] border border-[#E4DECB]'
                     }`}
                   >
                     {side}
@@ -339,7 +339,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
 
             {/* Open time */}
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Open time</label>
+              <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Open time</label>
               <Input
                 type="datetime-local"
                 value={editForm.openedAt}
@@ -350,7 +350,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Amount ($)</label>
+                <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Amount ($)</label>
                 <Input
                   type="text"
                   inputMode="decimal"
@@ -360,7 +360,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Leverage (x)</label>
+                <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Leverage (x)</label>
                 <Input
                   type="text"
                   inputMode="numeric"
@@ -373,7 +373,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Entry price</label>
+                <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Entry price</label>
                 <Input
                   type="text"
                   inputMode="decimal"
@@ -383,7 +383,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Mark price</label>
+                <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Mark price</label>
                 <Input
                   type="text"
                   inputMode="decimal"
@@ -396,14 +396,14 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
 
             {/* PnL */}
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Current profit / loss ($)</label>
+              <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Current profit / loss ($)</label>
               <Input
                 type="text"
                 inputMode="decimal"
                 value={editForm.pnl}
                 onChange={e => setEditForm(f => ({ ...f, pnl: e.target.value.replace(/[^0-9.-]/g, '').replace(/^0+(?=\d)/, '') }))}
                 className={`w-full text-lg font-extrabold ${
-                  editNumPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  editNumPnl >= 0 ? 'text-emerald-700' : 'text-rose-700'
                 }`}
               />
               <div className="flex items-center gap-2 mt-2.5">
@@ -412,7 +412,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                     key={v}
                     type="button"
                     onClick={() => setEditForm(f => ({ ...f, pnl: String(v) }))}
-                    className="px-2.5 py-1 bg-white/[.06] hover:bg-white/[.12] rounded-lg text-[11px] font-bold text-slate-300 cursor-pointer"
+                    className="px-2.5 py-1 bg-[#1C412C]/[.06] hover:bg-[#1C412C]/[.12] rounded-lg text-[11px] font-bold text-[#213532] cursor-pointer border border-[#E4DECB]"
                   >
                     {v >= 0 ? `+${v}$` : `${v}$`}
                   </button>
@@ -420,15 +420,15 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
               </div>
             </div>
 
-            {/* Margin controls — calculated automatically, but the desk can override */}
-            <div className="bg-[#0f1116] border border-white/[.06] rounded-xl p-3.5 space-y-2.5">
+            {/* Margin controls */}
+            <div className="bg-[#F5F2E9] border border-[#E4DECB] rounded-xl p-3.5 space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase text-slate-500">Margin</span>
+                <span className="text-[11px] font-bold uppercase text-[#213532]/70">Margin</span>
                 <button
                   type="button"
                   onClick={() => setMarginManual(v => !v)}
                   className={`text-[10px] px-2 py-1 rounded-lg cursor-pointer ${
-                    marginManual ? 'bg-[#f5b400]/20 text-[#f5b400]' : 'bg-white/[.06] text-slate-400'
+                    marginManual ? 'bg-[#B08B48] text-white shadow-sm' : 'bg-[#1C412C]/[.06] text-[#213532] border border-[#E4DECB]'
                   }`}
                 >
                   {marginManual ? 'Manual' : 'Auto'}
@@ -436,15 +436,15 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
               </div>
 
               <div className="flex justify-between text-[11px]">
-                <span className="text-slate-500">Position size</span>
-                <span className="text-white font-bold">
+                <span className="text-[#213532]/70">Position size</span>
+                <span className="text-[#1C412C] font-bold">
                   ${(editNumAmount * editNumLeverage).toLocaleString('en-US')}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-[10px] uppercase text-slate-500 mb-1">Required margin ($)</label>
+                  <label className="block text-[10px] uppercase text-[#213532]/70 mb-1">Required margin ($)</label>
                   <Input
                     type="text"
                     inputMode="decimal"
@@ -455,7 +455,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] uppercase text-slate-500 mb-1">Liquidation price</label>
+                  <label className="block text-[10px] uppercase text-[#213532]/70 mb-1">Liquidation price</label>
                   <Input
                     type="text"
                     inputMode="decimal"
@@ -467,7 +467,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                 </div>
               </div>
 
-              <p className="text-[10px] text-slate-600 leading-relaxed">
+              <p className="text-[10px] text-[#213532]/60 leading-relaxed">
                 Auto mode uses the standard formulas (margin = size ÷ leverage, liquidation at a 1 ÷ leverage move).
                 Switch to Manual to type any value yourself.
               </p>

@@ -54,30 +54,30 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="bg-[#14161c] border border-white/[.08] rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-white/[.06]">
-        <div className="bg-[#0f1116] border-b border-white/[.08] p-6 text-white relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white border border-[#E4DECB] rounded-2xl max-w-md w-full overflow-hidden shadow-2xl">
+        <div className="bg-[#1C412C] border-b border-[#1C412C] p-6 text-[#F5F2E9] relative">
           <button
             onClick={onClose}
-            className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+            className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors cursor-pointer text-white"
           >
             <X className="w-4 h-4" />
           </button>
           <div className="flex items-center gap-2.5 mb-2">
             <button
               onClick={onBackToLogin}
-              className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors cursor-pointer"
+              className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors cursor-pointer text-white"
               title="Back to sign in"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-white text-xs font-semibold">
-              <ShieldCheck className="w-3.5 h-3.5" />
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-[#B08B48] text-xs font-semibold">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#B08B48]" />
               <span>Registration</span>
             </div>
           </div>
-          <h2 className="text-xl font-bold">Create account</h2>
-          <p className="text-xs text-slate-400 mt-1">
+          <h2 className="font-serif text-xl font-bold">Create account</h2>
+          <p className="text-xs text-[#F5F2E9]/70 mt-1">
             The account is activated after email confirmation. After payment you get full access.
           </p>
         </div>
@@ -85,29 +85,29 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         {done ? (
           <div className="p-6 space-y-4">
             <div className="flex flex-col items-center text-center gap-3 py-2">
-              <div className="w-16 h-16 rounded-full bg-[#f5b400]/15 border border-[#f5b400]/30 flex items-center justify-center">
-                <MailCheck className="w-8 h-8 text-[#f5b400]" />
+              <div className="w-16 h-16 rounded-full bg-[#1C412C] flex items-center justify-center shadow-sm">
+                <MailCheck className="w-8 h-8 text-[#B08B48]" />
               </div>
-              <div className="text-base font-bold text-white">Verify your account</div>
-              <div className="text-sm text-slate-400 leading-relaxed">
+              <div className="text-base font-bold text-[#1C412C]">Verify your account</div>
+              <div className="text-sm text-[#213532]/70 leading-relaxed">
                 We&rsquo;ve sent a confirmation email to
                 <br />
-                <strong className="text-[#f5b400] break-all">{email}</strong>
+                <strong className="text-[#1C412C] break-all">{email}</strong>
                 <br />
                 <span className="block mt-2">
-                  Open it and click <strong className="text-slate-200">&laquo;Confirm my email&raquo;</strong> to
+                  Open it and click <strong className="text-[#1C412C]">&laquo;Confirm my email&raquo;</strong> to
                   activate your account. The link is valid for 1 hour.
                 </span>
               </div>
             </div>
 
             {emailSent ? (
-              <div className="p-3 bg-[#1b1e26] border border-white/[.06] rounded-xl text-[11px] text-slate-500 leading-relaxed">
-                Didn&rsquo;t get it? Check the <strong className="text-slate-400">Spam</strong> or
-                <strong className="text-slate-400"> Promotions</strong> folder &mdash; delivery can take a couple of minutes.
+              <div className="p-3 bg-[#F5F2E9] border border-[#E4DECB] rounded-xl text-[11px] text-[#213532]/70 leading-relaxed">
+                Didn&rsquo;t get it? Check the <strong className="text-[#213532]">Spam</strong> or
+                <strong className="text-[#213532]"> Promotions</strong> folder &mdash; delivery can take a couple of minutes.
               </div>
             ) : (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl text-[11px] text-amber-300 leading-relaxed flex gap-2">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl text-[11px] text-amber-800 leading-relaxed flex gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
                   Your account was created, but the email could not be delivered right now.
@@ -119,7 +119,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             <button
               onClick={handleResend}
               disabled={resending}
-              className="w-full px-6 py-2.5 bg-[#1b1e26] hover:bg-[#22262f] disabled:opacity-60 border border-white/[.08] text-slate-200 font-semibold rounded-xl text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full px-6 py-2.5 bg-[#F5F2E9] hover:bg-[#EFEAD9] disabled:opacity-60 border border-[#E4DECB] text-[#213532] font-semibold rounded-xl text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               {resending ? (
                 <>
@@ -132,14 +132,14 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               )}
             </button>
             {resent && (
-              <p className="text-center text-[11px] text-emerald-400">
+              <p className="text-center text-[11px] text-emerald-700 font-semibold">
                 A new confirmation link has been sent.
               </p>
             )}
 
             <button
               onClick={onClose}
-              className="w-full px-6 py-2.5 bg-[#f5b400] hover:bg-[#ffc21f] text-[#17190f] font-bold rounded-xl text-sm transition-all cursor-pointer"
+              className="w-full px-6 py-2.5 bg-[#B08B48] hover:bg-[#C59D55] text-white font-bold rounded-xl text-sm transition-all cursor-pointer shadow-sm"
             >
               Got it
             </button>
@@ -147,45 +147,45 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
                 Your name
               </label>
               <div className="relative">
-                <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <User className="w-4 h-4 text-[#213532]/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
                   placeholder="John Smith"
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f5b400]/25 focus:border-[#f5b400]/50"
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-sm text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
                 Email
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Mail className="w-4 h-4 text-[#213532]/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="you@email.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f5b400]/25 focus:border-[#f5b400]/50"
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-sm text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
                 Password
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-[#213532]/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
                   value={password}
@@ -193,13 +193,13 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   required
                   minLength={6}
                   placeholder="Minimum 6 characters"
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#0f1116] border border-white/[.08] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#f5b400]/25 focus:border-[#f5b400]/50"
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-sm text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
                 />
               </div>
             </div>
 
             {error && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl text-xs text-rose-400">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl text-xs text-rose-700">
                 {error}
               </div>
             )}
@@ -207,7 +207,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-6 py-2.5 bg-[#f5b400] hover:bg-[#ffc21f] disabled:opacity-60 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full px-6 py-2.5 bg-[#B08B48] hover:bg-[#C59D55] disabled:opacity-60 text-white font-bold rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
               {loading ? (
                 <>
@@ -219,12 +219,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               )}
             </button>
 
-            <p className="text-center text-xs text-slate-500">
+            <p className="text-center text-xs text-[#213532]/70">
               Already have an account?{' '}
               <button
                 type="button"
                 onClick={onBackToLogin}
-                className="text-[#f5b400] font-semibold hover:underline cursor-pointer"
+                className="text-[#B08B48] font-bold hover:underline cursor-pointer"
               >
                 Sign in
               </button>
