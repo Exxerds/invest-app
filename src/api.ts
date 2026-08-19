@@ -654,9 +654,13 @@ export const apiUploadRecording = (callId: number, data: string) =>
 
 export const apiCallLog = () =>
   request<{
-    calls: (ApiCall & { hasRecording: boolean })[];
-    stats: { total: number; answered: number; missed: number; avgSec: number };
+    calls: (ApiCall & { hasRecording: boolean; missed?: boolean })[];
+    stats: { total: number; answered: number; missed: number; declined: number; active: number; avgSec: number };
   }>('/calls/log', { headers: authHeader() });
+
+/** Client asks the desk to call them (client cabinet, "Call manager" tab) */
+export const apiRequestCall = () =>
+  request<{ ok: true }>('/calls/request', { method: 'POST', headers: authHeader() });
 
 export const apiCallRecording = (callId: number) =>
   request<{ data: string }>(`/calls/${callId}/recording`, { headers: authHeader() });

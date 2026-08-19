@@ -49,6 +49,51 @@ async function auth(req, res, next) {
 const isStaff = (u) => u.role === 'ADMIN' || u.role === 'MANAGER';
 const clean = (v, max = 200) => String(v ?? '').slice(0, max);
 
+/**
+ * Self-healing: calls whose tab was closed (or that nobody answered)
+ * would otherwise stay "ringing" / "active" in the database forever,
+ * and the next time the client opened the cabinet a call that ended
+ * minutes ago would pop up as "incoming" again.
+ *
+ *   ringing → nobody answered for 90 s   → ended (missed)
+ *   active  → running longer than 2 h    → ended
+ *
+ * Every side polls /inbox (and staff reads /log), so stale records are
+ * cleaned up on the next poll — no background timer needed, which also
+ * works on serverless hosts where timers do not fire.
+ */
+const RINGING_TTL_MS = Number(process.env.CALL_RINGING_TTL_MS || 90_000);
+const ACTIVE_TTL_MS = Number(process.env.CALL_ACTIVE_TTL_MS || 2 * 60 * 60_000);
+
+async function expireStaleCalls() {
+  const now = Date.now();
+  for (const c of await store.all('calls')) {
+    if (c.status === 'ringing') {
+      if (now - new Date(c.startedAt).getTime() > RINGING_TTL_MS) {
+        await store.update('calls', c.id, {
+          status: 'ended',
+          missed: true,
+          endedAt: new Date().toISOString(),
+          durationSec: 0,
+          endedBy: 'system (missed)',
+        });
+        await store.removeWhere('signals', (s) => s.callId === c.id);
+      }
+    } else if (c.status === 'active') {
+      const since = new Date(c.answeredAt || c.startedAt).getTime();
+      if (now - since > ACTIVE_TTL_MS) {
+        await store.update('calls', c.id, {
+          status: 'ended',
+          endedAt: new Date().toISOString(),
+          durationSec: Math.round((now - since) / 1000),
+          endedBy: 'system (timeout)',
+        });
+        await store.removeWhere('signals', (s) => s.callId === c.id);
+      }
+    }
+  }
+}
+
 /** Public STUN servers are enough for most networks; TURN is optional. */
 router.get('/ice-servers', auth, async (req, res) => {
   const servers = [
@@ -72,9 +117,19 @@ router.get('/ice-servers', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   if (!isStaff(req.user)) return res.status(403).json({ error: 'Staff access only' });
 
+  await expireStaleCalls();
+
   const clientId = Number(req.body?.clientId);
   const client = await store.byId('users', clientId);
   if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  // One live call per client: clicking "Call" twice used to stack a second
+  // ringing record on top of the first, and the client kept seeing the
+  // incoming prompt again and again for a call that was already over.
+  const existing = (await store.all('calls')).find(
+    c => c.clientId === clientId && c.status !== 'ended',
+  );
+  if (existing) return res.status(409).json({ error: 'This client is already in a call.' });
 
   // The desk decides what name the client sees on the incoming call
   const callerName = clean(req.body?.callerName, 80) || 'Oak Haven Yield Support';
@@ -107,10 +162,27 @@ router.post('/', auth, async (req, res) => {
   res.json({ ok: true, call });
 });
 
+/* ---------------- client asks to be called ---------------- */
+
+router.post('/request', auth, async (req, res) => {
+  if (req.user.role !== 'CLIENT') return res.status(403).json({ error: 'Clients only' });
+
+  await notify({
+    audience: 'staff',
+    kind: 'call_request',
+    title: 'Client wants a call',
+    message: `${req.user.name} requested a call from the client cabinet.`,
+  });
+
+  await logActivity({ actor: req.user, action: 'call_requested', target: 'staff' });
+  res.json({ ok: true });
+});
+
 /* ---------------- inbox ---------------- */
 
 /** Anything ringing or active that concerns me. */
 router.get('/inbox', auth, async (req, res) => {
+  await expireStaleCalls();
   const all = await store.all('calls');
   const mine = all.filter(c => {
     if (c.status === 'ended') return false;
@@ -286,6 +358,8 @@ router.post('/:id/recording', auth, async (req, res) => {
 router.get('/log', auth, async (req, res) => {
   if (!isStaff(req.user)) return res.status(403).json({ error: 'Staff access only' });
 
+  await expireStaleCalls();
+
   const all = await store.all('calls');
   const log = all
     .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))
@@ -297,6 +371,7 @@ router.get('/log', auth, async (req, res) => {
       callerName: c.callerName,
       status: c.status,
       declined: !!c.declined,
+      missed: !!c.missed,
       whisperName: c.whisperName || null,
       screenShare: !!c.screenShare,
       hasRecording: !!c.recordingUrl,
@@ -307,12 +382,16 @@ router.get('/log', auth, async (req, res) => {
     }));
 
   const answered = log.filter(c => c.answeredAt).length;
+  const missed = log.filter(c => !c.answeredAt && c.missed).length;
+  const declined = log.filter(c => !!c.declined).length;
   res.json({
     calls: log,
     stats: {
       total: log.length,
       answered,
-      missed: log.length - answered,
+      missed,
+      declined,
+      active: log.filter(c => c.status === 'active').length,
       avgSec: answered
         ? Math.round(log.reduce((s, c) => s + c.durationSec, 0) / answered)
         : 0,
