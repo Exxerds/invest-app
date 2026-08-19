@@ -30,7 +30,7 @@ import type { ActiveInvestment } from '../../types';
 import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
-import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook } from '../../api';
+import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall } from '../../api';
 import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
@@ -381,6 +381,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [toast, setToast] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const [msgLog, setMsgLog] = useState<{ me: boolean; text: string }[]>([]);
+  const [callRequested, setCallRequested] = useState(false);
+  const [callRequesting, setCallRequesting] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -1382,14 +1384,32 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 <PhoneCall className="w-9 h-9 text-[#f5b400]" />
               </div>
               <div>
-                <div className="text-[16px] font-bold text-white">Laura Bennett</div>
-                <div className="text-[12px] text-slate-500">Senior Advisor · online</div>
+                <div className="text-[16px] font-bold text-white">Your personal manager</div>
+                <div className="text-[12px] text-slate-500">Online · answers within a few minutes</div>
               </div>
-              <Btn variant="gold" icon={PhoneCall} onClick={() => setToast('Calling Laura Bennett…')}>
-                Start call
+              <Btn
+                variant="gold"
+                icon={PhoneCall}
+                disabled={callRequested}
+                onClick={async () => {
+                  try {
+                    setCallRequesting(true);
+                    await apiRequestCall();
+                    setCallRequested(true);
+                    setToast('✔ Request sent — a manager will call you shortly.');
+                  } catch {
+                    setToast('✖ Could not send the request, try again.');
+                  } finally {
+                    setCallRequesting(false);
+                  }
+                }}
+              >
+                {callRequesting ? 'Sending…' : callRequested ? 'Request sent' : 'Request a call'}
               </Btn>
               <p className="text-[11px] text-slate-600 max-w-sm">
-                During the call your manager can share their screen to guide you through the platform.
+                Your manager calls you from the back office — you will see the caller name
+                on your screen and can accept or decline. During the call they can share
+                their screen to guide you through the platform.
               </p>
             </div>
           </Card>

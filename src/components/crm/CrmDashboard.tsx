@@ -2529,8 +2529,8 @@ const CallsPanel: React.FC<{
   onWhisper: (call: ApiCall) => void;
 }> = ({ phonesHidden, users, onPlaceCall, onWhisper }) => {
   const [callerName, setCallerName] = useState('Oak Haven Yield Support');
-  const [log, setLog] = useState<(ApiCall & { hasRecording: boolean })[]>([]);
-  const [stats, setStats] = useState({ total: 0, answered: 0, missed: 0, avgSec: 0 });
+  const [log, setLog] = useState<(ApiCall & { hasRecording: boolean; missed?: boolean })[]>([]);
+  const [stats, setStats] = useState({ total: 0, answered: 0, missed: 0, declined: 0, avgSec: 0 });
   const [live, setLive] = useState<ApiCall[]>([]);
   const [playing, setPlaying] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -2551,7 +2551,8 @@ const CallsPanel: React.FC<{
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 5000);
+    // 2 s, not 5 — a supervisor needs the live list to show up right away
+    const t = setInterval(refresh, 2000);
     return () => clearInterval(t);
   }, []);
 
@@ -2567,17 +2568,22 @@ const CallsPanel: React.FC<{
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi icon={PhoneCall} label="Calls total" value={String(stats.total)} />
         <Kpi icon={CheckCircle2} label="Answered" value={String(stats.answered)} tone="green" />
         <Kpi icon={X} label="Missed" value={String(stats.missed)} tone="red" />
+        <Kpi icon={X} label="Declined" value={String(stats.declined)} tone="red" />
         <Kpi icon={History} label="Avg duration" value={fmtDur(stats.avgSec)} tone="gold" />
       </div>
 
       {/* A supervisor can attach to any call that is currently running */}
-      {live.length > 0 && (
-        <Card title="Live calls" subtitle="Join in whisper mode — the client will not hear you">
-          <div className="p-5 space-y-2">
-            {live.map(c => (
+      <Card title="Live calls" subtitle="Whisper (supervisor) mode: only the manager hears you — the client never does. Pick a live call below.">
+        <div className="p-5 space-y-2">
+          {live.length === 0 && (
+            <div className="text-[12px] text-slate-500 py-3 text-center">
+              No live calls right now — place one with the "Call" button on the right,
+              and it will appear here within a couple of seconds.
+            </div>
+          )}
+          {live.map(c => (
               <div
                 key={c.id}
                 className="flex items-center justify-between bg-[#1b1e26] border border-white/[.06] rounded-xl px-4 py-3"
@@ -2592,13 +2598,12 @@ const CallsPanel: React.FC<{
                   </div>
                 </div>
                 <Btn size="sm" variant="ghost" icon={Ear} onClick={() => onWhisper(c)}>
-                  Whisper
+                  {c.whisperBy ? 'Coaching' : 'Whisper'}
                 </Btn>
               </div>
             ))}
           </div>
         </Card>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card title="Place a call" subtitle="The client sees the caller name you choose">
@@ -2669,7 +2674,13 @@ const CallsPanel: React.FC<{
                     <Td className="font-semibold text-white text-[12px]">{c.clientName}</Td>
                     <Td className="text-[12px]">{c.managerName}</Td>
                     <Td className="text-[12px]">
-                      {c.answeredAt ? fmtDur(c.durationSec) : <Badge tone="red">missed</Badge>}
+                      {c.answeredAt ? (
+                        fmtDur(c.durationSec)
+                      ) : c.declined ? (
+                        <Badge tone="red">declined</Badge>
+                      ) : (
+                        <Badge tone="red">missed</Badge>
+                      )}
                     </Td>
                     <Td className="text-right">
                       {c.hasRecording ? (

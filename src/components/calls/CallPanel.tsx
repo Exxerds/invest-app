@@ -32,7 +32,7 @@ export const CallDock: React.FC<DockProps> = ({
   call, role, initiator, channel = 'main', whisperName, headless = false, onClosed,
 }) => {
   const {
-    phase, error, muted, sharingScreen, recording,
+    phase, error, muted, sharingScreen, recording, hasRemoteVideo,
     remoteAudioRef, remoteVideoRef,
     connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
   } = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
@@ -117,9 +117,9 @@ export const CallDock: React.FC<DockProps> = ({
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-bold text-white truncate">{title}</div>
           <div className="text-[11px] text-slate-500">
-            {phase === 'connecting' && 'Connecting…'}
+            {phase === 'connecting' && (role === 'supervisor' ? 'Waiting for the manager…' : 'Connecting…')}
             {phase === 'active' && fmt(seconds)}
-            {phase === 'failed' && 'Failed'}
+            {phase === 'failed' && 'Call failed'}
             {phase === 'ended' && 'Call ended'}
           </div>
         </div>
@@ -144,14 +144,26 @@ export const CallDock: React.FC<DockProps> = ({
       )}
 
       {error && (
-        <div className="px-4 py-2 bg-rose-500/10 text-[11px] text-rose-400">{error}</div>
+        <div className="px-4 py-2 bg-rose-500/10 text-[11px] text-rose-400 flex items-start gap-2">
+          <span className="flex-1">{error}</span>
+          {phase === 'failed' && (
+            <button
+              onClick={() => void connect()}
+              className="shrink-0 px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold hover:bg-rose-500/30 cursor-pointer"
+            >
+              Retry
+            </button>
+          )}
+        </div>
       )}
 
+      {/* Kept in the DOM at all times (the ref must exist when ontrack
+          fires); only becomes visible once the other side shares a screen */}
       <video
         ref={remoteVideoRef}
         autoPlay
         playsInline
-        className={`w-full bg-black ${sharingScreen || phase === 'active' ? 'block' : 'hidden'}`}
+        className={`w-full bg-black ${hasRemoteVideo ? 'block cursor-pointer' : 'hidden'}`}
         style={{ maxHeight: 160 }}
       />
       <audio ref={remoteAudioRef} autoPlay />

@@ -172,17 +172,33 @@ export default function App() {
     }
 
     let stopped = false;
+    let leftoverSwept = false;
     const tick = async () => {
       try {
         const inbox = await apiCallInbox();
         if (stopped) return;
 
         setActiveCall(prev => {
-          if (!prev) return prev;
-          const same = inbox.calls.find(c => c.id === prev.id);
-          // The other side hung up — close our dock too
-          if (!same || same.status === 'ended') return null;
-          return same;
+          if (prev) {
+            const same = inbox.calls.find(c => c.id === prev.id);
+            // The other side hung up — close our dock too
+            if (!same || same.status === 'ended') return null;
+            return same;
+          }
+          // No dock on THIS page, but an active call involving me exists:
+          // a reload / new tab dropped the media side of the conversation.
+          // The other side's peer connection is dead, so just close the
+          // record instead of letting it sit "active" forever (this is
+          // what used to pop the incoming prompt back up "out of nowhere").
+          if (!leftoverSwept) {
+            leftoverSwept = true;
+            const leftover = inbox.calls.find(
+              c => c.status === 'active'
+                && (c.clientId === currentUser?.id || c.managerId === currentUser?.id),
+            );
+            if (leftover) apiCallStatus(leftover.id, 'ended').catch(() => undefined);
+          }
+          return prev;
         });
 
         const ringing = inbox.calls.find(
