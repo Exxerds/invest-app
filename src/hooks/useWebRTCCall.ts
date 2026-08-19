@@ -243,8 +243,15 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
       }
 
       pc.ontrack = (e) => {
-        const [stream] = e.streams;
+        // Some browsers deliver a track WITHOUT a bundled MediaStream
+        // (most notably a screen-share track). Fabricate one so the
+        // <video> element always gets a renderable srcObject instead of
+        // a black rectangle.
+        const stream = e.streams[0] || new MediaStream([e.track]);
         remoteStreamRef.current = stream;
+        // A track arriving means media is actually flowing — mark the call
+        // active even if the connection-state handlers have not fired yet.
+        setPhase('active');
         if (e.track.kind === 'video') {
           setHasRemoteVideo(true);
           e.track.onended = () => setHasRemoteVideo(false);
@@ -255,6 +262,25 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
           // Recording started before the remote audio arrived? Add it now
           // so the file contains both voices.
           if (recStreamRef.current) recStreamRef.current.addTrack(e.track);
+        }
+      };
+
+      /**
+       * ICE state is the most reliable "the audio is flowing" signal: it
+       * reaches `connected`/`completed` even on networks where the aggregate
+       * connection state lingers. Listen here as well so the call timer
+       * starts promptly.
+       */
+      pc.oniceconnectionstatechange = () => {
+        if (
+          pc.iceConnectionState === 'connected' ||
+          pc.iceConnectionState === 'completed'
+        ) {
+          if (disconnectTimerRef.current) {
+            clearTimeout(disconnectTimerRef.current);
+            disconnectTimerRef.current = null;
+          }
+          setPhase('active');
         }
       };
 
@@ -285,7 +311,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
                 setError('The connection was lost.');
                 void hangUp();
               }
-            }, 6000);
+            }, 15000);
           }
         }
       };
@@ -348,6 +374,9 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
               if (pcRef.current.signalingState === 'have-local-offer') {
                 await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
                 await flushIceQueue();
+                // The callee answered — media can start flowing right away,
+                // so flip to active without waiting for the connection event.
+                setPhase('active');
               }
             } else if (s.kind === 'ice') {
               if (!pcRef.current.remoteDescription) {

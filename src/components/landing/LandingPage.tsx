@@ -751,11 +751,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               <div className="text-2xl font-extrabold text-[#B08B48] mt-2">{a.dep}</div>
               <div className="text-[11px] text-[#213532]/60">minimum deposit</div>
               <div className="mt-4 space-y-1.5 text-[12px] text-[#213532]/75">
-                <div className="flex justify-between border-b border-white/[.05] pb-1.5">
+                <div className="flex justify-between border-b border-[#E4DECB] pb-1.5">
                   <span>Spread</span>
                   <span className="text-[#213532] font-semibold">{a.spread}</span>
                 </div>
-                <div className="flex justify-between border-b border-white/[.05] pb-1.5">
+                <div className="flex justify-between border-b border-[#E4DECB] pb-1.5">
                   <span>Leverage</span>
                   <span className="text-[#213532] font-semibold">{a.lev}</span>
                 </div>

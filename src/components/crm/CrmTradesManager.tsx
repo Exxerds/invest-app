@@ -165,13 +165,13 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
       <Card className="p-5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h2 className="text-[16px] font-bold text-white">Client account, balance & positions</h2>
-            <p className="text-[12px] text-slate-500 mt-0.5">
+            <h2 className="text-[16px] font-bold text-[#1C412C]">Client account, balance & positions</h2>
+            <p className="text-[12px] text-[#213532]/70 mt-0.5">
               Select a user to adjust balance or positions (Spot / Futures / PnL) in real time
             </p>
           </div>
           <div className="flex items-center gap-2.5">
-            <span className="text-[11px] font-bold uppercase text-slate-500">Client</span>
+            <span className="text-[11px] font-bold uppercase text-[#213532]/70">Client</span>
             <Select
               value={selectedInvestorId}
               onChange={e => {
@@ -194,7 +194,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
       {/* Balance controls */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="p-4 md:col-span-2">
-          <div className="text-[11px] text-slate-500 font-semibold uppercase">Available balance</div>
+          <div className="text-[11px] text-[#213532]/70 font-semibold uppercase">Available balance</div>
           {isEditingBalance ? (
             <div className="flex items-center gap-2 mt-2">
               <Input
@@ -213,7 +213,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
             </div>
           ) : (
             <div className="flex items-center gap-3 mt-1.5">
-              <span className="text-2xl font-extrabold text-emerald-400">
+              <span className="text-2xl font-extrabold text-emerald-700">
                 ${selectedInvestor?.balance.toLocaleString('en-US')}
               </span>
               <Btn
@@ -511,7 +511,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
         >
           <form onSubmit={handleCreateTradeSubmit} className="space-y-3.5">
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Asset / pair</label>
+              <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Asset / pair</label>
               <Select value={asset} onChange={e => setAsset(e.target.value)} className="w-full">
                 <option value="BTC/USDT (Crypto Spot)">BTC/USDT (Crypto Spot)</option>
                 <option value="ETH/USDT (Futures Long 10x)">ETH/USDT (Futures)</option>
@@ -522,7 +522,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Side</label>
+                <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Side</label>
                 <Select value={type} onChange={e => setType(e.target.value as 'LONG' | 'SHORT' | 'SPOT')} className="w-full">
                   <option value="LONG">LONG (Buy)</option>
                   <option value="SHORT">SHORT (Sell)</option>
@@ -530,22 +530,22 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                 </Select>
               </div>
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Amount ($)</label>
+                <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Amount ($)</label>
                 <Input type="text" inputMode="decimal" placeholder="Amount" value={amountStr} onChange={e => setAmountStr(sanitizeDecimal(e.target.value))} className="w-full" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Entry price ($)</label>
+                <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Entry price ($)</label>
                 <Input type="text" inputMode="decimal" placeholder="Entry price" value={entryPriceStr} onChange={e => setEntryPriceStr(sanitizeDecimal(e.target.value))} className="w-full" />
               </div>
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Leverage (x)</label>
+                <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Leverage (x)</label>
                 <Input type="text" inputMode="numeric" placeholder="Leverage" value={leverageStr} onChange={e => setLeverageStr(sanitizeInteger(e.target.value))} className="w-full" />
               </div>
             </div>
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">Starting PnL ($)</label>
+              <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Starting PnL ($)</label>
               <Input type="text" inputMode="decimal" placeholder="PnL" value={pnlStr} onChange={e => setPnlStr(e.target.value.replace(/[^0-9.-]/g, '').replace(/^0+(?=\d)/, ''))} className="w-full" />
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">

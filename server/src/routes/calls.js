@@ -97,7 +97,14 @@ async function expireStaleCalls() {
 /** Public STUN servers are enough for most networks; TURN is optional. */
 router.get('/ice-servers', auth, async (req, res) => {
   const servers = [
-    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    {
+      urls: [
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302',
+        'stun:stun.cloudflare.com:3478',
+        'stun:stun.services.mozilla.com:3478',
+      ],
+    },
   ];
 
   // A TURN relay is needed behind strict corporate NATs
