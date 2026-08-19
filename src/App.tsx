@@ -10,7 +10,7 @@ import { LoginModal } from './components/modals/LoginModal';
 import { ForgotPasswordModal } from './components/modals/ForgotPasswordModal';
 import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
-import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser } from './api';
+import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser, apiSetUserBalance } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
 import { 
   apiStartCall, apiWhisper, apiCallInbox, apiCallStatus, apiNotes, apiAddNote, 
@@ -43,7 +43,8 @@ import type {
   ActiveInvestment, 
   LeadStage,
   CrmSettings,
-  ClientNote
+  ClientNote,
+  KycStatus
 } from './types';
 import type { AdminTrade } from './components/crm/CrmTradesManager';
 import { CheckCircle2, TrendingUp } from 'lucide-react';
@@ -400,6 +401,45 @@ export default function App() {
       .catch(() => setUsers([]));
   }, [isLoggedIn, currentUser]);
 
+  /**
+   * The CRM's CLIENT selector (Trading tab) and the client directory are
+   * driven by `investors`, which used to stay an empty array forever.
+   * Now it mirrors the server's user list: every CLIENT account becomes
+   * an Investor record. The server list is the base, but local records
+   * (e.g. a balance edit that has not round-tripped yet) win by id, so
+   * in-flight changes are never clobbered by a refresh of `users`.
+   */
+  useEffect(() => {
+    if (users.length === 0) return;
+    setInvestors(prev => {
+      const localById = new Map(prev.map(inv => [inv.id, inv]));
+      return users
+        .filter(u => u.role === 'CLIENT')
+        .map(u => {
+          const existing = localById.get(String(u.id));
+          if (existing) return existing;
+          const created = u.created_at ? new Date(u.created_at) : new Date();
+          const dd = String(created.getDate()).padStart(2, '0');
+          const mm = String(created.getMonth() + 1).padStart(2, '0');
+          const rawKyc = (u as ApiUser & { kycStatus?: string }).kycStatus;
+          const kycStatus: KycStatus =
+            rawKyc === 'verified' || rawKyc === 'rejected' ? rawKyc : 'pending';
+          return {
+            id: String(u.id),
+            name: u.name,
+            email: u.email,
+            phone: u.phone || '',
+            kycStatus,
+            balance: Number(u.balance) || 0,
+            invested: 0,
+            totalProfit: 0,
+            registrationDate: `${dd}.${mm}.${created.getFullYear()}`,
+            manager: 'No manager',
+          };
+        });
+    });
+  }, [users]);
+
   // Toast notification
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
 
@@ -429,6 +469,7 @@ export default function App() {
     setCurrentUser(null);
     setIsLoggedIn(false);
     setUsers([]);
+    setInvestors([]);
     localStorage.removeItem(TAB_KEY);
     localStorage.removeItem(ADMIN_TOKEN_KEY);
     setImpersonating(false);
@@ -596,9 +637,20 @@ export default function App() {
   /* ========================================================
      CRM / ADMIN TRADES & BALANCE MANAGEMENT (#1 PRIORITY)
   ======================================================== */
-  const handleUpdateInvestorBalance = (investorId: string, newBalance: number) => {
+  /**
+   * The new balance is written to the server (PUT /admin/users/:id/balance),
+   * which also records an audit transaction. Local state is updated first so
+   * the UI reacts instantly; if the request fails the toast says so.
+   *
+   * Ids arrive in two shapes: the plain user id ("7") from the Trading
+   * selector and the legacy "acc-7" from the user-details screen — both
+   * resolve to the same account.
+   */
+  const handleUpdateInvestorBalance = async (investorId: string, newBalance: number) => {
+    const bareId = String(investorId).replace(/^acc-/, '');
+
     setInvestors(prev => prev.map(inv => {
-      if (inv.id === investorId) {
+      if (inv.id === investorId || inv.id === bareId) {
         return {
           ...inv,
           balance: newBalance
@@ -607,11 +659,19 @@ export default function App() {
       return inv;
     }));
 
+    // Keep the CRM user table in sync without waiting for the next poll
+    setUsers(prev => prev.map(u => (String(u.id) === bareId ? { ...u, balance: newBalance } : u)));
+
     if (investorId === 'inv-01') {
       setInvestorBalance(newBalance);
     }
 
-    showToast(`✔ Client balance updated to $${newBalance.toLocaleString('en-US')}!`);
+    try {
+      const res = await apiSetUserBalance(Number(bareId), newBalance);
+      showToast(`✔ Client balance updated to $${res.balance.toLocaleString('en-US')}!`);
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not update the balance', 'info');
+    }
   };
 
   const handleCreateTrade = (newTradeData: Omit<AdminTrade, 'id' | 'status'>) => {
@@ -839,7 +899,9 @@ export default function App() {
   const combinedTrades: AdminTrade[] = React.useMemo(() => {
     const mapped: AdminTrade[] = serverTrades.map(t => ({
       id: `srv-${t.id}`,
-      investorId: `acc-${t.userId}`,
+      // Investors are keyed by the plain user id (String(u.id)), so the
+      // Trading tab can match a selected client to their positions
+      investorId: String(t.userId),
       asset: t.name ? `${t.symbol} — ${t.name}` : t.symbol,
       type: t.side,
       amount: t.amount,
@@ -1058,6 +1120,18 @@ export default function App() {
             onClaimDividends={handleClaimDividends}
             onLogout={handleLogout}
             onBalanceChanged={refreshMyFinances}
+            /**
+             * The profile was saved on the server — mirror it into the local
+             * session state so the sidebar (name/initials), the header and
+             * the CRM reflect the change immediately, without a re-login.
+             */
+            onProfileUpdated={({ name, email, phone }) => {
+              setCurrentUser(prev => (prev ? { ...prev, name, email, phone } : prev));
+              const myId = currentUser?.id;
+              if (myId != null) {
+                setUsers(prev => prev.map(u => (u.id === myId ? { ...u, name, email, phone } : u)));
+              }
+            }}
           />
         )}
 

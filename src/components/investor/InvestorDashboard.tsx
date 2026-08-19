@@ -32,7 +32,7 @@ import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
 import { VerifyIdentity } from './VerifyIdentity';
 import { AdvancedChart } from './TradingViewChart';
 import { OakCrest, OakWordmark } from '../brand/Logo';
-import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall, apiStatement } from '../../api';
+import { apiSearchSymbols, apiMyTrades, apiOpenTrade, apiCloseTrade, apiQuote, apiMarginRates, apiSettleTrades, apiOrderBook, apiRequestCall, apiStatement, apiUpdateProfile, apiChangeMyPassword } from '../../api';
 import type { ApiTrade, ApiTransaction } from '../../api';
 import { INSTRUMENTS, ASSET_CATEGORIES } from '../../data/instruments';
 import type { AssetCategory, Instrument } from '../../data/instruments';
@@ -41,7 +41,7 @@ import { openStatementWindow } from '../../utils/statement';
 
 interface InvestorDashboardProps {
   /** Signed-in account — the cabinet shows real data, never a demo persona */
-  user?: { id?: number; name: string; email: string } | null;
+  user?: { id?: number; name: string; email: string; phone?: string } | null;
   /** True once an admin approved the client's KYC documents */
   kycVerified?: boolean;
   /** Real deposit / withdrawal requests from the server */
@@ -56,6 +56,12 @@ interface InvestorDashboardProps {
   onLogout?: () => void;
   /** Re-reads the balance from the server after a trade settles */
   onBalanceChanged?: () => void;
+  /**
+   * Fired after the profile was saved on the server, so the app can
+   * refresh the name/e-mail/phone everywhere (sidebar, header, CRM)
+   * without forcing a re-login.
+   */
+  onProfileUpdated?: (user: { name: string; email: string; phone: string }) => void;
 }
 
 type Tab = 'dashboard' | 'trading' | 'withdrawals' | 'transactions' | 'support' | 'call' | 'profile' | 'statistics';
@@ -146,6 +152,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   onClaimDividends,
   onLogout,
   onBalanceChanged,
+  onProfileUpdated,
 }) => {
   /* Display name derived from the signed-in account (no demo persona) */
   const fullName = (user?.name || '').trim();
@@ -456,6 +463,55 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  /* ---------------- Profile tab: controlled fields ----------------
+     The form used to be uncontrolled defaultValue inputs whose Save
+     buttons only fired a toast — nothing reached the server. Now every
+     field is state, and both buttons issue real API calls. */
+  const [profileName, setProfileName] = useState(user?.name || '');
+  const [profileEmail, setProfileEmail] = useState(user?.email || '');
+  const [profilePhone, setProfilePhone] = useState(user?.phone || '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  const handleSaveProfile = async () => {
+    if (savingProfile) return;
+    try {
+      setSavingProfile(true);
+      const res = await apiUpdateProfile({
+        name: profileName,
+        email: profileEmail,
+        phone: profilePhone,
+      });
+      onProfileUpdated?.({
+        name: res.user.name,
+        email: res.user.email,
+        phone: res.user.phone || '',
+      });
+      setToast('Profile updated successfully');
+    } catch (err) {
+      setToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not update the profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleChangeMyPassword = async () => {
+    if (changingPassword) return;
+    try {
+      setChangingPassword(true);
+      await apiChangeMyPassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setToast('Password changed successfully');
+    } catch (err) {
+      setToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not change the password');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
   /**
    * Headline figures come from the positions that actually exist on the
@@ -1532,18 +1588,32 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               <div className="p-5 space-y-3.5 max-w-md">
                 <div>
                   <label className="text-[11px] font-bold uppercase text-[#213532]/60">Full name</label>
-                  <Input key={fullName} defaultValue={fullName} className="w-full mt-1.5" />
+                  <Input
+                    value={profileName}
+                    onChange={e => setProfileName(e.target.value)}
+                    className="w-full mt-1.5"
+                  />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold uppercase text-[#213532]/60">E-mail</label>
-                  <Input key={user?.email || 'email'} defaultValue={user?.email || ''} className="w-full mt-1.5" />
+                  <Input
+                    type="email"
+                    value={profileEmail}
+                    onChange={e => setProfileEmail(e.target.value)}
+                    className="w-full mt-1.5"
+                  />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold uppercase text-[#213532]/60">Phone</label>
-                  <Input placeholder="+1 (555) 000-0000" className="w-full mt-1.5" />
+                  <Input
+                    placeholder="+1 (555) 000-0000"
+                    value={profilePhone}
+                    onChange={e => setProfilePhone(e.target.value)}
+                    className="w-full mt-1.5"
+                  />
                 </div>
-                <Btn variant="gold" onClick={() => setToast('Profile updated successfully')}>
-                  Save changes
+                <Btn variant="gold" onClick={handleSaveProfile} disabled={savingProfile}>
+                  {savingProfile ? 'Saving…' : 'Save changes'}
                 </Btn>
               </div>
             </Card>
@@ -1551,14 +1621,25 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               <div className="p-5 space-y-3.5 max-w-md">
                 <div>
                   <label className="text-[11px] font-bold uppercase text-[#213532]/60">Current password</label>
-                  <Input type="password" defaultValue="********" className="w-full mt-1.5" />
+                  <Input
+                    type="password"
+                    value={currentPassword}
+                    onChange={e => setCurrentPassword(e.target.value)}
+                    className="w-full mt-1.5"
+                  />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold uppercase text-[#213532]/60">New password</label>
-                  <Input type="password" placeholder="Minimum 6 characters" className="w-full mt-1.5" />
+                  <Input
+                    type="password"
+                    placeholder="Minimum 6 characters"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    className="w-full mt-1.5"
+                  />
                 </div>
-                <Btn variant="ghost" onClick={() => setToast('Password changed successfully')}>
-                  Change password
+                <Btn variant="ghost" onClick={handleChangeMyPassword} disabled={changingPassword}>
+                  {changingPassword ? 'Changing…' : 'Change password'}
                 </Btn>
 
               </div>

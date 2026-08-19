@@ -141,6 +141,14 @@ export const apiAdminUpdateUser = (userId: number, data: { status?: string; role
     body: JSON.stringify(data),
   });
 
+/** Staff sets the exact balance of a client account (CRM → Trading tab) */
+export const apiSetUserBalance = (userId: number, balance: number) =>
+  request<{ ok: true; balance: number; transaction: ApiTransaction }>(`/admin/users/${userId}/balance`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ balance }),
+  });
+
 // ---------- KYC documents ----------
 
 export interface ApiKycDoc {
@@ -571,6 +579,22 @@ export const apiActivity = (target?: string) =>
     `/workspace/activity${target ? `?target=${encodeURIComponent(target)}` : ''}`,
     { headers: authHeader() },
   );
+
+/** Any signed-in user updates their own profile (name / e-mail / phone) */
+export const apiUpdateProfile = (data: { name: string; email: string; phone: string }) =>
+  request<{ ok: true; user: ApiUser }>('/workspace/me', {
+    method: 'PUT',
+    headers: authHeader(),
+    body: JSON.stringify(data),
+  });
+
+/** Any signed-in user changes their own password (current one required) */
+export const apiChangeMyPassword = (currentPassword: string, newPassword: string) =>
+  request<{ ok: true }>('/workspace/me/password', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
 
 // ---------- portfolio investments ----------
 

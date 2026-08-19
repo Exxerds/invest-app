@@ -10,9 +10,12 @@
 //    GET/PUT    /api/workspace/crm-settings     CRM preferences
 //    GET/PUT    /api/workspace/client-status    lead/client status
 //    GET        /api/workspace/activity         staff action log
+//    PUT        /api/workspace/me               update own profile
+//    POST       /api/workspace/me/password      change own password
 // ============================================================
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
 
@@ -59,6 +62,90 @@ export async function logActivity({ actor, action, target, details }) {
     /* logging must never break the request it describes */
   }
 }
+
+/* ---------------- own profile (any signed-in user) ---------------- */
+
+/**
+ * Same idea as publicUser() in auth.js: everything the client may see,
+ * never the password hash. Kept local because auth.js does not export it.
+ */
+const publicUser = (u) => ({
+  id: u.id,
+  name: u.name,
+  email: u.email,
+  phone: u.phone || '',
+  role: u.role,
+  status: u.status,
+  balance: Number(u.balance) || 0,
+  created_at: u.created_at,
+});
+
+/**
+ * PUT /workspace/me — update MY OWN profile: name, e-mail, phone.
+ * Available to every authenticated account (client or staff).
+ */
+router.put('/me', auth, async (req, res) => {
+  const b = req.body || {};
+
+  const name = clean(b.name, 100).trim();
+  if (!name) return res.status(400).json({ error: 'Name cannot be empty' });
+
+  const patch = { name };
+
+  const email = String(b.email ?? '').toLowerCase().trim();
+  if (email) {
+    // Simple format check — enough for a login identifier
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Enter a valid e-mail address' });
+    }
+    // Changing to an address somebody else already owns is forbidden
+    if (email !== String(req.user.email || '').toLowerCase()) {
+      const taken = await store.findBy('users', 'email', email);
+      if (taken && taken.id !== req.user.id) {
+        return res.status(409).json({ error: 'E-mail is already in use' });
+      }
+    }
+    patch.email = email;
+  }
+
+  patch.phone = clean(b.phone, 30).trim();
+
+  const updated = await store.update('users', req.user.id, patch);
+  if (!updated) return res.status(404).json({ error: 'User not found' });
+
+  await logActivity({
+    actor: req.user,
+    action: 'profile_updated',
+    target: `user-${req.user.id}`,
+    details: name,
+  });
+  res.json({ ok: true, user: publicUser(updated) });
+});
+
+/**
+ * POST /workspace/me/password — change MY OWN password.
+ * The current password must be confirmed first.
+ */
+router.post('/me/password', auth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+
+  let matches = false;
+  try {
+    matches = await bcrypt.compare(String(currentPassword || ''), String(req.user.password || ''));
+  } catch {
+    matches = false;
+  }
+  if (!matches) return res.status(400).json({ error: 'Current password is incorrect' });
+
+  if (!newPassword || String(newPassword).length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  }
+
+  const hash = await bcrypt.hash(String(newPassword), 10);
+  await store.update('users', req.user.id, { password: hash });
+
+  res.json({ ok: true });
+});
 
 /* ---------------- client notes ---------------- */
 

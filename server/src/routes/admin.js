@@ -153,6 +153,46 @@ router.patch('/users/:id', auth('ADMIN'), async (req, res) => {
 });
 
 /* ------------------------------------------------------------
+   SET CLIENT BALANCE — CRM → Trading → "Change balance"
+   The desk types the exact balance the client account must show.
+   Staff-only (ADMIN or MANAGER), clients only. Even a blocked
+   account may be corrected; every change is written into the
+   transaction journal as an approved manual deposit so both the
+   audit trail and the client's own history stay complete.
+   ------------------------------------------------------------ */
+router.put('/users/:id/balance', auth('STAFF'), async (req, res) => {
+  const id = Number(req.params.id);
+  const target = await store.byId('users', id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.role !== 'CLIENT') {
+    return res.status(400).json({ error: 'Only client balances can be changed' });
+  }
+
+  const raw = Number(req.body?.balance);
+  if (!Number.isFinite(raw)) return res.status(400).json({ error: 'Enter a valid balance' });
+  // Never negative, always rounded to cents
+  const balance = Math.max(0, Math.round(raw * 100) / 100);
+
+  const updated = await store.update('users', id, { balance });
+  const transaction = await store.insert('transactions', {
+    userId: target.id,
+    userName: target.name,
+    userEmail: target.email,
+    type: 'deposit',
+    amount: balance,
+    method: `Manual balance adjustment by ${req.user.name}`,
+    status: 'approved',
+    createdAt: new Date().toISOString(),
+    reviewedBy: req.user.name,
+    reviewedAt: new Date().toISOString(),
+    balanceAfter: balance,
+    manual: true,
+  });
+
+  res.json({ ok: true, balance: updated.balance, transaction });
+});
+
+/* ------------------------------------------------------------
    IMPERSONATION — "Login as user"
    Issues a short-lived token for the client so support can see
    exactly what the client sees. Admin only, and the token carries
