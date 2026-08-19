@@ -32,7 +32,8 @@ export const CallDock: React.FC<DockProps> = ({
   call, role, initiator, channel = 'main', whisperName, headless = false, onClosed,
 }) => {
   const {
-    phase, error, muted, sharingScreen, recording, hasRemoteVideo,
+    phase, error, warning, muted, micAvailable,
+    sharingScreen, recording, hasRemoteVideo,
     remoteAudioRef, remoteVideoRef,
     connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
   } = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
@@ -157,6 +158,12 @@ export const CallDock: React.FC<DockProps> = ({
         </div>
       )}
 
+      {warning && (
+        <div className="px-4 py-2 bg-amber-500/10 border-t border-amber-500/20 text-[11px] text-amber-300">
+          {warning}
+        </div>
+      )}
+
       {/* Kept in the DOM at all times (the ref must exist when ontrack
           fires); only becomes visible once the other side shares a screen */}
       <video
@@ -171,9 +178,14 @@ export const CallDock: React.FC<DockProps> = ({
       <div className="p-3 flex items-center justify-center gap-2">
         <button
           onClick={toggleMute}
-          title={muted ? 'Unmute' : 'Mute'}
-          className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-            muted ? 'bg-rose-500/20 text-rose-400' : 'bg-white/[.06] text-slate-300 hover:bg-white/[.12]'
+          disabled={!micAvailable}
+          title={!micAvailable ? 'No microphone on this device' : muted ? 'Unmute' : 'Mute'}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+            !micAvailable
+              ? 'bg-white/[.03] text-slate-600 cursor-not-allowed'
+              : muted
+              ? 'bg-rose-500/20 text-rose-400 cursor-pointer'
+              : 'bg-white/[.06] text-slate-300 hover:bg-white/[.12] cursor-pointer'
           }`}
         >
           {muted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
