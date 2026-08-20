@@ -239,7 +239,10 @@ async function start() {
       process.exit(1);
     }
 
-    await seedUsers();
+    // SEED_DEMO=off skips creating the demo accounts (admin@trade.io has a
+    // publicly known password — on production switch this off once your own
+    // admin exists and the demo passwords are changed).
+    if (process.env.SEED_DEMO !== 'off') await seedUsers();
 
     // '::' accepts both IPv6 (::1) and IPv4 (127.0.0.1) on all platforms
     const server = app.listen(PORT, '::', () => {
