@@ -455,8 +455,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [toast, setToast] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const [supportMsgs, setSupportMsgs] = useState<{ id: number; from: string; text: string; createdAt: string; senderName: string }[]>([]);
-  const [supportSystemShown, setSupportSystemShown] = useState(false);
   const [supportPrevStaffCount, setSupportPrevStaffCount] = useState(0);
+  // Derived: system notice appears once after client writes, disappears after first staff reply
   const [callRequested, setCallRequested] = useState(false);
   const [callRequesting, setCallRequesting] = useState(false);
 
@@ -1553,9 +1553,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   </div>
                 );
               })}
-              {supportSystemShown && (
-                <div className="text-center text-[11px] text-[#213532]/50 py-2">A manager is being connected to your conversation — typically within a few minutes.</div>
-              )}
+              {(() => { const hasClient = supportMsgs.some(m=>m.from==='client'); const hasStaff = supportMsgs.some(m=>m.from==='staff'); const show = hasClient && !hasStaff; return show ? (<div className="text-center text-[11px] text-[#213532]/50 py-2">A manager is being connected to your conversation — typically within a few minutes.</div>) : null; })()}
             </div>
             <form
               onSubmit={async e => {
@@ -1569,7 +1567,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   setSupportMsgs(r.messages.map(m => ({ id: m.id, from: m.from, text: m.text, createdAt: m.createdAt, senderName: m.senderName })));
                   const staffCount = r.messages.filter(x => x.from === 'staff').length;
                   setSupportPrevStaffCount(staffCount);
-                  if (!supportSystemShown) setSupportSystemShown(true);
                 } catch (err) {
                   setToast(err instanceof Error ? err.message : 'Could not send message');
                   setMsg(text);

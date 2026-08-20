@@ -311,14 +311,30 @@ router.post('/messages', auth, async (req, res) => {
 
 router.get('/crm-settings', auth, staffOnly, async (req, res) => {
   const rec = await store.byField('settings', 'key', 'crmSettings');
-  res.json({ settings: { hidePhonesFromAgents: false, ...(rec?.value || {}) } });
+  res.json({ settings: { hidePhonesFromAgents: false, duplicateControl: true, manualClosing: false, callRecording: true, modules: {}, providers: {}, ...(rec?.value || {}) } });
 });
 
 router.put('/crm-settings', auth, async (req, res) => {
   if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Administrator access only' });
 
-  const value = { hidePhonesFromAgents: Boolean(req.body?.hidePhonesFromAgents) };
+  const body = req.body || {};
   const rec = await store.byField('settings', 'key', 'crmSettings');
+  const existing = rec?.value || {};
+  const value = {
+    hidePhonesFromAgents: body.hasOwnProperty('hidePhonesFromAgents') ? Boolean(body.hidePhonesFromAgents) : Boolean(existing.hidePhonesFromAgents),
+    duplicateControl: body.hasOwnProperty('duplicateControl') ? body.duplicateControl !== false : (existing.duplicateControl !== false),
+    manualClosing: body.hasOwnProperty('manualClosing') ? Boolean(body.manualClosing) : Boolean(existing.manualClosing),
+    callRecording: body.hasOwnProperty('callRecording') ? body.callRecording !== false : (existing.callRecording !== false),
+    modules: typeof body.modules === 'object' && body.modules ? { ...(existing.modules || {}), ...body.modules } : (existing.modules || {}),
+    providers: typeof body.providers === 'object' && body.providers ? { ...(existing.providers || {}), ...body.providers } : (existing.providers || {}),
+  };
+  // Preserve any other custom keys
+  for (const k of Object.keys(body)) {
+    if (!(k in value)) value[k] = body[k];
+  }
+  for (const k of Object.keys(existing)) {
+    if (!(k in value) && !(k in body)) value[k] = existing[k];
+  }
   const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
   if (rec) await store.update('settings', rec.id, payload);
   else await store.insert('settings', { key: 'crmSettings', ...payload });

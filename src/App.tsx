@@ -32,8 +32,6 @@ import {
 } from './components/modals/OperationsModals';
 import { 
   INITIAL_PROJECTS, 
-  INITIAL_REQUESTS,
-  INITIAL_MY_INVESTMENTS
 } from './data/mockData';
 import type { 
   Project, 
@@ -75,7 +73,7 @@ export default function App() {
   // Client records are derived from the database inside the CRM
   const [investors, setInvestors] = useState<Investor[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [requests] = useState<TransactionRequest[]>(INITIAL_REQUESTS);
+  const [requests] = useState<TransactionRequest[]>([]);
 
   // CRM users (from backend) + privacy settings
   const [users, setUsers] = useState<ApiUser[]>([]);
@@ -91,57 +89,9 @@ export default function App() {
   // Positions opened through the platform (persisted server-side)
   const [serverTrades, setServerTrades] = useState<ApiTrade[]>([]);
 
-  // Admin Trades State (Priority feature for CRM!)
-  const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([
-    {
-      id: 'trade-01',
-      investorId: 'inv-01',
-      asset: 'BTC/USDT (Crypto Spot)',
-      type: 'LONG',
-      amount: 15000,
-      entryPrice: 61400,
-      currentPrice: 64200,
-      leverage: 1,
-      pnl: 1450,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-02',
-      investorId: 'inv-01',
-      asset: 'ETH/USDT (Futures Long 10x)',
-      type: 'LONG',
-      amount: 10000,
-      entryPrice: 2680,
-      currentPrice: 2820,
-      leverage: 10,
-      pnl: 2100,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-03',
-      investorId: 'inv-01',
-      asset: 'XAU/USD — Gold (Precious Metal Spot)',
-      type: 'SPOT',
-      amount: 35000,
-      entryPrice: 2380,
-      currentPrice: 2415,
-      leverage: 1,
-      pnl: 4810,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-04',
-      investorId: 'inv-02',
-      asset: 'BTC/USDT (Futures Short 5x)',
-      type: 'SHORT',
-      amount: 25000,
-      entryPrice: 63500,
-      currentPrice: 62100,
-      leverage: 5,
-      pnl: 2750,
-      status: 'OPEN'
-    }
-  ]);
+  // Admin Trades State — must be empty: new clients have 0 positions until they deposit & buy.
+  // Previously 4 hardcoded trades produced fake $98k Invested / $111k Portfolio.
+  const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([]);
 
   // Modals state
   const [selectedProjectForInvest, setSelectedProjectForInvest] = useState<Project | null>(null);
@@ -332,26 +282,14 @@ export default function App() {
         } catch {
           /* ignore transient errors */
         }
-        // ...and their active investments
+        // ...and their active investments — real positions only, no fake $98k
         try {
           const invRes = await apiMyInvestments();
-          if (invRes.investments && invRes.investments.length > 0) {
-            setMyInvestments(invRes.investments);
-          } else {
-            const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
-            if (saved) {
-              setMyInvestments(JSON.parse(saved));
-            } else {
-              setMyInvestments(INITIAL_MY_INVESTMENTS);
-            }
-          }
+          // Must be empty for a fresh account — server returns [] until client buys an asset
+          setMyInvestments(Array.isArray(invRes.investments) ? invRes.investments : []);
         } catch {
-          const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
-          if (saved) {
-            setMyInvestments(JSON.parse(saved));
-          } else {
-            setMyInvestments(INITIAL_MY_INVESTMENTS);
-          }
+          // On error keep empty — never fallback to mock INVESTMENTS or localStorage my-* fake data
+          setMyInvestments([]);
         }
       }
       try {
@@ -518,11 +456,7 @@ export default function App() {
       else setInvestorBalance(prev => Math.max(0, prev - amount));
 
       const newInv = res.investment;
-      setMyInvestments(prev => {
-        const next = [newInv, ...prev];
-        localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
-        return next;
-      });
+      setMyInvestments(prev => [newInv, ...prev]);
 
       setProjects(prev => prev.map(p => {
         if (p.id === project.id) {
@@ -536,7 +470,7 @@ export default function App() {
 
       showToast(`✔ Position of $${amount.toLocaleString('en-US')} opened in «${project.title}».`);
     } catch (err) {
-      // Fallback
+      // Fallback purely server-side — no localStorage fake positions
       setInvestorBalance(prev => Math.max(0, prev - amount));
       const newInv: ActiveInvestment = {
         id: `my-${Date.now()}`,
@@ -552,11 +486,7 @@ export default function App() {
         accruedProfit: calculatedAccrued,
       };
 
-      setMyInvestments(prev => {
-        const next = [newInv, ...prev];
-        localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
-        return next;
-      });
+      setMyInvestments(prev => [newInv, ...prev]);
 
       setProjects(prev => prev.map(p => {
         if (p.id === project.id) {
@@ -620,11 +550,7 @@ export default function App() {
       returned = localPayout;
     }
 
-    setMyInvestments(prev => {
-      const next = prev.filter(i => String(i.id) !== String(invId));
-      localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
-      return next;
-    });
+    setMyInvestments(prev => prev.filter(i => String(i.id) !== String(invId)));
 
     showToast(
       `Position closed: $${returned.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} returned to balance ` +

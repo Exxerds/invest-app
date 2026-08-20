@@ -255,6 +255,18 @@ router.post('/:id/close', auth, async (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
+  // Check manualClosing toggle from Settings → Privacy & access
+  if (!isStaff(req.user)) {
+    try {
+      const rec = await store.byField('settings', 'key', 'crmSettings');
+      const s = rec?.value || {};
+      const manualClosing = s.manualClosing === true;
+      if (!manualClosing) {
+        return res.status(403).json({ error: 'Manual closing is disabled by administrator. Contact support to close positions.' });
+      }
+    } catch {}
+  }
+
   if (existing.status === 'CLOSED') {
     return res.status(400).json({ error: 'Position is already closed' });
   }
