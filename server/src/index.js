@@ -167,6 +167,22 @@ export function ensureSeeded() {
 }
 
 /**
+ * Serverless has no writable disk, so the JSON-file store cannot survive there:
+ * accounts created on one instance vanish on the next. Say it loudly once, at
+ * boot, instead of letting it look like a random "invalid email or password".
+ */
+const EPHEMERAL_STORAGE = Boolean(process.env.VERCEL) && !USE_PG;
+if (EPHEMERAL_STORAGE) {
+  console.error('=============================================================');
+  console.error('[server] DATABASE_URL is NOT set on this deployment.');
+  console.error('[server] Storage falls back to a read-only JSON file: demo');
+  console.error('[server] accounts work per instance, but registrations and');
+  console.error('[server] balances are LOST. Add a Postgres connection string');
+  console.error('[server] in the Vercel project settings and redeploy.');
+  console.error('=============================================================');
+}
+
+/**
  * Health check — must answer 200 {ok:true} everywhere, local and serverless,
  * without touching the database (a DB outage should not look like a dead API).
  */
@@ -175,7 +191,11 @@ app.get('/api/health', (req, res) =>
     ok: true,
     env: process.env.VERCEL ? 'vercel' : process.env.NODE_ENV || 'development',
     storage: USE_PG ? 'postgres' : 'json-file',
+    persistent: USE_PG,
     seed: seedState,
+    ...(EPHEMERAL_STORAGE
+      ? { warning: 'DATABASE_URL is not set — data does not persist between requests' }
+      : {}),
     time: new Date().toISOString(),
   }),
 );
