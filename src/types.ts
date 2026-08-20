@@ -58,6 +58,12 @@ export interface Lead {
 export interface CrmSettings {
   /** Hide full phone numbers from agents/managers (admin sees full numbers) */
   hidePhonesFromAgents: boolean;
+  /** Block saving a lead whose email/phone already exists (default ON) */
+  duplicateControl: boolean;
+  /** Clients may close their own positions when ON; staff only when OFF */
+  manualClosing: boolean;
+  /** Keep a record of calls for quality control */
+  callRecording: boolean;
 }
 
 export interface TransactionRequest {

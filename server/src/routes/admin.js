@@ -8,6 +8,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
+import { logActivity } from './workspace.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -114,6 +115,23 @@ router.get('/users', auth('STAFF'), async (req, res) => {
 });
 
 // ------------------------------------------------------------
+//  ACTIVITY LOG OF A USER (View user logs in the CRM)
+// ------------------------------------------------------------
+router.get('/users/:id/activity', auth('STAFF'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid user id' });
+
+  // entries BY the user (logins etc.) and ABOUT the user (staff actions on them)
+  const rows = (await store.allWhere('activity', (a) =>
+    a.actorId === id || a.target === `user ${id}` || Number(a.target) === id || String(a.target).includes(`#${id}`),
+  ))
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .slice(0, 100);
+
+  res.json({ entries: rows });
+});
+
+// ------------------------------------------------------------
 //  CHANGE PASSWORD FOR ANY USER
 // ------------------------------------------------------------
 router.post('/users/:id/password', auth('ADMIN'), async (req, res) => {
@@ -129,6 +147,8 @@ router.post('/users/:id/password', auth('ADMIN'), async (req, res) => {
 
   const hash = await bcrypt.hash(String(newPassword), 10);
   await store.update('users', id, { password: hash });
+
+  logActivity({ actor: req.user, action: 'password_changed', target: `user ${id}`, details: user.email }).catch(() => undefined);
 
   res.json({ ok: true, message: `Password for ${user.email} has been changed` });
 });
@@ -148,6 +168,13 @@ router.patch('/users/:id', auth('ADMIN'), async (req, res) => {
   if (status && ['active', 'blocked', 'pending'].includes(status)) fields.status = status;
   if (role && ['CLIENT', 'MANAGER', 'ADMIN'].includes(role)) fields.role = role;
   await store.update('users', id, fields);
+
+  logActivity({
+    actor: req.user,
+    action: status === 'blocked' ? 'user_blocked' : status === 'active' ? 'user_unblocked' : 'user_updated',
+    target: `user ${id}`,
+    details: JSON.stringify(fields),
+  }).catch(() => undefined);
 
   res.json({ ok: true, message: 'User updated' });
 });
@@ -189,6 +216,8 @@ router.put('/users/:id/balance', auth('STAFF'), async (req, res) => {
     manual: true,
   });
 
+  logActivity({ actor: req.user, action: 'balance_set', target: `user ${id}`, details: `$${balance}` }).catch(() => undefined);
+
   res.json({ ok: true, balance: updated.balance, transaction });
 });
 
@@ -213,6 +242,7 @@ router.post('/users/:id/impersonate', auth('ADMIN'), async (req, res) => {
   );
 
   console.log(`[admin] ${req.user.email} signed in as ${target.email}`);
+  logActivity({ actor: req.user, action: 'impersonated', target: `user ${id}`, details: target.email }).catch(() => undefined);
 
   res.json({
     ok: true,

@@ -311,13 +311,24 @@ router.post('/messages', auth, async (req, res) => {
 
 router.get('/crm-settings', auth, staffOnly, async (req, res) => {
   const rec = await store.byField('settings', 'key', 'crmSettings');
-  res.json({ settings: { hidePhonesFromAgents: false, ...(rec?.value || {}) } });
+  res.json({ settings: {
+    hidePhonesFromAgents: false,
+    duplicateControl: true,   // block repeated leads by default
+    manualClosing: false,     // clients cannot close positions by default
+    callRecording: true,
+    ...(rec?.value || {}),
+  } });
 });
 
 router.put('/crm-settings', auth, async (req, res) => {
   if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Administrator access only' });
 
-  const value = { hidePhonesFromAgents: Boolean(req.body?.hidePhonesFromAgents) };
+  const value = {
+    hidePhonesFromAgents: Boolean(req.body?.hidePhonesFromAgents),
+    duplicateControl: req.body?.duplicateControl !== false,
+    manualClosing: Boolean(req.body?.manualClosing),
+    callRecording: req.body?.callRecording !== false,
+  };
   const rec = await store.byField('settings', 'key', 'crmSettings');
   const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
   if (rec) await store.update('settings', rec.id, payload);

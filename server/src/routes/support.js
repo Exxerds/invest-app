@@ -160,6 +160,7 @@ router.post('/messages', auth, async (req, res) => {
       kind: 'support',
       title: 'New support message',
       message: `${req.user.name}: ${rawText.slice(0, 80)}`,
+      userId: Number(clientId) || req.user.id,
       link: 'support',
     }).catch(() => undefined);
   } else {

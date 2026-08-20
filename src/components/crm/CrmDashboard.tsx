@@ -10,8 +10,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Investor, Lead, TransactionRequest, LeadStage, CrmSettings, ClientNote } from '../../types';
 import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
 import type { ApiKycDoc, ApiNotification, ApiCall, ApiAnalytics, ApiManagerStat } from '../../api';
-import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates, apiResetUserPortfolio, apiSupportConversations, apiSupportMessages, apiSendSupportMessage, apiSupportRead } from '../../api';
-import type { ApiSupportConversation, ApiSupportMessage } from '../../api';
+import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates, apiResetUserPortfolio, apiSupportConversations, apiSupportMessages, apiSendSupportMessage, apiSupportRead, apiUserActivity } from '../../api';
+import type { ApiActivityEntry, ApiSupportConversation, ApiSupportMessage } from '../../api';
 import type { ApiUser } from '../../api';
 import { sanitizeDecimal } from '../../utils/number';
 import {
@@ -113,7 +113,7 @@ interface CrmDashboardProps {
   onChangeUserPassword: (userId: number, newPassword: string) => Promise<void>;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
   settings: CrmSettings;
-  onToggleHidePhones: () => void;
+  onToggleSetting: (key: keyof CrmSettings) => void;
   onNotify: (message: string) => void;
   notes: ClientNote[];
   onAddNote: (clientId: string, text: string) => void;
@@ -217,7 +217,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onChangeUserPassword,
   onUpdateUserStatus,
   settings,
-  onToggleHidePhones,
+  onToggleSetting,
   onNotify,
   notes,
   onAddNote,
@@ -257,12 +257,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const profileRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
 
-  // Settings toggles (interactive)
-  const [rules, setRules] = useState({
-    duplicateControl: true,
-    manualClosing: false,
-    callRecording: true,
-  });
+  // Settings toggles live on the SERVER (crmSettings) — shared between all
+  // staff members and persistent across restarts. Nothing local anymore.
+  /** which client the Trading tab should open with (deep links) */
+  const [tradingFocusId, setTradingFocusId] = useState<string | null>(null);
   const [modules, setModules] = useState<Record<string, boolean>>({
     Spot: true, Futures: true, P2P: true, Binary: true, Staking: true,
     'AI Trading': false, Swap: false, 'Copy trading': false,
@@ -450,6 +448,36 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const openUser = (id: string) => {
     setSelectedUserId(id);
     setActiveTab('user-details');
+  };
+
+  /**
+   * Clicking a notification opens the screen the event belongs to —
+   * a support alert opens the chat (of that client, when known),
+   * a money request opens the money queue, a lead alert the pipeline, etc.
+   */
+  const handleNotificationNav = (n: ApiNotification) => {
+    switch (n.link) {
+      case 'leads':
+        setActiveTab('leads');
+        break;
+      case 'support':
+        setActiveTab('support');
+        if (n.userId) setSupportActiveClientId(n.userId);
+        break;
+      case 'trading':
+        if (n.userId) setTradingFocusId(String(n.userId));
+        setActiveTab('trading');
+        break;
+      case 'transactions':
+        setActiveTab(n.kind && n.kind.includes('deposit') ? 'deposits' : 'withdrawals');
+        break;
+      case 'user-details':
+        if (n.userId) openUser(String(n.userId));
+        else setActiveTab('users');
+        break;
+      default:
+        break;
+    }
   };
 
   const handleAddComment = () => {
@@ -649,7 +677,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         key={n.id}
                         onClick={() => {
                           onMarkNotificationsRead(n.id);
-                          if (n.link === 'user-details') setActiveTab('users');
+                          handleNotificationNav(n);
                           setBellOpen(false);
                         }}
                         className={`w-full flex items-start gap-2.5 px-4 py-2.5 text-left cursor-pointer hover:bg-[#F2EEDF] ${
@@ -879,6 +907,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
             <CrmTradesManager
               investors={investors}
               trades={trades}
+              focusInvestorId={tradingFocusId}
               onUpdateInvestorBalance={onUpdateInvestorBalance}
               onCreateTrade={onCreateTrade}
               onUpdateTrade={onUpdateTrade}
@@ -1027,7 +1056,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               )}
               phonesHidden={phonesHidden}
               onBack={() => setActiveTab('users')}
-              onGoTrading={() => setActiveTab('trading')}
+              onGoTrading={() => { setTradingFocusId(selectedUser.id); setActiveTab('trading'); }}
               onGoCalls={() => setActiveTab('calls')}
               onGoTransactions={() => setActiveTab('deposits')}
               onUpdateBalance={onUpdateInvestorBalance}
@@ -1485,7 +1514,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                       </div>
                     </div>
                     <button
-                      onClick={onToggleHidePhones}
+                      onClick={() => onToggleSetting('hidePhonesFromAgents')}
                       className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer shrink-0 ${
                         settings.hidePhonesFromAgents ? 'bg-[#B08B48]' : 'bg-[#213532]/20'
                       }`}
@@ -1498,7 +1527,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   </div>
                   {([
                     { key: 'duplicateControl' as const, t: 'Duplicate control (block repeated leads)', s: 'Every new contact is checked against the base' },
-                    { key: 'manualClosing' as const, t: 'Allow manual position closing by clients', s: 'When off, only admins can close positions' },
+                    { key: 'manualClosing' as const, t: 'Allow manual position closing by clients', s: 'When off, only staff can close positions' },
                     { key: 'callRecording' as const, t: 'Enable call recording', s: 'Store call records for quality control' },
                   ]).map(r => (
                     <div key={r.key} className="flex items-center justify-between bg-[#F5F2E9] border border-[#E4DECB] rounded-xl p-4">
@@ -1507,14 +1536,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <div className="text-[11px] text-[#213532]/70 mt-0.5">{r.s}</div>
                       </div>
                       <button
-                        onClick={() => setRules(p => ({ ...p, [r.key]: !p[r.key] }))}
+                        onClick={() => onToggleSetting(r.key)}
                         className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer shrink-0 ${
-                          rules[r.key] ? 'bg-[#B08B48]' : 'bg-[#213532]/20'
+                          settings[r.key] ? 'bg-[#B08B48]' : 'bg-[#213532]/20'
                         }`}
                       >
                         <span
                           className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"
-                          style={{ left: rules[r.key] ? 26 : 2 }}
+                          style={{ left: settings[r.key] ? 26 : 2 }}
                         />
                       </button>
                     </div>
@@ -1748,6 +1777,27 @@ const UserDetails: React.FC<{
   }, [kycDocuments]);
   const [dialogAmount, setDialogAmount] = useState('500');
   const [dialogText, setDialogText] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+
+  // "View user logs" — the real audit trail, fetched from the server
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logEntries, setLogEntries] = useState<ApiActivityEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const openLogs = async () => {
+    if (!account) return onNotify('This client does not have a platform account.');
+    setLogsOpen(true);
+    setLogsLoading(true);
+    try {
+      const r = await apiUserActivity(account.id);
+      setLogEntries(r.entries);
+    } catch {
+      setLogEntries([]);
+      onNotify('Could not load the activity log.');
+    } finally {
+      setLogsLoading(false);
+    }
+  };
 
   useEffect(() => {
     setManager(user.manager);
@@ -1793,7 +1843,7 @@ const UserDetails: React.FC<{
     {
       icon: FileText,
       label: 'View user logs',
-      onClick: () => onNotify('Activity log will be available in the analytics module.'),
+      onClick: openLogs,
     },
     { icon: PhoneCall, label: 'Call', onClick: onGoCalls },
     { icon: History, label: 'Call history', onClick: onGoCalls },
@@ -2408,13 +2458,27 @@ const UserDetails: React.FC<{
                 </Btn>
                 <Btn
                   variant="gold"
-                  disabled={!dialogText.trim()}
-                  onClick={() => {
-                    onNotify(`Message sent to ${shortName}`);
-                    setDialog(null);
+                  disabled={!dialogText.trim() || sendingMessage}
+                  onClick={async () => {
+                    if (!account) {
+                      onNotify('This client does not have a platform account — create it first via «Create client».');
+                      return;
+                    }
+                    setSendingMessage(true);
+                    try {
+                      // the message becomes part of the real support chat with this client
+                      await apiSendSupportMessage({ clientId: account.id, text: dialogText.trim() });
+                      onNotify(`Message sent to ${shortName}. It's in the support chat now.`);
+                      setDialog(null);
+                      setDialogText('');
+                    } catch (err) {
+                      onNotify(err instanceof Error ? err.message : 'Could not send the message');
+                    } finally {
+                      setSendingMessage(false);
+                    }
                   }}
                 >
-                  Send
+                  {sendingMessage ? 'Sending…' : 'Send'}
                 </Btn>
               </div>
             </>
@@ -2464,6 +2528,39 @@ const UserDetails: React.FC<{
               </div>
             </>
           )}
+        </Modal>
+      )}
+
+      {/* ===== MODAL: audit trail ("View user logs") ===== */}
+      {logsOpen && (
+        <Modal
+          onClose={() => setLogsOpen(false)}
+          title="User activity log"
+          subtitle={shortName}
+        >
+          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+            {logsLoading && (
+              <div className="text-center text-[12px] text-[#213532]/60 py-8">Loading…</div>
+            )}
+            {!logsLoading && logEntries.length === 0 && (
+              <div className="text-center text-[12px] text-[#213532]/60 py-8">
+                No activity recorded yet. Logins, balance and status changes will appear here.
+              </div>
+            )}
+            {logEntries.map(e => (
+              <div key={e.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-xl p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[12.5px] font-bold text-[#1C412C]">{e.action}</span>
+                  <span className="text-[10px] text-[#213532]/50 shrink-0">
+                    {new Date(e.createdAt).toLocaleString('en-US')}
+                  </span>
+                </div>
+                <div className="text-[11px] text-[#213532]/70 mt-1">
+                  {e.actorName} ({e.actorRole}){e.details ? ` · ${e.details}` : ''}
+                </div>
+              </div>
+            ))}
+          </div>
         </Modal>
       )}
     </div>

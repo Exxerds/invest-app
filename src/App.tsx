@@ -30,11 +30,9 @@ import {
   NewLeadModal, 
   NewProjectModal 
 } from './components/modals/OperationsModals';
-import { 
-  INITIAL_PROJECTS, 
-  INITIAL_REQUESTS,
-  INITIAL_MY_INVESTMENTS
-} from './data/mockData';
+
+// NOTE: no more mock/demo data — every list below starts empty and is
+// filled exclusively from the server (real accounts, real trades).
 import type { 
   Project, 
   Investor, 
@@ -65,8 +63,8 @@ export default function App() {
     if (isLoggedIn && activeTab !== 'landing') localStorage.setItem(TAB_KEY, activeTab);
   }, [activeTab, isLoggedIn]);
 
-  // Core State
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
+  // Core State — everything starts EMPTY; the server fills it (no demo data)
+  const [projects, setProjects] = useState<Project[]>([]);
   // Mirrors the server-side balance; only the back office can change it
   const [investorBalance, setInvestorBalance] = useState<number>(0);
   const [myTransactions, setMyTransactions] = useState<ApiTransaction[]>([]);
@@ -75,11 +73,15 @@ export default function App() {
   // Client records are derived from the database inside the CRM
   const [investors, setInvestors] = useState<Investor[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [requests] = useState<TransactionRequest[]>(INITIAL_REQUESTS);
 
   // CRM users (from backend) + privacy settings
   const [users, setUsers] = useState<ApiUser[]>([]);
-  const [settings, setSettings] = useState<CrmSettings>({ hidePhonesFromAgents: false });
+  const [settings, setSettings] = useState<CrmSettings>({
+    hidePhonesFromAgents: false,
+    duplicateControl: true,
+    manualClosing: false,
+    callRecording: true,
+  });
 
   // Agent notes are append-only: no edit/delete handlers exist by design
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
@@ -91,57 +93,9 @@ export default function App() {
   // Positions opened through the platform (persisted server-side)
   const [serverTrades, setServerTrades] = useState<ApiTrade[]>([]);
 
-  // Admin Trades State (Priority feature for CRM!)
-  const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([
-    {
-      id: 'trade-01',
-      investorId: 'inv-01',
-      asset: 'BTC/USDT (Crypto Spot)',
-      type: 'LONG',
-      amount: 15000,
-      entryPrice: 61400,
-      currentPrice: 64200,
-      leverage: 1,
-      pnl: 1450,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-02',
-      investorId: 'inv-01',
-      asset: 'ETH/USDT (Futures Long 10x)',
-      type: 'LONG',
-      amount: 10000,
-      entryPrice: 2680,
-      currentPrice: 2820,
-      leverage: 10,
-      pnl: 2100,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-03',
-      investorId: 'inv-01',
-      asset: 'XAU/USD — Gold (Precious Metal Spot)',
-      type: 'SPOT',
-      amount: 35000,
-      entryPrice: 2380,
-      currentPrice: 2415,
-      leverage: 1,
-      pnl: 4810,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-04',
-      investorId: 'inv-02',
-      asset: 'BTC/USDT (Futures Short 5x)',
-      type: 'SHORT',
-      amount: 25000,
-      entryPrice: 63500,
-      currentPrice: 62100,
-      leverage: 5,
-      pnl: 2750,
-      status: 'OPEN'
-    }
-  ]);
+  // Admin Trades — local layer for desk-created drafts. ALWAYS starts empty:
+  // real positions are read from the server (see combinedTrades below).
+  const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([]);
 
   // Modals state
   const [selectedProjectForInvest, setSelectedProjectForInvest] = useState<Project | null>(null);
@@ -332,26 +286,13 @@ export default function App() {
         } catch {
           /* ignore transient errors */
         }
-        // ...and their active investments
+        // ...and their active investments — the server is the single source
+        // of truth; an empty list honestly shows an empty portfolio.
         try {
           const invRes = await apiMyInvestments();
-          if (invRes.investments && invRes.investments.length > 0) {
-            setMyInvestments(invRes.investments);
-          } else {
-            const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
-            if (saved) {
-              setMyInvestments(JSON.parse(saved));
-            } else {
-              setMyInvestments(INITIAL_MY_INVESTMENTS);
-            }
-          }
+          setMyInvestments(invRes.investments || []);
         } catch {
-          const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
-          if (saved) {
-            setMyInvestments(JSON.parse(saved));
-          } else {
-            setMyInvestments(INITIAL_MY_INVESTMENTS);
-          }
+          /* keep the last known list on transient network errors */
         }
       }
       try {
@@ -967,18 +908,20 @@ export default function App() {
     }
   };
 
-  const handleToggleHidePhones = async () => {
+  /**
+   * All \"Privacy & access\" toggles persist through the same endpoint,
+   * so the choice survives restarts and applies to every staff member.
+   */
+  const handleToggleCrmSetting = async (key: keyof CrmSettings) => {
     if (currentUser?.role !== 'ADMIN') {
       showToast('Only an administrator can change this setting.', 'info');
       return;
     }
-    const next = !settings.hidePhonesFromAgents;
+    const next = { ...settings, [key]: !settings[key] };
     try {
       const res = await apiSaveCrmSettings(next);
       setSettings(res.settings);
-      showToast(next
-        ? '✔ Phone numbers are now hidden from agents.'
-        : '✔ Agents can see full phone numbers again.');
+      showToast('✔ Setting saved.');
     } catch (err) {
       showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the setting', 'info');
     }
@@ -1139,22 +1082,23 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
           <ProjectCatalog
             projects={projects}
+            canManageAssets={isStaff}
             onOpenInvestModal={(proj) => setSelectedProjectForInvest(proj)}
             onSwitchToCrm={() => setActiveTab('crm')}
           />
           </div>
         )}
 
-        {activeTab === 'crm' && (
+        {activeTab === 'crm' && isStaff && (
           <CrmDashboard
             leads={leads}
             onMoveLeadStage={handleMoveLeadStage}
             onOpenNewLeadModal={() => setIsNewLeadModalOpen(true)}
             investors={investors}
             onApproveKyc={handleApproveKyc}
-            requests={[
-              // Real deposit / withdrawal requests from the server
-              ...allTransactions.map(t => ({
+            requests={
+              // only real deposit / withdrawal requests from the server
+              allTransactions.map(t => ({
                 id: String(t.id),
                 investorId: `srv-${t.userId}`,
                 investorName: t.userName,
@@ -1168,9 +1112,8 @@ export default function App() {
                   minute: '2-digit',
                 }),
                 method: t.method,
-              })) as TransactionRequest[],
-              ...requests,
-            ]}
+              })) as TransactionRequest[]
+            }
             onPlaceCall={async (client, callerName) => {
               try {
                 const res = await apiStartCall(client.id, callerName);
@@ -1224,7 +1167,7 @@ export default function App() {
             onChangeUserPassword={handleChangeUserPassword}
             onUpdateUserStatus={handleUpdateUserStatus}
             settings={settings}
-            onToggleHidePhones={handleToggleHidePhones}
+            onToggleSetting={handleToggleCrmSetting}
             onNotify={showToast}
             notes={clientNotes}
             onAddNote={handleAddClientNote}

@@ -255,6 +255,17 @@ router.post('/:id/close', auth, async (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
+  // "Allow manual position closing by clients" — CRM setting, admin-managed.
+  // When OFF (default) a client cannot close positions: staff do it for them.
+  if (req.user.role === 'CLIENT') {
+    const rec = await store.byField('settings', 'key', 'crmSettings');
+    if (!rec?.value?.manualClosing) {
+      return res.status(403).json({
+        error: 'Manual closing is disabled on this platform — ask your manager to close the position',
+      });
+    }
+  }
+
   if (existing.status === 'CLOSED') {
     return res.status(400).json({ error: 'Position is already closed' });
   }

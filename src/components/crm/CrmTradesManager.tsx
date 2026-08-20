@@ -31,6 +31,9 @@ export interface AdminTrade {
 interface CrmTradesManagerProps {
   investors: Investor[];
   trades: AdminTrade[];
+  /** deep link: parent tells us WHICH client to open with (e.g. from a
+   *  client card, user details, or a staff notification) */
+  focusInvestorId?: string | null;
   onUpdateInvestorBalance: (investorId: string, newBalance: number) => void;
   onCreateTrade: (trade: Omit<AdminTrade, 'id' | 'status'>) => void;
   onUpdateTrade: (tradeId: string, patch: Partial<AdminTrade>) => void;
@@ -62,6 +65,7 @@ const Modal: React.FC<{ title: string; subtitle?: string; onClose: () => void; c
 export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
   investors,
   trades,
+  focusInvestorId,
   onUpdateInvestorBalance,
   onCreateTrade,
   onUpdateTrade,
@@ -72,6 +76,19 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
 
   const [balanceInputStr, setBalanceInputStr] = useState<string>(String(selectedInvestor?.balance || 0));
   const [isEditingBalance, setIsEditingBalance] = useState(false);
+
+  // Deep link: parent asked to open the Trading tab with a SPECIFIC client
+  // (from a client card / user details / staff notification). Honour it
+  // instead of silently landing on the first client in the list.
+  useEffect(() => {
+    if (!focusInvestorId) return;
+    const target = investors.find(i => i.id === focusInvestorId);
+    if (target) {
+      setSelectedInvestorId(target.id);
+      setBalanceInputStr(String(target.balance ?? 0));
+      setIsEditingBalance(false);
+    }
+  }, [focusInvestorId, investors]);
 
   /**
    * The client list arrives from the server after mount (and can change

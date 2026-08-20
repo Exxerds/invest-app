@@ -2,6 +2,7 @@
 //  API client — frontend talks to the server via /api
 //  (Vite proxies /api → http://localhost:4000)
 // ============================================================
+import type { CrmSettings } from './types';
 
 export interface ApiUser {
   id: number;
@@ -569,13 +570,31 @@ export const apiSendMessage = (text: string, clientId?: number) =>
   });
 
 export const apiCrmSettings = () =>
-  request<{ settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
+  request<{ settings: CrmSettings }>('/workspace/crm-settings', {
     headers: authHeader(),
   });
 
-export const apiSaveCrmSettings = (hidePhonesFromAgents: boolean) =>
-  request<{ ok: true; settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
-    method: 'PUT', headers: authHeader(), body: JSON.stringify({ hidePhonesFromAgents }),
+export const apiSaveCrmSettings = (settings: CrmSettings) =>
+  request<{ ok: true; settings: CrmSettings }>('/workspace/crm-settings', {
+    method: 'PUT', headers: authHeader(), body: JSON.stringify(settings),
+  });
+
+// ---------- audit log ("View user logs") ----------
+
+export interface ApiActivityEntry {
+  id: number;
+  actorId: number | null;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  target: string;
+  details: string;
+  createdAt: string;
+}
+
+export const apiUserActivity = (userId: number) =>
+  request<{ entries: ApiActivityEntry[] }>(`/admin/users/${userId}/activity`, {
+    headers: authHeader(),
   });
 
 export const apiClientStatuses = () =>

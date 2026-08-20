@@ -9,6 +9,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import * as store from '../db.js';
 import { sendMail, letterLayout, publicUrl } from '../mailer.js';
+import { notify } from '../notifications.js';
+import { logActivity } from './workspace.js';
 
 const router = Router();
 
@@ -113,6 +115,38 @@ router.post('/register', async (req, res) => {
       created_at: new Date().toISOString()
     });
 
+    // every registration automatically lands in the CRM lead pipeline
+    try {
+      const settingsRec = await store.byField('settings', 'key', 'crmSettings');
+      const dupControl = settingsRec?.value?.duplicateControl !== false; // ON by default
+      const alreadyLead = await store.allWhere('leads', (l) => String(l.email || '').toLowerCase() === lower);
+      if (!dupControl || alreadyLead.length === 0) {
+        await store.insert('leads', {
+          name: user.name,
+          phone: '',
+          email: user.email,
+          potentialAmount: 0,
+          stage: 'new',
+          notes: 'Registered on the platform (self sign-up)',
+          source: 'Registration',
+          manager: '',
+          comments: [],
+          createdBy: 'Platform',
+          createdAt: new Date().toISOString(),
+        });
+        notify({
+          audience: 'staff',
+          kind: 'lead_registered',
+          title: 'New registration',
+          message: `${user.name} (${user.email}) created an account on the platform.`,
+          link: 'leads',
+        }).catch(() => undefined);
+      }
+    } catch (e) {
+      // never let the lead pipeline break a registration
+      console.error('[register] lead pipeline skipped:', e && e.message);
+    }
+
     const token = await createToken(user.id, 'confirm_email');
     const link = `${publicUrl(req)}/confirm-email?token=${token}`;
 
@@ -174,6 +208,9 @@ router.post('/login', async (req, res) => {
   if (user.status === 'blocked') {
     return res.status(403).json({ error: 'Account is blocked. Contact support.' });
   }
+
+  // audit trail entry — visible in the CRM "View user logs" dialog
+  logActivity({ actor: user, action: 'login', target: `user ${user.id}`, details: '' }).catch(() => undefined);
 
   res.json({ ok: true, token: signJwt(user), user: publicUser(user) });
 });

@@ -107,6 +107,7 @@ router.post('/deposit', auth, async (req, res) => {
 
   await notify({
     audience: 'staff',
+    userId: req.user.id,
     kind: 'deposit_request',
     title: 'New deposit request',
     message: `${req.user.name} requested a $${amount.toLocaleString('en-US')} deposit via ${method}.`,
@@ -159,6 +160,7 @@ router.post('/withdraw', auth, async (req, res) => {
 
   await notify({
     audience: 'staff',
+    userId: req.user.id,
     kind: 'withdrawal_request',
     title: 'New withdrawal request',
     message: `${req.user.name} requested a $${amount.toLocaleString('en-US')} withdrawal.`,
