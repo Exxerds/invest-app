@@ -21,16 +21,23 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 async function auth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not authorized' });
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await store.byId('users', payload.userId);
-    if (!user) return res.status(401).json({ error: 'User not found' });
-    req.user = user;
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
-    res.status(401).json({ error: 'Session expired, sign in again' });
+    return res.status(401).json({ error: 'Session expired, sign in again' });
   }
-}
+  let user;
+  try {
+    user = await store.byId('users', payload.userId);
+  } catch (e) {
+    console.error('[auth] DB error:', e.message);
+    return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
+  }
+    if (!user) return res.status(401).json({ error: 'User not found' });
+        req.user = user;
+    next();
+  }
 
 const isStaff = (u) => u.role === 'ADMIN' || u.role === 'MANAGER';
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;

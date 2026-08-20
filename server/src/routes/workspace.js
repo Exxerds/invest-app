@@ -18,6 +18,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
+import { readCrmSettings, writeCrmSettings } from '../crmSettings.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -25,17 +26,24 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 async function auth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not authorized' });
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await store.byId('users', payload.userId);
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Session expired, sign in again' });
+  }
+  let user;
+  try {
+    user = await store.byId('users', payload.userId);
+  } catch (e) {
+    console.error('[auth] DB error:', e.message);
+    return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
+  }
     if (!user) return res.status(401).json({ error: 'User not found' });
     if (user.status === 'blocked') return res.status(403).json({ error: 'Account is blocked' });
-    req.user = user;
+        req.user = user;
     next();
-  } catch {
-    res.status(401).json({ error: 'Session expired, sign in again' });
   }
-}
 
 const isStaff = (u) => u.role === 'ADMIN' || u.role === 'MANAGER';
 const staffOnly = (req, res, next) =>
@@ -310,21 +318,27 @@ router.post('/messages', auth, async (req, res) => {
 /* ---------------- CRM preferences ---------------- */
 
 router.get('/crm-settings', auth, staffOnly, async (req, res) => {
-  const rec = await store.byField('settings', 'key', 'crmSettings');
-  res.json({ settings: { hidePhonesFromAgents: false, ...(rec?.value || {}) } });
+  const settings = await readCrmSettings();
+  res.json({ settings });
 });
 
 router.put('/crm-settings', auth, async (req, res) => {
   if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Administrator access only' });
 
-  const value = { hidePhonesFromAgents: Boolean(req.body?.hidePhonesFromAgents) };
-  const rec = await store.byField('settings', 'key', 'crmSettings');
-  const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
-  if (rec) await store.update('settings', rec.id, payload);
-  else await store.insert('settings', { key: 'crmSettings', ...payload });
+  const patch = {};
+  if (req.body?.hidePhonesFromAgents !== undefined) patch.hidePhonesFromAgents = Boolean(req.body.hidePhonesFromAgents);
+  if (req.body?.manualClosing !== undefined) patch.manualClosing = Boolean(req.body.manualClosing);
+  if (req.body?.duplicateControl !== undefined) patch.duplicateControl = Boolean(req.body.duplicateControl);
+  if (req.body?.callRecording !== undefined) patch.callRecording = Boolean(req.body.callRecording);
+  // legacy: allow full object via settings
+  if (req.body?.settings && typeof req.body.settings === 'object') {
+    Object.assign(patch, req.body.settings);
+  }
+  // also support direct flags
+  const settings = await writeCrmSettings(patch, req.user.name);
 
-  await logActivity({ actor: req.user, action: 'settings_changed', target: 'crmSettings', details: JSON.stringify(value) });
-  res.json({ ok: true, settings: value });
+  await logActivity({ actor: req.user, action: 'settings_changed', target: 'crmSettings', details: JSON.stringify(settings) });
+  res.json({ ok: true, settings });
 });
 
 /* ---------------- per-client status ---------------- */

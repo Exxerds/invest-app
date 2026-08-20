@@ -19,17 +19,24 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 async function auth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not authorized' });
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await store.byId('users', payload.userId);
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Session expired, sign in again' });
+  }
+  let user;
+  try {
+    user = await store.byId('users', payload.userId);
+  } catch (e) {
+    console.error('[auth] DB error:', e.message);
+    return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
+  }
     if (!user) return res.status(401).json({ error: 'User not found' });
     if (user.status === 'blocked') return res.status(403).json({ error: 'Account is blocked' });
-    req.user = user;
+        req.user = user;
     next();
-  } catch {
-    res.status(401).json({ error: 'Session expired, sign in again' });
   }
-}
 
 const isStaff = (u) => u.role === 'ADMIN' || u.role === 'MANAGER';
 const clean = (v, max = 2000) => String(v ?? '').slice(0, max);
@@ -49,6 +56,10 @@ router.get('/conversations', auth, async (req, res) => {
     byClient.get(cid).push(m);
   }
 
+  // one bulk fetch instead of N byId queries
+  const allUsers = await store.all('users');
+  const userMap = new Map(allUsers.map(u => [Number(u.id), u]));
+
   const result = [];
   for (const [clientId, msgs] of byClient) {
     // sort by createdAt ascending for correct first/last
@@ -58,7 +69,7 @@ router.get('/conversations', auth, async (req, res) => {
     const unreadForStaff = msgs.filter(m => m.from === 'client' && !m.readByStaff).length;
     const lastPreview = String(last?.text || '').slice(0, 60);
 
-    const clientUser = await store.byId('users', clientId);
+    const clientUser = userMap.get(Number(clientId));
     let name = clientUser?.name || `Client #${clientId}`;
     let email = clientUser?.email || '';
     let online = false;
@@ -103,12 +114,10 @@ router.get('/messages', auth, async (req, res) => {
     if (clientUser.role !== 'CLIENT') return res.status(400).json({ error: 'Invalid client' });
   }
 
-  const all = await store.all('messages');
-  const filtered = all
-    .filter(m => Number(m.clientId) === Number(targetId))
-    .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
-
-  res.json({ messages: filtered });
+  const filtered = await store.manyByField('messages', 'clientId', targetId);
+  // manyByField uses string equality, ensure also numeric match for legacy records
+  const sorted = filtered.sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+  res.json({ messages: sorted });
 });
 
 /* ---------------- POST /messages ---------------- */
@@ -182,8 +191,7 @@ router.post('/read', auth, async (req, res) => {
     if (!Number.isFinite(clientId)) return res.status(400).json({ error: 'Invalid clientId' });
   }
 
-  const all = await store.all('messages');
-  const toMark = all.filter(m => Number(m.clientId) === Number(clientId));
+  const toMark = await store.manyByField('messages', 'clientId', clientId);
 
   let updated = 0;
   for (const m of toMark) {

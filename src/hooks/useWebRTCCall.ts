@@ -328,6 +328,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
          */
         let tries = 0;
         const retry = window.setInterval(async () => {
+          if (document.hidden) return;
           tries += 1;
           const pcNow = pcRef.current;
           if (!pcNow || pcNow.remoteDescription || tries > 15) {
@@ -345,6 +346,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
 
       // Poll for the other side's SDP / ICE
       pollRef.current = window.setInterval(async () => {
+        if (document.hidden) return;
         if (!pcRef.current) return;
         try {
           const { signals, lastId } = await apiReadSignals(callId, lastSignalRef.current, channel);

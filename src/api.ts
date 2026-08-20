@@ -26,6 +26,15 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
@@ -39,22 +48,28 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         ...(options.headers as Record<string, string> | undefined),
       },
     });
-  } catch {
+  } catch (e) {
     // Network failure → the API server (npm run dev) is probably not running
-    throw new Error('Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".');
+    const msg = e instanceof Error ? e.message : 'Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".';
+    throw new ApiError(msg.includes('Cannot reach') ? msg : 'Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".', 0);
   }
   // 502/503/504 come from the Vite proxy when the API server (:4000) is down.
   // The body is an HTML error page, not JSON — show a human-readable hint instead.
   if (res.status === 502 || res.status === 503 || res.status === 504) {
-    throw new Error(
-      'The API server is not running. Open a terminal in the project folder and run «npm run dev» — ' +
-        'wait for the line "Oak Haven Yield API server running", then try again.',
+    const text = await res.text().catch(() => '');
+    // if server returned JSON with error, try to parse
+    let json: any = {};
+    try { json = JSON.parse(text); } catch {}
+    const serverMsg = json?.error;
+    throw new ApiError(
+      serverMsg || 'The API server is not running. Open a terminal in the project folder and run «npm run dev» — wait for the line "Oak Haven Yield API server running", then try again.',
+      res.status,
     );
   }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error || `Server error (${res.status})`);
+    throw new ApiError((data as { error?: string }).error || `Server error (${res.status})`, res.status);
   }
   return data as T;
 }
@@ -569,13 +584,13 @@ export const apiSendMessage = (text: string, clientId?: number) =>
   });
 
 export const apiCrmSettings = () =>
-  request<{ settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
+  request<{ settings: { hidePhonesFromAgents: boolean; manualClosing?: boolean; duplicateControl?: boolean; callRecording?: boolean } }>('/workspace/crm-settings', {
     headers: authHeader(),
   });
 
-export const apiSaveCrmSettings = (hidePhonesFromAgents: boolean) =>
-  request<{ ok: true; settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
-    method: 'PUT', headers: authHeader(), body: JSON.stringify({ hidePhonesFromAgents }),
+export const apiSaveCrmSettings = (hidePhonesFromAgents: boolean, extra?: Record<string, boolean>) =>
+  request<{ ok: true; settings: { hidePhonesFromAgents: boolean; manualClosing?: boolean } }>('/workspace/crm-settings', {
+    method: 'PUT', headers: authHeader(), body: JSON.stringify({ hidePhonesFromAgents, ...(extra || {}) }),
   });
 
 export const apiClientStatuses = () =>

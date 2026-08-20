@@ -26,17 +26,24 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 async function auth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not authorized' });
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await store.byId('users', payload.userId);
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Session expired, sign in again' });
+  }
+  let user;
+  try {
+    user = await store.byId('users', payload.userId);
+  } catch (e) {
+    console.error('[auth] DB error:', e.message);
+    return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
+  }
     if (!user) return res.status(401).json({ error: 'User not found' });
     if (user.status === 'blocked') return res.status(403).json({ error: 'Account is blocked' });
-    req.user = user;
+        req.user = user;
     next();
-  } catch {
-    res.status(401).json({ error: 'Session expired, sign in again' });
   }
-}
 
 const isStaff = (u) => u.role === 'ADMIN' || u.role === 'MANAGER';
 

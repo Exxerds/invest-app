@@ -29,6 +29,7 @@ import statementRoutes from './routes/statements.js';
 import settingsRoutes from './routes/settings.js';
 import supportRoutes from './routes/support.js';
 import { seedUsers } from './seed.js';
+import { describeConnection, probeConnection, USE_PG, describeBackend, ensureSchema } from './db.js';
 
 dotenv.config();
 
@@ -99,6 +100,30 @@ app.use(
 
 app.use(express.json({ limit: '12mb' })); // KYC uploads travel as data-URLs
 
+// ---------- request timeout middleware ----------
+// If the DB is unreachable the handler would hang until Vercel returns 504.
+// This cuts it early with a clear 503 so the client can retry.
+const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 20000);
+app.use((req, res, next) => {
+  // only for API routes
+  if (!req.path.startsWith('/api/')) return next();
+  let finished = false;
+  res.on('finish', () => { finished = true; });
+  res.on('close', () => { finished = true; });
+  const timer = setTimeout(() => {
+    if (!finished && !res.headersSent) {
+      res.status(503).json({ error: 'The server could not reach its database in time. Please try again in a few seconds.' });
+    }
+  }, REQUEST_TIMEOUT_MS);
+  // clear timer when response finishes
+  const origEnd = res.end;
+  res.end = function (...args) {
+    clearTimeout(timer);
+    return origEnd.apply(this, args);
+  };
+  next();
+});
+
 /**
  * Basic brute-force protection on the auth endpoints.
  * Dependency-free (pure JS) so it works on any host.
@@ -136,7 +161,103 @@ function sweepAttempts() {
   for (const [ip, rec] of attempts) if (now - rec.start > WINDOW_MS) attempts.delete(ip);
 }
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+// ---------- health checks ----------
+let seedStatus = 'pending';
+let seedPromise = null;
+async function ensureSeeded() {
+  if (seedPromise) return seedPromise;
+  seedPromise = (async () => {
+    try {
+      if (USE_PG) {
+        await ensureSchema();
+      }
+      await seedUsers();
+      seedStatus = 'ready';
+    } catch (e) {
+      seedStatus = `failed: ${e.message || String(e)}`;
+      // allow retry on next request
+      seedPromise = null;
+      throw e;
+    }
+    return seedStatus;
+  })();
+  return seedPromise;
+}
+
+app.get('/api/health', async (req, res) => {
+  let seed = seedStatus;
+  // try to seed if not ready, but don't fail the health endpoint entirely
+  if (seed !== 'ready') {
+    try {
+      await ensureSeeded();
+      seed = seedStatus;
+    } catch (e) {
+      seed = `failed: ${e.message || String(e)}`;
+    }
+  }
+  res.json({
+    ok: true,
+    time: new Date().toISOString(),
+    backend: describeBackend(),
+    persistent: USE_PG,
+    seed,
+    db: describeConnection(),
+  });
+});
+
+app.get('/api/health/db', async (req, res) => {
+  const db = describeConnection();
+  // fast probe first — if DB is down we answer immediately with hint
+  const probe = await probeConnection(6000);
+  if (!probe.ok) {
+    const pooled = db.pooled;
+    const isNeon = db.host && db.host.includes('neon.tech');
+    let hint = null;
+    if (isNeon && !pooled) {
+      hint = 'Host is direct Neon endpoint without -pooler. Use pooled connection string (add -pooler to hostname) or set PG_CONNECT_TIMEOUT_MS higher.';
+    } else if (!pooled && isNeon) {
+      hint = 'Ensure DATABASE_URL uses pooled endpoint (-pooler) for serverless.';
+    } else if (!USE_PG) {
+      hint = 'No DATABASE_URL configured — using JSON file (local dev).';
+    } else {
+      hint = 'Database is waking up or unreachable — retry in a few seconds. If host ends with .neon.tech without -pooler, switch to pooled host.';
+    }
+    return res.status(503).json({
+      ok: false,
+      error: probe.error,
+      code: probe.code,
+      ms: probe.ms,
+      db,
+      hint,
+      persistent: USE_PG,
+      seed: seedStatus,
+    });
+  }
+  // probe ok — now ensure seeded
+  let seed = seedStatus;
+  try {
+    await ensureSeeded();
+    seed = seedStatus;
+  } catch (e) {
+    return res.status(503).json({
+      ok: false,
+      error: e.message || String(e),
+      code: e.code || null,
+      ms: probe.ms,
+      db,
+      hint: 'Seeding failed after DB became reachable',
+      persistent: USE_PG,
+      seed: `failed: ${e.message || String(e)}`,
+    });
+  }
+  res.json({
+    ok: true,
+    ms: probe.ms,
+    db: { ...db, database: probe.db || db.database },
+    persistent: USE_PG,
+    seed,
+  });
+});
 
 /**
  * PRODUCTION: serve the built front-end from the same origin.
@@ -168,7 +289,7 @@ if (HAS_BUILD) {
 app.get('/', (req, res, next) => {
   if (HAS_BUILD) return next(); // production: static index.html handles it
   res.type('html').send(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>Oak Haven Yield API</title>
+<html lang="en"><head><meta charset="utf-8\"><title>Oak Haven Yield API</title>
 <style>
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
        background:#0a0b0e;color:#e2e8f0;font-family:system-ui,Segoe UI,Arial,sans-serif}
@@ -239,7 +360,9 @@ async function start() {
       process.exit(1);
     }
 
-    await seedUsers();
+    await ensureSeeded().catch(err => {
+      console.warn('[server] Initial seed failed (will retry on health check):', err.message);
+    });
 
     // '::' accepts both IPv6 (::1) and IPv4 (127.0.0.1) on all platforms
     const server = app.listen(PORT, '::', () => {
@@ -256,7 +379,7 @@ async function start() {
         console.error(`[server] ERROR: port ${PORT} is already in use.`);
         console.error('[server] Another copy of the API server is still running.');
         console.error('[server] Fix it:');
-        console.error('[server]   Windows → open Task Manager and end all "Node.js" processes,');
+        console.error('[server]   Windows → open Task Manager and end all \"Node.js\" processes,');
         console.error('[server]             or run:  npx kill-port 4000');
         console.error('[server]   macOS/Linux → run:  npx kill-port 4000');
         console.error('[server] Then start again with «npm run dev».');

@@ -31,6 +31,7 @@ export interface AdminTrade {
 interface CrmTradesManagerProps {
   investors: Investor[];
   trades: AdminTrade[];
+  initialInvestorId?: string;
   onUpdateInvestorBalance: (investorId: string, newBalance: number) => void;
   onCreateTrade: (trade: Omit<AdminTrade, 'id' | 'status'>) => void;
   onUpdateTrade: (tradeId: string, patch: Partial<AdminTrade>) => void;
@@ -62,16 +63,37 @@ const Modal: React.FC<{ title: string; subtitle?: string; onClose: () => void; c
 export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
   investors,
   trades,
+  initialInvestorId,
   onUpdateInvestorBalance,
   onCreateTrade,
   onUpdateTrade,
   onCloseTrade,
 }) => {
-  const [selectedInvestorId, setSelectedInvestorId] = useState<string>(investors[0]?.id || 'inv-01');
+  const [selectedInvestorId, setSelectedInvestorId] = useState<string>(() => {
+    if (initialInvestorId) {
+      const cand = investors.find(i => i.id === initialInvestorId || i.id === `acc-${initialInvestorId}` || String(i.id).replace(/^acc-/, '') === String(initialInvestorId));
+      if (cand) return cand.id;
+      if (/^\d+$/.test(String(initialInvestorId))) return `acc-${initialInvestorId}`;
+      return String(initialInvestorId);
+    }
+    return investors[0]?.id || 'inv-01';
+  });
   const selectedInvestor = investors.find(i => i.id === selectedInvestorId) || investors[0];
 
   const [balanceInputStr, setBalanceInputStr] = useState<string>(String(selectedInvestor?.balance || 0));
   const [isEditingBalance, setIsEditingBalance] = useState(false);
+
+  // Sync when initialInvestorId changes and investors have loaded (otherwise preselection is lost)
+  useEffect(() => {
+    if (!initialInvestorId) return;
+    if (investors.length === 0) return;
+    const bare = String(initialInvestorId).replace(/^acc-/, '');
+    const found = investors.find(i => i.id === initialInvestorId || i.id === `acc-${bare}` || String(i.id).replace(/^acc-/, '') === bare);
+    if (found && found.id !== selectedInvestorId) {
+      setSelectedInvestorId(found.id);
+      setBalanceInputStr(String(found.balance ?? 0));
+    }
+  }, [initialInvestorId, investors]);
 
   /**
    * The client list arrives from the server after mount (and can change
@@ -147,6 +169,16 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
     });
     setMarginManual(!!t.margin || !!t.liquidationPrice);
   };
+
+  function livePnlCalc(t: AdminTrade): number {
+    if (t.status !== 'OPEN') return Number(t.pnl) || 0;
+    const entry = Number(t.entryPrice) || 0;
+    const cur = Number(t.currentPrice) || 0;
+    if (!entry || !cur) return Number(t.pnl) || 0;
+    const units = entry ? Number(t.amount) / entry : 0;
+    const dir = t.type === 'SHORT' ? -1 : 1;
+    return (cur - entry) * units * dir;
+  }
 
   const clientTrades = trades.filter(t => t.investorId === selectedInvestorId);
 
@@ -284,10 +316,14 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                     <div className="text-[11px] text-[#213532]/60">Leverage {t.leverage}x</div>
                   </Td>
                   <Td>
-                    <span className={`font-extrabold ${t.pnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {t.pnl >= 0 ? '+' : ''}
-                      {t.pnl.toLocaleString('en-US')} $
-                    </span>
+                    {(() => {
+                      const lp = livePnlCalc(t);
+                      return (
+                        <span className={`font-extrabold ${lp >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          {lp >= 0 ? '+' : ''}{lp.toLocaleString('en-US', { maximumFractionDigits: 2 })} $
+                        </span>
+                      );
+                    })()}
                   </Td>
                   <Td>
                     <Badge tone={t.status === 'OPEN' ? 'gold' : 'gray'}>{t.status}</Badge>

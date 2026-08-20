@@ -17,7 +17,7 @@ const KEEP = 200;
  * Create a notification.
  * @param {object} n
  * @param {'staff'|'client'} n.audience  who should see it
- * @param {number} [n.userId]  the client it concerns (required for audience "client")
+ * @param {number} [n.userId]  the client it concerns (required for audience \"client\")
  * @param {string} n.kind      machine-readable event type
  * @param {string} n.title     short headline
  * @param {string} n.message   human-readable text
@@ -53,8 +53,14 @@ export async function notify({ audience, userId, kind, title, message, link }) {
 /** Notifications a given user is allowed to see, newest first */
 export async function listFor(user) {
   const isStaff = user.role === 'ADMIN' || user.role === 'MANAGER';
-  const rows = await store.allWhere('notifications', (n) =>
-    isStaff ? n.audience === 'staff' : n.audience === 'client' && n.userId === user.id,
-  );
-  return rows.sort((a, b) => b.id - a.id);
+  if (isStaff) {
+    // one indexed query instead of full table scan
+    const rows = await store.manyByField('notifications', 'audience', 'staff');
+    return rows.sort((a, b) => b.id - a.id);
+  } else {
+    const rows = await store.manyByField('notifications', 'userId', user.id);
+    // manyByField returns only those where userId === id, then filter audience
+    const filtered = rows.filter(n => n.audience === 'client');
+    return filtered.sort((a, b) => b.id - a.id);
+  }
 }

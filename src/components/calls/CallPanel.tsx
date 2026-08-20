@@ -73,7 +73,7 @@ export const CallDock: React.FC<DockProps> = ({
 
   useEffect(() => {
     if (phase !== 'active') return;
-    const t = setInterval(() => setSeconds(s => s + 1), 1000);
+    const t = setInterval(() => { if (document.hidden) return; setSeconds(s => s + 1); }, 1000);
     return () => clearInterval(t);
   }, [phase]);
 
