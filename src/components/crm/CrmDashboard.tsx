@@ -10,7 +10,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Investor, Lead, TransactionRequest, LeadStage, CrmSettings, ClientNote } from '../../types';
 import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
 import type { ApiKycDoc, ApiNotification, ApiCall, ApiAnalytics, ApiManagerStat } from '../../api';
-import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates, apiResetUserPortfolio, apiSupportConversations, apiSupportMessages, apiSendSupportMessage, apiSupportRead } from '../../api';
+import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates, apiResetUserPortfolio, apiSupportConversations, apiSupportMessages, apiSendSupportMessage, apiSupportRead, apiSaveCrmSettings, apiCrmSettings } from '../../api';
 import type { ApiSupportConversation, ApiSupportMessage } from '../../api';
 import type { ApiUser } from '../../api';
 import { sanitizeDecimal } from '../../utils/number';
@@ -247,6 +247,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const [openGroup, setOpenGroup] = useState<string | null>('Users');
   const [searchInvestor, setSearchInvestor] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string>(investors[0]?.id ?? '');
+  const [tradingClientId, setTradingClientId] = useState<string | undefined>(undefined);
 
   // Lead import and client creation modals
   const [isCreateClientOpen, setIsCreateClientOpen] = useState(false);
@@ -303,6 +304,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
     if (activeTab !== 'support' && activeTab !== 'dashboard') return;
     let alive = true;
     const pull = async () => {
+      if (document.hidden) return;
       try {
         const r = await apiSupportConversations();
         if (!alive) return;
@@ -310,7 +312,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
       } catch { /* ignore */ }
     };
     pull();
-    const t = setInterval(pull, 3000);
+    const t = setInterval(pull, 8000);
     return () => { alive = false; clearInterval(t); };
   }, [activeTab]);
 
@@ -319,6 +321,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
     if (activeTab !== 'support' || supportActiveClientId == null) return;
     let alive = true;
     const pull = async () => {
+      if (document.hidden) return;
       try {
         const r = await apiSupportMessages(supportActiveClientId);
         if (!alive) return;
@@ -327,7 +330,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
       } catch { /* ignore */ }
     };
     pull();
-    const t = setInterval(pull, 3000);
+    const t = setInterval(pull, 5000);
     return () => { alive = false; clearInterval(t); };
   }, [activeTab, supportActiveClientId]);
 
@@ -396,6 +399,29 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   useEffect(() => {
     if (!isAdmin && ADMIN_ONLY_TABS.includes(activeTab)) setActiveTab('dashboard');
   }, [isAdmin, activeTab]);
+
+  const canManageTrades = isAdmin || !!(settings as any).manualClosing;
+  const openTradingFor = (investorId?: string) => {
+    if (!canManageTrades) {
+      onNotify('Position management is disabled by the administrator (Settings → Allow manual position closing)');
+      return;
+    }
+    if (investorId) {
+      const bare = String(investorId).replace(/^acc-/, '');
+      setTradingClientId(bare);
+    } else {
+      setTradingClientId(undefined);
+    }
+    setActiveTab('trading');
+  };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!canManageTrades && activeTab === 'trading') setActiveTab('dashboard');
+  }, [canManageTrades, activeTab]);
 
 
   /**
@@ -628,14 +654,16 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 <button
                   onClick={() => {
                     if (hasChildren) setOpenGroup(groupOpen ? null : item.label);
+                    else if (item.id === 'trading') openTradingFor();
                     else setActiveTab(item.id);
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all cursor-pointer ${
-                    isActive ? 'bg-[#B08B48] text-white font-bold shadow-sm' : 'text-[#F5F2E9]/75 hover:text-white hover:bg-white/10'
+                    item.id === 'trading' && !canManageTrades ? 'opacity-50 cursor-not-allowed text-[#F5F2E9]/40' : isActive ? 'bg-[#B08B48] text-white font-bold shadow-sm' : 'text-[#F5F2E9]/75 hover:text-white hover:bg-white/10'
                   }`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate">{item.label}</span>
+                  {item.id === 'trading' && !canManageTrades && <Lock className="w-3 h-3 ml-auto text-[#F5F2E9]/40" />}
                   {item.id === 'withdrawals' && pendingRequestsCount > 0 && (
                     <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-bold">
                       {pendingRequestsCount}
@@ -977,6 +1005,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
             <CrmTradesManager
               investors={investors}
               trades={trades}
+              initialInvestorId={tradingClientId}
               onUpdateInvestorBalance={onUpdateInvestorBalance}
               onCreateTrade={onCreateTrade}
               onUpdateTrade={onUpdateTrade}
@@ -1138,7 +1167,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               )}
               phonesHidden={phonesHidden}
               onBack={() => setActiveTab('users')}
-              onGoTrading={() => setActiveTab('trading')}
+              onGoTrading={() => openTradingFor(selectedUser.id)}
               onGoCalls={() => setActiveTab('calls')}
               onGoTransactions={() => setActiveTab('deposits')}
               onUpdateBalance={onUpdateInvestorBalance}
@@ -1615,7 +1644,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   </div>
                   {([
                     { key: 'duplicateControl' as const, t: 'Duplicate control (block repeated leads)', s: 'Every new contact is checked against the base' },
-                    { key: 'manualClosing' as const, t: 'Allow manual position closing by clients', s: 'When off, only admins can close positions' },
+                    { key: 'manualClosing' as const, t: 'Allow manual position closing (clients & managers)', s: 'When off, only an administrator can open, edit or close positions — managers cannot open the Trading screen' },
                     { key: 'callRecording' as const, t: 'Enable call recording', s: 'Store call records for quality control' },
                   ]).map(r => (
                     <div key={r.key} className="flex items-center justify-between bg-[#F5F2E9] border border-[#E4DECB] rounded-xl p-4">
@@ -1838,7 +1867,6 @@ const UserDetails: React.FC<{
   const [moreOpen, setMoreOpen] = useState(false);
   // Real block state comes from the platform account, not local UI state
   const blocked = account?.status === 'blocked';
-  const [withdrawBlocked, setWithdrawBlocked] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [manager, setManager] = useState(user.manager);
   const [balanceInput, setBalanceInput] = useState(String(user.balance));
@@ -1921,11 +1949,6 @@ const UserDetails: React.FC<{
         onOpenStatementModal?.(id, shortName);
       },
     },
-    {
-      icon: FileText,
-      label: 'View user logs',
-      onClick: () => onNotify('Activity log will be available in the analytics module.'),
-    },
     { icon: PhoneCall, label: 'Call', onClick: onGoCalls },
     { icon: History, label: 'Call history', onClick: onGoCalls },
     {
@@ -1954,14 +1977,9 @@ const UserDetails: React.FC<{
     },
     {
       icon: Lock,
-      label: withdrawBlocked ? 'Unblock withdrawal' : 'Block withdrawal',
+      label: 'Withdrawal status',
       onClick: () => {
-        setWithdrawBlocked(v => !v);
-        onNotify(
-          withdrawBlocked
-            ? `Withdrawals unblocked for ${shortName} (applies once payouts run through the server).`
-            : `Withdrawals blocked for ${shortName} (applies once payouts run through the server).`,
-        );
+        onNotify('Withdrawal blocking is managed via the Withdrawals tab — approve or reject requests there.');
       },
     },
     {
@@ -2007,11 +2025,7 @@ const UserDetails: React.FC<{
               <Badge tone={blocked ? 'red' : 'green'}>
                 <CheckCircle2 className="w-3 h-3" /> {blocked ? 'Blocked' : 'Active'}
               </Badge>
-              {withdrawBlocked && (
-                <Badge tone="red" className="ml-2">
-                  <Lock className="w-3 h-3" /> Withdrawal blocked
-                </Badge>
-              )}
+
             </div>
           </div>
         </div>
@@ -2645,7 +2659,7 @@ const AnalyticsPanel: React.FC<{ onNotify: (m: string) => void }> = ({ onNotify 
       }
     };
     pull();
-    const t = setInterval(pull, 20000);
+    const t = setInterval(() => { if (document.hidden) return; pull(); }, 60000);
     return () => { stop = true; clearInterval(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2869,7 +2883,7 @@ const CallsPanel: React.FC<{
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 2000);
+    const t = setInterval(() => { if (document.hidden) return; refresh(); }, 4000);
     return () => clearInterval(t);
   }, []);
 

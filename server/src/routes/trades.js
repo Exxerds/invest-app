@@ -11,6 +11,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
+import { readCrmSettings } from '../crmSettings.js';
 import { notify } from '../notifications.js';
 import { livePrice } from './symbols.js';
 import { readCrmSettings } from '../crmSettings.js';
@@ -43,18 +44,35 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 async function auth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not authorized' });
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await store.byId('users', payload.userId);
-    if (!user) return res.status(401).json({ error: 'User not found' });
-    req.user = user;
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
-    res.status(401).json({ error: 'Session expired, sign in again' });
+    return res.status(401).json({ error: 'Session expired, sign in again' });
   }
+  let user;
+  try {
+    user = await store.byId('users', payload.userId);
+  } catch (e) {
+    console.error('[auth] DB error:', e.message);
+    return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
+  }
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  req.user = user;
+  next();
 }
 
 const isStaff = (u) => u.role === 'ADMIN' || u.role === 'MANAGER';
+
+async function mayManagePositions(user) {
+  if (user.role === 'ADMIN') return true;
+  try {
+    const s = await readCrmSettings();
+    return !!s.manualClosing;
+  } catch {
+    return false;
+  }
+}
 
 function staffOnly(req, res, next) {
   if (!isStaff(req.user)) return res.status(403).json({ error: 'Staff access only' });
@@ -218,6 +236,10 @@ router.post('/', auth, async (req, res) => {
 /* ---------------- edit (staff) ---------------- */
 
 router.patch('/:id', auth, staffOnly, async (req, res) => {
+  if (req.user.role !== 'ADMIN') {
+    const allowed = await mayManagePositions(req.user);
+    if (!allowed) return res.status(403).json({ error: 'Position management is disabled by the administrator (Settings → Allow manual position closing)' });
+  }
   const id = Number(req.params.id);
   const b = req.body || {};
   const patch = {};
@@ -256,20 +278,20 @@ router.post('/:id/close', auth, async (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  // Settings → "Allow manual position closing by clients". With the switch
-  // off only the back office may settle a position; the automatic
-  // stop-loss / take-profit sweep below is unaffected.
-  if (!isStaff(req.user)) {
-    const crm = await readCrmSettings();
-    if (!crm.manualClosing) {
-      return res.status(403).json({
-        error: 'Manual closing is disabled. Contact your advisor to close this position.',
-      });
-    }
-  }
-
   if (existing.status === 'CLOSED') {
     return res.status(400).json({ error: 'Position is already closed' });
+  }
+
+  // manualClosing toggle: ADMIN always allowed, otherwise check setting
+  if (isStaff(req.user)) {
+    if (req.user.role !== 'ADMIN') {
+      const allowed = await mayManagePositions(req.user);
+      if (!allowed) return res.status(403).json({ error: 'Position management is disabled by the administrator (Settings → Allow manual position closing)' });
+    }
+  } else {
+    // client closing own position
+    const allowed = await mayManagePositions(req.user);
+    if (!allowed) return res.status(403).json({ error: 'Manual closing is disabled by the administrator (Settings → Allow manual position closing)' });
   }
 
   /**

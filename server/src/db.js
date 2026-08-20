@@ -18,7 +18,39 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = path.join(__dirname, '..', 'data.json');
 
-export const USE_PG = Boolean(process.env.DATABASE_URL);
+// ------------------------------------------------------------
+//  Resolve DATABASE_URL with fallbacks and Neon pooler fix
+// ------------------------------------------------------------
+function resolveDatabaseUrl() {
+  const raw =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.DATABASE_URL_UNPOOLED ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    '';
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    // Neon: if host ends with .neon.tech and doesn't contain -pooler, insert -pooler into first segment
+    if (u.hostname.endsWith('.neon.tech') && !u.hostname.includes('-pooler')) {
+      const parts = u.hostname.split('.');
+      parts[0] = `${parts[0]}-pooler`;
+      u.hostname = parts.join('.');
+    }
+    // pg 8.23 treats sslmode=require as verify-full and breaks self-signed chains;
+    // TLS is set via ssl: { rejectUnauthorized: false } in the pool options.
+    u.searchParams.delete('channel_binding');
+    u.searchParams.delete('sslmode');
+    u.searchParams.delete('ssl');
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
+export const CONNECTION_STRING = resolveDatabaseUrl();
+export const USE_PG = Boolean(CONNECTION_STRING);
 
 /* ============================================================
    POSTGRES BACKEND
@@ -38,7 +70,7 @@ async function getPool() {
   if (!g.__ohyPool) {
     const { default: pg } = await import('pg');
     g.__ohyPool = new pg.Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString: CONNECTION_STRING,
       // Managed providers (Neon, Supabase, Vercel Postgres) require TLS
       ssl: process.env.PGSSL === 'off' ? false : { rejectUnauthorized: false },
       // Every serverless instance handles one request at a time, so a large
@@ -46,12 +78,38 @@ async function getPool() {
       // multiplexes for us.
       max: Number(process.env.PG_POOL_MAX || 2),
       idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 10_000,
+      connectionTimeoutMillis: Number(process.env.PG_CONNECT_TIMEOUT_MS || 8000),
       keepAlive: true,
     });
     g.__ohyPool.on('error', (err) => console.error('[db] idle client error:', err.message));
   }
   return g.__ohyPool;
+}
+
+/**
+ * Try to obtain a working connection, retrying once if the DB was asleep.
+ * Neon with scale-to-zero rejects the first connect after idle.
+ */
+export async function connectWithRetry(attempts = Number(process.env.PG_CONNECT_ATTEMPTS || 2)) {
+  const max = Number.isFinite(attempts) && attempts > 0 ? attempts : 2;
+  let lastErr;
+  for (let i = 0; i < max; i++) {
+    try {
+      const p = await getPool();
+      const client = await p.connect();
+      // quick sanity check
+      await client.query('SELECT 1');
+      client.release();
+      return p;
+    } catch (e) {
+      lastErr = e;
+      if (i < max - 1) {
+        // small backoff before retry
+        await new Promise((r) => setTimeout(r, 900));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 /**
@@ -64,33 +122,87 @@ const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactio
 async function ensureSchema() {
   if (g.__ohySchema) return g.__ohySchema;
   g.__ohySchema = (async () => {
-    const p = await getPool();
-    for (const t of TABLES) {
-      await p.query(`
+    try {
+      const p = await connectWithRetry();
+      for (const t of TABLES) {
+        await p.query(`
         CREATE TABLE IF NOT EXISTS ${t} (
           id   SERIAL PRIMARY KEY,
           data JSONB NOT NULL
         )
       `);
+      }
+      // speed up the lookups we actually perform
+      await p.query(`CREATE INDEX IF NOT EXISTS users_email_idx ON users ((data->>'email'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS tokens_token_idx ON tokens ((data->>'token'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS kyc_user_idx ON kyc (((data->>'userId')::int))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS trades_user_idx ON trades (((data->>'userId')::int))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS tx_user_idx ON transactions (((data->>'userId')::int))`);
+      // generic expression indexes matching byField()/manyByField()
+      await p.query(`CREATE INDEX IF NOT EXISTS trades_user_txt_idx ON trades ((data->>'userId'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS tx_user_txt_idx ON transactions ((data->>'userId'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS kyc_user_txt_idx ON kyc ((data->>'userId'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS notif_user_idx ON notifications ((data->>'userId'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS notif_audience_idx ON notifications ((data->>'audience'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS notes_client_idx ON notes ((data->>'clientId'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS msg_thread_idx ON messages ((data->>'threadId'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS msg_client_idx ON messages ((data->>'clientId'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS settings_key_idx ON settings ((data->>'key'))`);
+      await p.query(`CREATE INDEX IF NOT EXISTS signals_call_idx ON signals ((data->>'callId'))`);
+    } catch (e) {
+      // allow next request to retry schema creation (DB may have woken up)
+      g.__ohySchema = null;
+      throw e;
     }
-    // speed up the lookups we actually perform
-    await p.query(`CREATE INDEX IF NOT EXISTS users_email_idx ON users ((data->>'email'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS tokens_token_idx ON tokens ((data->>'token'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS kyc_user_idx ON kyc (((data->>'userId')::int))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS trades_user_idx ON trades (((data->>'userId')::int))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS tx_user_idx ON transactions (((data->>'userId')::int))`);
-    // generic expression indexes matching byField()/manyByField()
-    await p.query(`CREATE INDEX IF NOT EXISTS trades_user_txt_idx ON trades ((data->>'userId'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS tx_user_txt_idx ON transactions ((data->>'userId'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS kyc_user_txt_idx ON kyc ((data->>'userId'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS notif_user_idx ON notifications ((data->>'userId'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS notif_audience_idx ON notifications ((data->>'audience'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS notes_client_idx ON notes ((data->>'clientId'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS msg_thread_idx ON messages ((data->>'threadId'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS settings_key_idx ON settings ((data->>'key'))`);
-    await p.query(`CREATE INDEX IF NOT EXISTS signals_call_idx ON signals ((data->>'callId'))`);
   })();
   return g.__ohySchema;
+}
+
+/** Describe current connection without exposing password */
+export function describeConnection() {
+  if (!CONNECTION_STRING) return { host: null, port: null, database: null, pooled: false };
+  try {
+    const u = new URL(CONNECTION_STRING);
+    return {
+      host: u.hostname || null,
+      port: u.port || '5432',
+      database: u.pathname.replace(/^\//, '') || null,
+      pooled: u.hostname.includes('pooler') || u.hostname.includes('-pooler'),
+    };
+  } catch {
+    return { host: null, port: null, database: null, pooled: false };
+  }
+}
+
+/**
+ * Single fast connection probe — used by /api/health/db to surface DB errors
+ * without waiting for the full pool timeout.
+ */
+export async function probeConnection(timeoutMs = 5000) {
+  if (!USE_PG) return { ok: true, ms: 0, error: null, code: null };
+  const start = Date.now();
+  const { default: pg } = await import('pg');
+  const client = new pg.Client({
+    connectionString: CONNECTION_STRING,
+    ssl: process.env.PGSSL === 'off' ? false : { rejectUnauthorized: false },
+    connectionTimeoutMillis: Number(timeoutMs),
+  });
+  try {
+    // race against timeout to guarantee bounded time
+    const connectPromise = client.connect();
+    const timeoutPromise = new Promise((_, rej) =>
+      setTimeout(() => rej(Object.assign(new Error('Connection timeout'), { code: 'ETIMEDOUT' })), Number(timeoutMs)),
+    );
+    await Promise.race([connectPromise, timeoutPromise]);
+    const r = await client.query('SELECT current_database() as db, version() as ver');
+    await client.end().catch(() => undefined);
+    return { ok: true, ms: Date.now() - start, error: null, code: null, db: r.rows[0]?.db || null };
+  } catch (e) {
+    try {
+      await client.end().catch(() => undefined);
+    } catch {}
+    return { ok: false, ms: Date.now() - start, error: e.message || String(e), code: e.code || null };
+  }
 }
 
 const pgStore = {
@@ -286,3 +398,6 @@ export async function ensureReady() {
 export function describeBackend() {
   return USE_PG ? 'PostgreSQL (persistent)' : 'JSON file server/data.json (local dev)';
 }
+
+// expose for health checks / seed
+export { ensureSchema };

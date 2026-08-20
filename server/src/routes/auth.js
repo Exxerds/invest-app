@@ -196,35 +196,45 @@ router.post('/register', async (req, res) => {
 //  E-MAIL CONFIRMATION
 // ------------------------------------------------------------
 router.post('/confirm-email', async (req, res) => {
-  const { token } = req.body || {};
-  const t = await findValidToken(token, 'confirm_email');
-  if (!t) return res.status(400).json({ error: 'Link is invalid or expired' });
+  try {
+    const { token } = req.body || {};
+    const t = await findValidToken(token, 'confirm_email');
+    if (!t) return res.status(400).json({ error: 'Link is invalid or expired' });
 
-  await store.update('tokens', t.id, { used: 1 });
-  const user = await store.update('users', t.user_id, { status: 'active' });
-  if (!user) return res.status(400).json({ error: 'User not found' });
+    await store.update('tokens', t.id, { used: 1 });
+    const user = await store.update('users', t.user_id, { status: 'active' });
+    if (!user) return res.status(400).json({ error: 'User not found' });
 
-  res.json({ ok: true, token: signJwt(user), user: publicUser(user) });
+    res.json({ ok: true, token: signJwt(user), user: publicUser(user) });
+  } catch (e) {
+    console.error('[auth confirm-email] DB error:', e.message);
+    res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
+  }
 });
 
 // ------------------------------------------------------------
 //  LOGIN
 // ------------------------------------------------------------
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  const user = await store.findBy('users', 'email', String(email || '').toLowerCase().trim());
+  try {
+    const { email, password } = req.body || {};
+    const user = await store.findBy('users', 'email', String(email || '').toLowerCase().trim());
 
-  if (!user || !(await bcrypt.compare(String(password || ''), user.password))) {
-    return res.status(401).json({ error: 'Invalid email or password' });
-  }
-  if (user.status === 'pending') {
-    return res.status(403).json({ error: 'Account is not activated. Confirm your email via the link in the letter.' });
-  }
-  if (user.status === 'blocked') {
-    return res.status(403).json({ error: 'Account is blocked. Contact support.' });
-  }
+    if (!user || !(await bcrypt.compare(String(password || ''), user.password))) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    if (user.status === 'pending') {
+      return res.status(403).json({ error: 'Account is not activated. Confirm your email via the link in the letter.' });
+    }
+    if (user.status === 'blocked') {
+      return res.status(403).json({ error: 'Account is blocked. Contact support.' });
+    }
 
-  res.json({ ok: true, token: signJwt(user), user: publicUser(user) });
+    res.json({ ok: true, token: signJwt(user), user: publicUser(user) });
+  } catch (e) {
+    console.error('[auth login] DB error:', e.message);
+    res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
+  }
 });
 
 // ------------------------------------------------------------
@@ -235,13 +245,19 @@ router.get('/me', async (req, res) => {
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Not authorized' });
 
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Session expired, sign in again' });
+  }
+  try {
     const user = await store.byId('users', payload.userId);
     if (!user) return res.status(401).json({ error: 'User not found' });
     res.json({ user: publicUser(user) });
-  } catch {
-    res.status(401).json({ error: 'Session expired, sign in again' });
+  } catch (e) {
+    console.error('[auth me] DB error:', e.message);
+    res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
   }
 });
 

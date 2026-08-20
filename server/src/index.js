@@ -29,7 +29,8 @@ import statementRoutes from './routes/statements.js';
 import settingsRoutes from './routes/settings.js';
 import supportRoutes from './routes/support.js';
 import { seedUsers } from './seed.js';
-import { ensureReady, describeBackend, USE_PG } from './db.js';
+import { describeConnection, probeConnection, USE_PG, describeBackend, ensureSchema } from './db.js';
+import { ensureReady } from './db.js';
 
 dotenv.config();
 
@@ -100,6 +101,30 @@ app.use(
 
 app.use(express.json({ limit: '12mb' })); // KYC uploads travel as data-URLs
 
+// ---------- request timeout middleware ----------
+// If the DB is unreachable the handler would hang until Vercel returns 504.
+// This cuts it early with a clear 503 so the client can retry.
+const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 20000);
+app.use((req, res, next) => {
+  // only for API routes
+  if (!req.path.startsWith('/api/')) return next();
+  let finished = false;
+  res.on('finish', () => { finished = true; });
+  res.on('close', () => { finished = true; });
+  const timer = setTimeout(() => {
+    if (!finished && !res.headersSent) {
+      res.status(503).json({ error: 'The server could not reach its database in time. Please try again in a few seconds.' });
+    }
+  }, REQUEST_TIMEOUT_MS);
+  // clear timer when response finishes
+  const origEnd = res.end;
+  res.end = function (...args) {
+    clearTimeout(timer);
+    return origEnd.apply(this, args);
+  };
+  next();
+});
+
 /**
  * Basic brute-force protection on the auth endpoints.
  * Dependency-free (pure JS) so it works on any host.
@@ -137,34 +162,36 @@ function sweepAttempts() {
   for (const [ip, rec] of attempts) if (now - rec.start > WINDOW_MS) attempts.delete(ip);
 }
 
-/**
- * One-time bootstrap: create the tables, then the demo/admin accounts.
- *
- * On Vercel nothing ever called this — `start()` is skipped there because the
- * platform owns the HTTP layer — so production ran against an EMPTY database:
- * /api/auth/login found no users and the function crashed into a 502 that the
- * front-end mislabelled as "the API server is not running".
- *
- * The promise is cached per instance (so it runs once per cold start) and
- * cleared on failure so the next request can retry.
- */
+// ---------- health checks ----------
+let seedStatus = 'pending';
 let seedPromise = null;
-let seedState = 'pending';
-
-export function ensureSeeded() {
-  if (!seedPromise) {
-    seedPromise = (async () => {
-      await ensureReady();
+async function ensureSeeded() {
+  if (seedPromise) return seedPromise;
+  seedPromise = (async () => {
+    try {
+      // ensure storage ready (tables) — uses ensureReady if available, else ensureSchema
+      try {
+        if (typeof ensureReady === 'function') await ensureReady();
+        else if (USE_PG) await ensureSchema();
+      } catch (e) {
+        // if ensureReady fails, try ensureSchema fallback
+        if (USE_PG) await ensureSchema();
+        else throw e;
+      }
       await seedUsers();
-      seedState = 'ready';
-    })().catch((err) => {
-      seedState = `failed: ${err?.message || err}`;
-      console.error('[seed] Bootstrap failed:', err);
-      seedPromise = null; // allow a retry on the next request
-    });
-  }
+      seedStatus = 'ready';
+    } catch (e) {
+      seedStatus = `failed: ${e.message || String(e)}`;
+      // allow retry on next request
+      seedPromise = null;
+      throw e;
+    }
+    return seedStatus;
+  })();
   return seedPromise;
 }
+// export for other modules if needed
+export { ensureSeeded };
 
 /**
  * Serverless has no writable disk, so the JSON-file store cannot survive there:
@@ -182,34 +209,93 @@ if (EPHEMERAL_STORAGE) {
   console.error('=============================================================');
 }
 
-/**
- * Health check — must answer 200 {ok:true} everywhere, local and serverless,
- * without touching the database (a DB outage should not look like a dead API).
- */
-app.get('/api/health', (req, res) =>
+app.get('/api/health', async (req, res) => {
+  let seed = seedStatus;
+  // try to seed if not ready, but don't fail the health endpoint entirely
+  if (seed !== 'ready') {
+    try {
+      await ensureSeeded();
+      seed = seedStatus;
+    } catch (e) {
+      seed = `failed: ${e.message || String(e)}`;
+    }
+  }
   res.json({
     ok: true,
+    time: new Date().toISOString(),
     env: process.env.VERCEL ? 'vercel' : process.env.NODE_ENV || 'development',
     storage: USE_PG ? 'postgres' : 'json-file',
+    backend: describeBackend(),
     persistent: USE_PG,
-    seed: seedState,
+    seed,
+    db: describeConnection(),
     ...(EPHEMERAL_STORAGE
       ? { warning: 'DATABASE_URL is not set — data does not persist between requests' }
       : {}),
-    time: new Date().toISOString(),
-  }),
-);
+  });
+});
 
-/** Deeper probe: proves the database really answers. */
 app.get('/api/health/db', async (req, res) => {
+  const db = describeConnection();
+  // fast probe first — if DB is down we answer immediately with hint
+  const probe = await probeConnection(6000);
+  if (!probe.ok) {
+    const pooled = db.pooled;
+    const isNeon = db.host && db.host.includes('neon.tech');
+    let hint = null;
+    if (isNeon && !pooled) {
+      hint = 'Host is direct Neon endpoint without -pooler. Use pooled connection string (add -pooler to hostname) or set PG_CONNECT_TIMEOUT_MS higher.';
+    } else if (!pooled && isNeon) {
+      hint = 'Ensure DATABASE_URL uses pooled endpoint (-pooler) for serverless.';
+    } else if (!USE_PG) {
+      hint = 'No DATABASE_URL configured — using JSON file (local dev).';
+    } else {
+      hint = 'Database is waking up or unreachable — retry in a few seconds. If host ends with .neon.tech without -pooler, switch to pooled host.';
+    }
+    return res.status(503).json({
+      ok: false,
+      error: probe.error,
+      code: probe.code,
+      ms: probe.ms,
+      db,
+      hint,
+      persistent: USE_PG,
+      seed: seedStatus,
+    });
+  }
+  // probe ok — now ensure seeded
+  let seed = seedStatus;
   try {
     await ensureSeeded();
-    const { all } = await import('./db.js');
-    const users = await all('users');
-    res.json({ ok: true, storage: describeBackend(), users: users.length, seed: seedState });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err?.message || 'Database unavailable' });
+    seed = seedStatus;
+  } catch (e) {
+    return res.status(503).json({
+      ok: false,
+      error: e.message || String(e),
+      code: e.code || null,
+      ms: probe.ms,
+      db,
+      hint: 'Seeding failed after DB became reachable',
+      persistent: USE_PG,
+      seed: `failed: ${e.message || String(e)}`,
+    });
   }
+  // also return user count like main's health/db did
+  let users = undefined;
+  try {
+    const { all } = await import('./db.js');
+    const list = await all('users');
+    users = list.length;
+  } catch {}
+  res.json({
+    ok: true,
+    ms: probe.ms,
+    db: { ...db, database: probe.db || db.database },
+    persistent: USE_PG,
+    storage: describeBackend(),
+    seed,
+    ...(users !== undefined ? { users } : {}),
+  });
 });
 
 /**
@@ -218,7 +304,7 @@ app.get('/api/health/db', async (req, res) => {
  * after a deploy already sees the accounts.
  */
 if (process.env.VERCEL) {
-  ensureSeeded();
+  ensureSeeded().catch(() => undefined);
   app.use(async (req, res, next) => {
     try {
       await ensureSeeded();
@@ -330,7 +416,9 @@ async function start() {
       process.exit(1);
     }
 
-    await ensureSeeded();
+    await ensureSeeded().catch(err => {
+      console.warn('[server] Initial seed failed (will retry on health check):', err.message);
+    });
 
     // '::' accepts both IPv6 (::1) and IPv4 (127.0.0.1) on all platforms
     const server = app.listen(PORT, '::', () => {

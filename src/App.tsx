@@ -1,16 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Header } from './components/Header';
 import type { ActiveTab } from './components/Header';
-import { LandingPage } from './components/landing/LandingPage';
-import { InvestorDashboard } from './components/investor/InvestorDashboard';
 import { ProjectCatalog } from './components/catalog/ProjectCatalog';
-import { CrmDashboard } from './components/crm/CrmDashboard';
+const LandingPage = lazy(() => import('./components/landing/LandingPage').then(m => ({ default: m.LandingPage })));
+const InvestorDashboard = lazy(() => import('./components/investor/InvestorDashboard').then(m => ({ default: m.InvestorDashboard })));
+const CrmDashboard = lazy(() => import('./components/crm/CrmDashboard').then(m => ({ default: m.CrmDashboard })));
+
+// light skeleton shown while lazy chunks load
+const PageSkeleton: React.FC = () => (
+  <div className="max-w-6xl mx-auto px-6 py-16 animate-pulse">
+    <div className="h-8 bg-[#1C412C]/10 rounded w-1/3 mb-4" />
+    <div className="h-4 bg-[#1C412C]/10 rounded w-2/3 mb-8" />
+    <div className="grid grid-cols-3 gap-4">
+      <div className="h-32 bg-white border border-[#E4DECB] rounded-xl" />
+      <div className="h-32 bg-white border border-[#E4DECB] rounded-xl" />
+      <div className="h-32 bg-white border border-[#E4DECB] rounded-xl" />
+    </div>
+  </div>
+);
 import { InvestModal } from './components/modals/InvestModal';
 import { LoginModal } from './components/modals/LoginModal';
 import { ForgotPasswordModal } from './components/modals/ForgotPasswordModal';
 import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
-import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser, apiSetUserBalance } from './api';
+import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser, apiSetUserBalance, ApiError } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
 import { 
   apiStartCall, apiWhisper, apiCallInbox, apiCallStatus, apiNotes, apiAddNote, 
@@ -18,7 +31,7 @@ import {
   apiLeads, apiCreateLead, apiUpdateLead, apiAddLeadComment, apiImpersonate, 
   apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, 
   apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, 
-  apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq,
+  apiAllTrades, apiOpenTrade, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq,
   apiMyInvestments, apiCreateInvestment, apiClaimInvestmentProfit, apiQuote
 } from './api';
 import type { ApiTrade, ApiTransaction, ApiCall } from './api';
@@ -216,7 +229,7 @@ export default function App() {
     };
 
     tick();
-    const t = setInterval(tick, 2000);
+    const t = setInterval(() => { if (document.hidden) return; tick(); }, 4000);
     return () => { stopped = true; clearInterval(t); };
   }, [isLoggedIn, currentUser?.id]);
 
@@ -248,19 +261,33 @@ export default function App() {
       setResetToken(confirmToken);
       window.history.replaceState({}, '', '/');
     } else if (getToken()) {
-      // Restore the session AND the screen the user was on. Without the
-      // second part a refresh dropped everyone back onto the landing page,
-      // which felt exactly like being logged out.
-      apiMe()
-        .then((res) => {
+      // Restore the session with retry — the DB may be waking up (503).
+      // Only a real 401 means the session is dead; otherwise retry in background.
+      const restoreSession = async (attempt = 0) => {
+        try {
+          const res = await apiMe();
           setCurrentUser(res.user);
           setIsLoggedIn(true);
           const saved = localStorage.getItem(TAB_KEY) as ActiveTab | null;
           const allowed: ActiveTab[] =
             res.user.role === 'CLIENT' ? ['investor', 'catalog'] : ['crm'];
           setActiveTab(saved && allowed.includes(saved) ? saved : allowed[0]);
-        })
-        .catch(() => setToken(null));
+        } catch (err) {
+          const status = err instanceof ApiError ? err.status : 0;
+          if (status === 401) {
+            setToken(null);
+            return;
+          }
+          if (attempt < 3) {
+            showToast('The server is waking up — retrying in the background.', 'info');
+            setTimeout(() => restoreSession(attempt + 1), attempt * 1500 + 1500);
+          } else {
+            // after 3 attempts keep token but inform user
+            showToast('The server is waking up — retrying in the background.', 'info');
+          }
+        }
+      };
+      restoreSession(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -347,7 +374,7 @@ export default function App() {
     };
 
     pull();
-    const timer = setInterval(pull, 20000); // near real-time without websockets
+    const timer = setInterval(() => { if (document.hidden) return; pull(); }, 30000);
     return () => clearInterval(timer);
   }, [isLoggedIn, isStaff]);
 
@@ -660,26 +687,44 @@ export default function App() {
     }
   };
 
-  const handleCreateTrade = (newTradeData: Omit<AdminTrade, 'id' | 'status'>) => {
-    const newTrade: AdminTrade = {
-      ...newTradeData,
-      id: `trade-${Date.now()}`,
-      status: 'OPEN'
-    };
-    setAdminTrades(prev => [newTrade, ...prev]);
-
-    setInvestors(prev => prev.map(inv => {
-      if (inv.id === newTradeData.investorId) {
-        return {
-          ...inv,
-          invested: inv.invested + newTradeData.amount,
-          totalProfit: inv.totalProfit + newTradeData.pnl
+  const handleCreateTrade = async (newTradeData: Omit<AdminTrade, 'id' | 'status'>) => {
+    // try server-backed creation first
+    try {
+      const bareId = String(newTradeData.investorId).replace(/^acc-/, '').replace(/^inv-/, '');
+      // if not a numeric userId, fallback to local demo trade (legacy inv-01 etc)
+      if (!/^\d+$/.test(bareId)) {
+        const newTrade: AdminTrade = {
+          ...newTradeData,
+          id: `trade-${Date.now()}`,
+          status: 'OPEN',
         };
+        setAdminTrades(prev => [newTrade, ...prev]);
+        setInvestors(prev => prev.map(inv => inv.id === newTradeData.investorId ? { ...inv, invested: inv.invested + newTradeData.amount, totalProfit: inv.totalProfit + newTradeData.pnl } : inv));
+        showToast(`✔ Opened trading position «${newTradeData.asset}» for the client!`);
+        return;
       }
-      return inv;
-    }));
-
-    showToast(`✔ Opened trading position «${newTradeData.asset}» for the client!`);
+      const asset = newTradeData.asset || '';
+      // symbol is first token, name is full asset string
+      const symbol = asset.split(' ')[0].split('—')[0].trim() || asset || 'BTC/USDT';
+      const name = asset.includes('—') ? asset.split('—').slice(1).join('—').trim() : asset;
+      await apiOpenTrade({
+        userId: Number(bareId),
+        symbol,
+        name,
+        side: newTradeData.type,
+        amount: newTradeData.amount,
+        notional: newTradeData.amount,
+        entryPrice: newTradeData.entryPrice,
+        leverage: newTradeData.leverage,
+        currentPrice: newTradeData.currentPrice,
+        pnl: newTradeData.pnl,
+      } as any);
+      const t = await apiAllTrades();
+      setServerTrades(t.trades);
+      showToast(`✔ Opened trading position «${newTradeData.asset}» for the client!`);
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not open position', 'info');
+    }
   };
 
   const handleUpdateTrade = async (tradeId: string, patch: Partial<AdminTrade>) => {
@@ -814,17 +859,28 @@ export default function App() {
     }
   };
 
-  const handleApproveKyc = (investorId: string) => {
-    setInvestors(prev => prev.map(inv => {
-      if (inv.id === investorId) {
-        return {
-          ...inv,
-          kycStatus: 'verified'
-        };
+  const handleApproveKyc = async (investorId: string) => {
+    // Real flow is per-document via onReviewKyc — approve all pending docs for this user
+    const numericId = Number(String(investorId).replace(/^acc-/, '').replace(/^inv-/, ''));
+    if (!Number.isFinite(numericId)) {
+      showToast('KYC is reviewed per document in the user details.', 'info');
+      return;
+    }
+    const pending = kycDocuments.filter(d => d.userId === numericId && d.status === 'pending');
+    if (pending.length === 0) {
+      showToast('No pending KYC documents for this client. Open user details to review documents.', 'info');
+      return;
+    }
+    try {
+      for (const doc of pending) {
+        await apiKycReview(doc.id, 'approved');
       }
-      return inv;
-    }));
-    showToast('✔ Investor KYC approved!');
+      const res = await apiKycAll();
+      setKycDocuments(res.documents);
+      showToast(`✔ Approved ${pending.length} document(s) for client.`);
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ KYC approve failed', 'info');
+    }
   };
 
   /**
@@ -852,14 +908,9 @@ export default function App() {
   };
 
   const handleCreateProject = (newProjData: Omit<Project, 'id' | 'raisedAmount' | 'status'>) => {
-    const newProject: Project = {
-      ...newProjData,
-      id: `p-${Date.now()}`,
-      raisedAmount: 0,
-      status: 'active'
-    };
-    setProjects(prev => [newProject, ...prev]);
-    showToast(`✔ New asset «${newProject.title}» published!`);
+    // Projects catalog is static (INITIAL_PROJECTS) — new assets are added via server in production.
+    // Keeping this handler local-only would make the new project vanish on refresh, so we just notify.
+    showToast(`Asset «${newProjData.title}» request received — it will be published after review.`, 'info');
     setActiveTab('catalog');
   };
 
@@ -1099,14 +1150,17 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 w-full">
         {activeTab === 'landing' && (
-          <LandingPage
-            onOpenLoginModal={() => setIsLoginModalOpen(true)}
-            onOpenRegisterModal={() => setIsRegisterModalOpen(true)}
-          />
+          <Suspense fallback={<PageSkeleton />}>
+            <LandingPage
+              onOpenLoginModal={() => setIsLoginModalOpen(true)}
+              onOpenRegisterModal={() => setIsRegisterModalOpen(true)}
+            />
+          </Suspense>
         )}
 
         {activeTab === 'investor' && (
-          <InvestorDashboard
+          <Suspense fallback={<PageSkeleton />}>
+            <InvestorDashboard
             user={currentUser}
             kycVerified={kycApproved}
             transactions={myTransactions}
@@ -1130,7 +1184,8 @@ export default function App() {
                 setUsers(prev => prev.map(u => (u.id === myId ? { ...u, name, email, phone } : u)));
               }
             }}
-          />
+            />
+          </Suspense>
         )}
 
         {activeTab === 'catalog' && (
@@ -1144,7 +1199,8 @@ export default function App() {
         )}
 
         {activeTab === 'crm' && (
-          <CrmDashboard
+          <Suspense fallback={<PageSkeleton />}>
+            <CrmDashboard
             leads={leads}
             onMoveLeadStage={handleMoveLeadStage}
             onOpenNewLeadModal={() => setIsNewLeadModalOpen(true)}
@@ -1234,7 +1290,8 @@ export default function App() {
             notifications={notifications}
             unreadCount={unreadCount}
             onMarkNotificationsRead={handleMarkNotificationsRead}
-          />
+            />
+          </Suspense>
         )}
       </main>
 

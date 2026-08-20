@@ -9,6 +9,9 @@
 // ============================================================
 import * as store from './db.js';
 
+const g = globalThis;
+g.__ohyCrmSettings = g.__ohyCrmSettings || { value: null, expires: 0 };
+
 export const DEFAULT_MODULES = {
   Spot: true,
   Futures: true,
@@ -58,6 +61,10 @@ function sanitizeMap(raw, defaults) {
 
 /** Stored value merged over the defaults, so a new flag never comes back undefined. */
 export async function readCrmSettings() {
+  const now = Date.now();
+  if (g.__ohyCrmSettings.value && g.__ohyCrmSettings.expires > now) {
+    return g.__ohyCrmSettings.value;
+  }
   let value = {};
   try {
     const rec = await store.byField('settings', 'key', 'crmSettings');
@@ -65,7 +72,7 @@ export async function readCrmSettings() {
   } catch {
     /* a broken read must never take the whole request down */
   }
-  return {
+  const result = {
     hidePhonesFromAgents: bool(value.hidePhonesFromAgents, DEFAULT_CRM_SETTINGS.hidePhonesFromAgents),
     duplicateControl: bool(value.duplicateControl, DEFAULT_CRM_SETTINGS.duplicateControl),
     manualClosing: bool(value.manualClosing, DEFAULT_CRM_SETTINGS.manualClosing),
@@ -73,6 +80,8 @@ export async function readCrmSettings() {
     modules: sanitizeMap(value.modules, DEFAULT_MODULES),
     providers: sanitizeMap(value.providers, DEFAULT_PROVIDERS),
   };
+  g.__ohyCrmSettings = { value: result, expires: now + 15_000 };
+  return result;
 }
 
 /**
@@ -80,20 +89,39 @@ export async function readCrmSettings() {
  * A PUT that carries only { manualClosing: true } must not wipe the modules.
  */
 export async function writeCrmSettings(patch = {}, actorName = 'system') {
-  const current = await readCrmSettings();
-  const next = { ...current };
+  // bypass cache to get fresh
+  let currentValue = {};
+  try {
+    const rec = await store.byField('settings', 'key', 'crmSettings');
+    currentValue = rec?.value || {};
+  } catch {}
+  const currentSanitized = {
+    hidePhonesFromAgents: bool(currentValue.hidePhonesFromAgents, DEFAULT_CRM_SETTINGS.hidePhonesFromAgents),
+    duplicateControl: bool(currentValue.duplicateControl, DEFAULT_CRM_SETTINGS.duplicateControl),
+    manualClosing: bool(currentValue.manualClosing, DEFAULT_CRM_SETTINGS.manualClosing),
+    callRecording: bool(currentValue.callRecording, DEFAULT_CRM_SETTINGS.callRecording),
+    modules: sanitizeMap(currentValue.modules, DEFAULT_MODULES),
+    providers: sanitizeMap(currentValue.providers, DEFAULT_PROVIDERS),
+  };
+  const next = { ...currentSanitized };
 
   if (patch.hidePhonesFromAgents !== undefined) next.hidePhonesFromAgents = Boolean(patch.hidePhonesFromAgents);
   if (patch.duplicateControl !== undefined) next.duplicateControl = Boolean(patch.duplicateControl);
   if (patch.manualClosing !== undefined) next.manualClosing = Boolean(patch.manualClosing);
   if (patch.callRecording !== undefined) next.callRecording = Boolean(patch.callRecording);
-  if (patch.modules !== undefined) next.modules = sanitizeMap(patch.modules, current.modules);
-  if (patch.providers !== undefined) next.providers = sanitizeMap(patch.providers, current.providers);
-
-  const rec = await store.byField('settings', 'key', 'crmSettings');
+  if (patch.modules !== undefined) next.modules = sanitizeMap(patch.modules, currentSanitized.modules);
+  if (patch.providers !== undefined) next.providers = sanitizeMap(patch.providers, currentSanitized.providers);
+  // also allow generic patch keys for modules/providers if patch contains them directly
+  // handle case where patch has modules/providers as objects
+  const rec = await store.byField('settings', 'key', 'crmSettings').catch(() => null);
   const payload = { value: next, updatedBy: actorName, updatedAt: new Date().toISOString() };
   if (rec) await store.update('settings', rec.id, payload);
   else await store.insert('settings', { key: 'crmSettings', ...payload });
 
+  g.__ohyCrmSettings = { value: next, expires: Date.now() + 15_000 };
   return next;
+}
+
+export function invalidateCrmSettingsCache() {
+  g.__ohyCrmSettings = { value: null, expires: 0 };
 }

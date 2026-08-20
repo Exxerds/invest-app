@@ -344,8 +344,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
     pull();
     settle();
-    const settleTimer = setInterval(settle, 5000);
-    const timer = setInterval(pull, 4000);
+    const settleTimer = setInterval(() => { if (document.hidden) return; settle(); }, 10000);
+    const timer = setInterval(() => { if (document.hidden) return; pull(); }, 6000);
     return () => {
       stopped = true;
       clearInterval(timer);
@@ -394,7 +394,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       }
     };
     pull();
-    const t = setInterval(pull, 3000);
+    const t = setInterval(() => { if (document.hidden) return; pull(); }, 6000);
     return () => { stop = true; clearInterval(t); };
   }, [symbol.symbol]);
 
@@ -491,7 +491,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       }
     };
     fetchSupport();
-    const timer = setInterval(fetchSupport, 3000);
+    const timer = setInterval(() => { if (document.hidden) return; fetchSupport(); }, 5000);
     return () => { alive = false; clearInterval(timer); };
   }, [tab, user?.id, supportPrevStaffCount]);
 
@@ -1208,10 +1208,14 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                                 size="sm"
                                 variant="danger"
                                 onClick={async () => {
-                                  await apiCloseTrade(t.id);
-                                  await reloadTrades();
-                                  onBalanceChanged?.();
-                                  setToast('Order cancelled');
+                                  try {
+                                    await apiCloseTrade(t.id);
+                                    await reloadTrades();
+                                    onBalanceChanged?.();
+                                    setToast('Order cancelled');
+                                  } catch (err) {
+                                    setToast(err instanceof Error ? err.message : 'Could not cancel order');
+                                  }
                                 }}
                               >
                                 Cancel
@@ -1306,13 +1310,17 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                                 size="sm"
                                 variant="danger"
                                 onClick={async () => {
-                                  const res = await apiCloseTrade(t.id);
-                                  await reloadTrades();
-                                  onBalanceChanged?.();
-                                  const settled = Number(res?.trade?.pnl ?? 0);
-                                  setToast(
-                                    `${t.symbol} closed · ${settled >= 0 ? '+' : '-'}${usd(Math.abs(settled))}`,
-                                  );
+                                  try {
+                                    const res = await apiCloseTrade(t.id);
+                                    await reloadTrades();
+                                    onBalanceChanged?.();
+                                    const settled = Number(res?.trade?.pnl ?? 0);
+                                    setToast(
+                                      `${t.symbol} closed · ${settled >= 0 ? '+' : '-'}${usd(Math.abs(settled))}`,
+                                    );
+                                  } catch (err) {
+                                    setToast(err instanceof Error ? err.message : 'Could not close position');
+                                  }
                                 }}
                               >
                                 Close

@@ -26,6 +26,15 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 /** Are we running against a local dev setup (Vite proxy → :4000)? */
 function isLocalDev(): boolean {
   if (typeof window === 'undefined') return false;
@@ -46,43 +55,47 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         ...(options.headers as Record<string, string> | undefined),
       },
     });
-  } catch {
+  } catch (e) {
     // Network failure → offline, or (locally) the API server is not running
-    throw new Error(
-      isLocalDev()
+    const msg = e instanceof Error ? e.message : '';
+    const local = isLocalDev();
+    throw new ApiError(
+      msg.includes('Cannot reach') ? msg : (local
         ? 'Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".'
-        : 'Cannot reach the server. Check your internet connection and try again.',
+        : 'Cannot reach the server. Check your internet connection and try again.'),
+      0
     );
   }
 
   // 502/503/504: locally that means the Vite proxy found nothing on :4000;
   // in production it is the hosting platform reporting a backend hiccup.
-  // The two need completely different advice — telling a visitor on
-  // oakhavenyield.com to "run npm run dev" was pure confusion.
   if (res.status === 502 || res.status === 503 || res.status === 504) {
     if (isLocalDev()) {
-      throw new Error(
-        'The API server is not running. Open a terminal in the project folder and run «npm run dev» — ' +
-          'wait for the line "Oak Haven Yield API server running", then try again.',
+      const text = await res.text().catch(() => '');
+      let json: any = {};
+      try { json = JSON.parse(text); } catch {}
+      const serverMsg = json?.error;
+      throw new ApiError(
+        serverMsg || 'The API server is not running. Open a terminal in the project folder and run «npm run dev» — wait for the line "Oak Haven Yield API server running", then try again.',
+        res.status
       );
     }
-    // The body is usually the platform's HTML error page — only surface it
-    // when the server actually answered with JSON.
     const detail = await res
       .clone()
       .json()
       .then((d: { error?: string }) => (typeof d?.error === 'string' ? d.error : ''))
       .catch(() => '');
-    throw new Error(
+    throw new ApiError(
       `Server temporarily unavailable (${res.status}). Please retry in a few seconds.` +
         (detail ? ` Details: ${detail}` : '') +
         ' If the problem persists, contact support.',
+      res.status
     );
   }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error || `Server error (${res.status})`);
+    throw new ApiError((data as { error?: string }).error || `Server error (${res.status})`, res.status);
   }
   return data as T;
 }
@@ -615,10 +628,12 @@ export const apiCrmSettings = () =>
  * Partial update — the server merges it into the stored record, so flipping
  * one switch never resets the others.
  */
-export const apiSaveCrmSettings = (patch: Partial<ApiCrmSettings>) =>
-  request<{ ok: true; settings: ApiCrmSettings }>('/workspace/crm-settings', {
+export const apiSaveCrmSettings = (patchOrBool: Partial<ApiCrmSettings> | boolean, extra?: Record<string, boolean>) => {
+  const patch: Partial<ApiCrmSettings> = typeof patchOrBool === 'boolean' ? { hidePhonesFromAgents: patchOrBool, ...(extra as any) } : patchOrBool;
+  return request<{ ok: true; settings: ApiCrmSettings }>('/workspace/crm-settings', {
     method: 'PUT', headers: authHeader(), body: JSON.stringify(patch),
   });
+};
 
 export const apiClientStatuses = () =>
   request<{ statuses: Record<string, string> }>('/workspace/client-status', { headers: authHeader() });

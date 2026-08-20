@@ -136,6 +136,7 @@ const ActivityToast: React.FC = () => {
     };
     const first = setTimeout(cycle, 4000);
     const timer = setInterval(() => {
+      if (document.hidden) return;
       setIndex(i => (i + 1) % ACTIVITY.length);
       cycle();
     }, 12000);
