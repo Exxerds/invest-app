@@ -58,6 +58,11 @@ export interface Lead {
 export interface CrmSettings {
   /** Hide full phone numbers from agents/managers (admin sees full numbers) */
   hidePhonesFromAgents: boolean;
+  duplicateControl?: boolean;
+  manualClosing?: boolean;
+  callRecording?: boolean;
+  modules?: Record<string, boolean>;
+  providers?: Record<string, boolean>;
 }
 
 export interface TransactionRequest {

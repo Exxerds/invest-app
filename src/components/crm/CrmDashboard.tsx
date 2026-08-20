@@ -257,12 +257,24 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const profileRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
 
-  // Settings toggles (interactive)
+  // Settings toggles (interactive) — persisted to server via crmSettings
   const [rules, setRules] = useState({
     duplicateControl: true,
     manualClosing: false,
     callRecording: true,
   });
+  // Load extra settings from server (duplicateControl, manualClosing, callRecording, modules)
+  useEffect(() => {
+    if (activeTab !== 'settings') return;
+    const s: any = settings as any;
+    setRules({
+      duplicateControl: s.duplicateControl !== false,
+      manualClosing: s.manualClosing === true,
+      callRecording: s.callRecording !== false,
+    });
+    if (s.modules) setModules((prev) => ({ ...prev, ...s.modules }));
+    if (s.providers) setProviders((prev) => ({ ...prev, ...s.providers }));
+  }, [activeTab, settings]);
   const [modules, setModules] = useState<Record<string, boolean>>({
     Spot: true, Futures: true, P2P: true, Binary: true, Staking: true,
     'AI Trading': false, Swap: false, 'Copy trading': false,
@@ -279,9 +291,9 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const [supportMsgs, setSupportMsgs] = useState<ApiSupportMessage[]>([]);
   const [supportChatText, setSupportChatText] = useState('');
 
-  // poll conversations while Support tab is open
+  // poll conversations while Support tab or Dashboard is open (for real unread count)
   useEffect(() => {
-    if (activeTab !== 'support') return;
+    if (activeTab !== 'support' && activeTab !== 'dashboard') return;
     let alive = true;
     const pull = async () => {
       try {
@@ -649,7 +661,33 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         key={n.id}
                         onClick={() => {
                           onMarkNotificationsRead(n.id);
-                          if (n.link === 'user-details') setActiveTab('users');
+                          const t = (n.title || '').toLowerCase();
+                          const k = (n.kind || '').toLowerCase();
+                          const link = (n.link || '').toLowerCase();
+                          if (k.includes('lead') || link.includes('lead') || t.includes('lead')) {
+                            setActiveTab('leads');
+                          } else if (k.includes('support') || link === 'support' || t.includes('support message')) {
+                            setActiveTab('support');
+                            if ((n as any).userId) {
+                              setSupportActiveClientId(Number((n as any).userId));
+                            }
+                          } else if (k.includes('trade') || k.includes('order') || link === 'trading' || t.includes('position') || t.includes('trade')) {
+                            setActiveTab('trading');
+                          } else if (k.includes('deposit') || t.includes('deposit') || link === 'deposits') {
+                            setActiveTab('deposits');
+                          } else if (k.includes('withdrawal') || t.includes('withdrawal') || link === 'withdrawals') {
+                            setActiveTab('withdrawals');
+                          } else if (k.includes('call') || t.includes('call') || link === 'calls') {
+                            setActiveTab('calls');
+                          } else if (k.includes('kyc') || t.includes('kyc') || link === 'user-details') {
+                            setActiveTab('users');
+                          } else if (link && ['dashboard','trading','users','blocked','withdrawals','deposits','leads','support','calls','analytics','settings','banks','happy-letter'].includes(link)) {
+                            setActiveTab(link as any);
+                          } else if (t.includes('transaction')) {
+                            if (t.includes('withdrawal')) setActiveTab('withdrawals');
+                            else if (t.includes('deposit')) setActiveTab('deposits');
+                            else setActiveTab('deposits');
+                          }
                           setBellOpen(false);
                         }}
                         className={`w-full flex items-start gap-2.5 px-4 py-2.5 text-left cursor-pointer hover:bg-[#F2EEDF] ${
@@ -811,10 +849,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               {/* Trading modules row (PDF: Spot / Futures / Binary / P2P) */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {[
-                  { t: 'P2P Trading', v: '120', s: 'open orders', tone: 'gold' },
+                  { t: 'P2P Trading', v: '0', s: 'open orders', tone: 'gold' },
                   { t: 'Spot Trading', v: `${trades.filter(x => x.type === 'SPOT').length}`, s: 'last trades', tone: 'blue' },
                   { t: 'Futures Trading', v: `${trades.filter(x => x.type !== 'SPOT').length}`, s: 'open positions', tone: 'green' },
-                  { t: 'Binary Trading', v: '8', s: 'active bets', tone: 'red' },
+                  { t: 'Binary Trading', v: '0', s: 'active bets', tone: 'red' },
                 ].map(m => (
                   <Card key={m.t} className="p-5">
                     <div className="text-[11px] text-[#213532]/70 font-semibold uppercase tracking-wide">{m.t}</div>
@@ -863,7 +901,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <Btn size="sm" variant="ghost" icon={PhoneCall} onClick={() => setActiveTab('calls')}>
                           Call
                         </Btn>
-                        <Btn size="sm" variant="ghost" icon={MessageSquare} onClick={() => setActiveTab('support')}>
+                        <Btn size="sm" variant="ghost" icon={MessageSquare} onClick={() => {
+                          const numId = Number(String(inv.id).replace('acc-','').replace(/^\D+/,'')) || Number(String(inv.id).replace(/\D/g,'')) || null;
+                          if (numId) setSupportActiveClientId(numId);
+                          setActiveTab('support');
+                        }}>
                           Message
                         </Btn>
                       </div>
@@ -1507,7 +1549,22 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <div className="text-[11px] text-[#213532]/70 mt-0.5">{r.s}</div>
                       </div>
                       <button
-                        onClick={() => setRules(p => ({ ...p, [r.key]: !p[r.key] }))}
+                        onClick={async () => {
+                          const next = !rules[r.key];
+                          setRules(p => ({ ...p, [r.key]: next }));
+                          try {
+                            const { getToken } = await import('../../api');
+                            const token = getToken();
+                            const current: any = settings as any;
+                            const body = { ...current, [r.key]: next, modules, providers };
+                            await fetch('/api/workspace/crm-settings', {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                              body: JSON.stringify(body),
+                            });
+                            onNotify(`✔ ${r.t} ${next ? 'enabled' : 'disabled'}`);
+                          } catch {}
+                        }}
                         className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer shrink-0 ${
                           rules[r.key] ? 'bg-[#B08B48]' : 'bg-[#213532]/20'
                         }`}
@@ -1526,7 +1583,23 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   {Object.keys(modules).map(m => (
                     <button
                       key={m}
-                      onClick={() => setModules(p => ({ ...p, [m]: !p[m] }))}
+                      onClick={async () => {
+                        const next = !modules[m];
+                        const updated = { ...modules, [m]: next };
+                        setModules(updated);
+                        try {
+                          const { getToken } = await import('../../api');
+                          const token = getToken();
+                          const current: any = settings as any;
+                          const body = { ...current, modules: updated };
+                          await fetch('/api/workspace/crm-settings', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                            body: JSON.stringify(body),
+                          });
+                          onNotify(`✔ Module ${m} ${next ? 'enabled' : 'disabled'}`);
+                        } catch {}
+                      }}
                       className={`flex items-center gap-2 border rounded-xl px-3.5 py-2.5 cursor-pointer transition-colors text-left ${
                         modules[m]
                           ? 'bg-[#B08B48]/15 border-[#B08B48]/40'
@@ -2409,9 +2482,20 @@ const UserDetails: React.FC<{
                 <Btn
                   variant="gold"
                   disabled={!dialogText.trim()}
-                  onClick={() => {
-                    onNotify(`Message sent to ${shortName}`);
-                    setDialog(null);
+                  onClick={async () => {
+                    try {
+                      const numId = Number(String(user.id).replace(/\D/g,'')) || (account?.id ?? null);
+                      if (!numId) {
+                        onNotify('Could not determine client id');
+                        return;
+                      }
+                      await apiSendSupportMessage({ clientId: numId, text: dialogText.trim() });
+                      onNotify(`Message sent to ${shortName} — client will see it in Support chat`);
+                      setDialog(null);
+                      setDialogText('');
+                    } catch (err) {
+                      onNotify(err instanceof Error ? err.message : 'Could not send message');
+                    }
                   }}
                 >
                   Send

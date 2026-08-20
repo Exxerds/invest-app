@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import * as store from '../db.js';
 import { sendMail, letterLayout, publicUrl } from '../mailer.js';
+import { notify } from '../notifications.js';
 
 const router = Router();
 
@@ -112,6 +113,37 @@ router.post('/register', async (req, res) => {
       status: 'pending',
       created_at: new Date().toISOString()
     });
+
+    // Create a lead in CRM automatically if no duplicate by email (PDF p.13 duplicate control)
+    try {
+      const lowerEmail = lower;
+      const existingLeads = await store.all('leads');
+      const emailExists = existingLeads.some(l => String(l.email || '').toLowerCase().trim() === lowerEmail);
+      if (!emailExists) {
+        await store.insert('leads', {
+          name: String(name).trim(),
+          email: lowerEmail,
+          phone: '',
+          potentialAmount: 0,
+          stage: 'new',
+          notes: '',
+          source: 'Registration',
+          manager: '',
+          comments: [],
+          createdBy: 'Website',
+          createdAt: new Date().toISOString(),
+        });
+        await notify({
+          audience: 'staff',
+          kind: 'lead',
+          title: 'New lead from registration',
+          message: `${String(name).trim()} (${lowerEmail}) — Registration`,
+          link: 'leads',
+        }).catch(() => undefined);
+      }
+    } catch (e) {
+      console.warn('[register] Could not create lead:', e.message);
+    }
 
     const token = await createToken(user.id, 'confirm_email');
     const link = `${publicUrl(req)}/confirm-email?token=${token}`;

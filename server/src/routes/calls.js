@@ -347,6 +347,15 @@ router.post('/:id/whisper', auth, async (req, res) => {
 router.post('/:id/recording', auth, async (req, res) => {
   if (!isStaff(req.user)) return res.status(403).json({ error: 'Staff access only' });
 
+  // Respect Settings → Enable call recording toggle
+  try {
+    const rec = await store.byField('settings', 'key', 'crmSettings');
+    const s = rec?.value || {};
+    if (s.callRecording === false) {
+      return res.status(403).json({ error: 'Call recording is disabled by administrator' });
+    }
+  } catch {}
+
   const callId = Number(req.params.id);
   const call = await store.byId('calls', callId);
   if (!call) return res.status(404).json({ error: 'Call not found' });

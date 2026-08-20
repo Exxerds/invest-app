@@ -31,25 +31,28 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   try {
     res = await fetch(`/api${path}`, {
       ...options,
-      // MERGE the headers — spreading `options` last used to wipe out
-      // Content-Type whenever a call passed an Authorization header,
-      // so the server received an empty body and rejected the request.
       headers: {
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string> | undefined),
       },
     });
   } catch {
-    // Network failure → the API server (npm run dev) is probably not running
-    throw new Error('Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".');
+    const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    if (isLocal) {
+      throw new Error('Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".');
+    }
+    throw new Error('Network error — please check your internet connection and try again.');
   }
-  // 502/503/504 come from the Vite proxy when the API server (:4000) is down.
-  // The body is an HTML error page, not JSON — show a human-readable hint instead.
   if (res.status === 502 || res.status === 503 || res.status === 504) {
-    throw new Error(
-      'The API server is not running. Open a terminal in the project folder and run «npm run dev» — ' +
-        'wait for the line "Oak Haven Yield API server running", then try again.',
-    );
+    const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    if (isLocal) {
+      throw new Error(
+        'The API server is not running. Open a terminal in the project folder and run «npm run dev» — ' +
+          'wait for the line "Oak Haven Yield API server running", then try again.',
+      );
+    }
+    // In production (Vercel) a 502 means the serverless function crashed — retry in a moment
+    throw new Error('Server is temporarily unavailable (502). Please wait a few seconds and try again. If it persists, contact support.');
   }
 
   const data = await res.json().catch(() => ({}));

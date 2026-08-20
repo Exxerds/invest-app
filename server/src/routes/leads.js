@@ -42,6 +42,22 @@ const clean = (v, max = 200) => String(v ?? '').slice(0, max);
 /** Digits only, so +1 (415) 555-0182 and 14155550182 match. */
 const normPhone = (v) => String(v ?? '').replace(/\D/g, '');
 const normEmail = (v) => String(v ?? '').trim().toLowerCase();
+const normStage = (v) => {
+  const raw = String(v || 'new').trim().toLowerCase();
+  if (raw.includes('contact') || raw.includes('callback')) return 'contact';
+  if (raw.includes('kyc') || raw === 'dep' || raw.includes('deposited')) return 'kyc';
+  if (raw.includes('active')) return 'active';
+  return 'new';
+};
+
+async function getCrmSettings() {
+  try {
+    const rec = await store.byField('settings', 'key', 'crmSettings');
+    return rec?.value || {};
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Duplicate Control (PDF p.13).
@@ -70,7 +86,7 @@ router.post('/public', async (req, res) => {
   if (!name || name.length < 1) return res.status(400).json({ error: 'Name is required' });
 
   const emailRaw = clean(b.email, 120).trim();
-  if (!emailRaw || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw)) {
+  if (!emailRaw || !/^[^\\s@]+@[^\\s@]+\.[^\\s@]+$/.test(emailRaw)) {
     return res.status(400).json({ error: 'Valid email is required' });
   }
   if (emailRaw.length > 120) return res.status(400).json({ error: 'Email is too long' });
@@ -79,23 +95,28 @@ router.post('/public', async (req, res) => {
   const message = clean(b.message ?? b.notes ?? '', 2000);
   const source = clean(b.source, 120).trim() || 'Landing';
 
-  // Duplicate — same phone or email already in leads or users (do not reveal who owns it)
-  const [leads, users] = await Promise.all([store.all('leads'), store.all('users')]);
-  const dup = await findDuplicate({ phone, email: emailRaw }, { leads, users });
-  if (dup) return res.status(409).json({ error: 'This contact already exists' });
+  // Duplicate control respects the toggle from Settings → Privacy toggles
+  const settings = await getCrmSettings();
+  const duplicateControl = settings.duplicateControl !== false; // default true
 
-  // Anti-spam: max 3 leads per normalized email per 24h
-  const eNorm = normEmail(emailRaw);
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-  const recent = leads.filter(l => normEmail(l.email) === eNorm && l.createdAt && new Date(l.createdAt).getTime() >= cutoff).length;
-  if (recent >= 3) return res.status(429).json({ error: 'Too many requests, try again later' });
+  if (duplicateControl) {
+    const [leads, users] = await Promise.all([store.all('leads'), store.all('users')]);
+    const dup = await findDuplicate({ phone, email: emailRaw }, { leads, users });
+    if (dup) return res.status(409).json({ error: 'This contact already exists' });
+
+    // Anti-spam: max 3 leads per normalized email per 24h
+    const eNorm = normEmail(emailRaw);
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const recent = leads.filter(l => normEmail(l.email) === eNorm && l.createdAt && new Date(l.createdAt).getTime() >= cutoff).length;
+    if (recent >= 3) return res.status(429).json({ error: 'Too many requests, try again later' });
+  }
 
   const lead = await store.insert('leads', {
     name,
     phone,
     email: emailRaw,
     potentialAmount: 0,
-    stage: 'New',
+    stage: 'new',
     notes: message ? `From website: ${message}` : '',
     source,
     manager: '',
@@ -125,8 +146,10 @@ router.post('/', auth, async (req, res) => {
   const b = req.body || {};
   if (!clean(b.name).trim()) return res.status(400).json({ error: 'Name is required' });
 
-  // Duplicate protection — can be overridden deliberately
-  if (!b.force) {
+  // Duplicate protection — can be overridden deliberately, respects Settings toggle
+  const settings = await getCrmSettings();
+  const duplicateControl = settings.duplicateControl !== false;
+  if (duplicateControl && !b.force) {
     const [leads, users] = await Promise.all([store.all('leads'), store.all('users')]);
     const dup = await findDuplicate({ phone: b.phone, email: b.email }, { leads, users });
     if (dup) {
@@ -142,7 +165,7 @@ router.post('/', auth, async (req, res) => {
     phone: clean(b.phone, 40),
     email: clean(b.email, 120),
     potentialAmount: Number(b.potentialAmount) || 0,
-    stage: clean(b.stage, 60) || 'New',
+    stage: normStage(b.stage),
     notes: clean(b.notes, 2000),
     manager: clean(b.manager, 120) || req.user.name,
     comments: [],
@@ -164,7 +187,7 @@ router.patch('/:id', auth, async (req, res) => {
   if (b.phone !== undefined) patch.phone = clean(b.phone, 40);
   if (b.email !== undefined) patch.email = clean(b.email, 120);
   if (b.potentialAmount !== undefined) patch.potentialAmount = Number(b.potentialAmount) || 0;
-  if (b.stage !== undefined) patch.stage = clean(b.stage, 60);
+  if (b.stage !== undefined) patch.stage = normStage(b.stage);
   if (b.notes !== undefined) patch.notes = clean(b.notes, 2000);
   if (b.manager !== undefined) patch.manager = clean(b.manager, 120);
   patch.updatedAt = new Date().toISOString();
@@ -224,6 +247,9 @@ router.post('/import', auth, async (req, res) => {
   const duplicates = [];
   const invalid = [];
 
+  const settings = await getCrmSettings();
+  const duplicateControl = settings.duplicateControl !== false;
+
   for (const [i, row] of rows.entries()) {
     const name = clean(row.name, 120).trim();
     if (!name) {
@@ -231,10 +257,12 @@ router.post('/import', auth, async (req, res) => {
       continue;
     }
 
-    const dup = await findDuplicate({ phone: row.phone, email: row.email }, { leads: pool, users });
-    if (dup) {
-      duplicates.push({ row: i + 1, name, reason: `${dup.field} matches ${dup.match}` });
-      continue;
+    if (duplicateControl) {
+      const dup = await findDuplicate({ phone: row.phone, email: row.email }, { leads: pool, users });
+      if (dup) {
+        duplicates.push({ row: i + 1, name, reason: `${dup.field} matches ${dup.match}` });
+        continue;
+      }
     }
 
     const lead = await store.insert('leads', {
@@ -242,7 +270,7 @@ router.post('/import', auth, async (req, res) => {
       phone: clean(row.phone, 40),
       email: normEmail(row.email),
       potentialAmount: Number(row.potentialAmount) || 0,
-      stage: clean(row.stage, 60) || 'new',
+      stage: normStage(row.stage),
       notes: clean(row.notes, 2000),
       manager: assignees[imported.length % assignees.length],
       comments: [],

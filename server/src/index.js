@@ -274,9 +274,12 @@ async function start() {
 }
 
 // On Vercel the platform imports `app` and handles the HTTP layer itself;
-// a long-running listener would never start there.
+// a long-running listener would never start there. We still need demo users.
 if (!process.env.VERCEL) {
   start();
+} else {
+  // In serverless, ensure tables exist and demo accounts are present for first login
+  seedUsers().catch(err => console.error('[seed] Vercel seed failed:', err.message));
 }
 
 export default app;

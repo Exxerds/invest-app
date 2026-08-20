@@ -85,16 +85,25 @@ export async function sendMail({ to, subject, html }) {
 
 /** Branded HTML e-mail layout (Oak Haven Yield: cream / forest green / warm gold) */
 export function letterLayout(title, contentHtml) {
-  const logoUrl = `${SITE_URL.replace(/\/$/, '')}/logo.svg`;
+  // SITE_URL fallback https://oakhavenyield.com as required — always absolute so the image loads on any client
+  const base = (SITE_URL || 'https://oakhavenyield.com').replace(/\/$/, '') || 'https://oakhavenyield.com';
+  const logoSvg = `${base}/logo.svg`;
+  const logoPng = `${base}/logo.png`;
   return `<!DOCTYPE html>
 <html lang="en"><body style="margin:0;padding:0;background:#F5F2E9;font-family:Georgia,'Times New Roman',serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F2E9;padding:32px 12px;">
     <tr><td align="center">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e0d2;border-radius:14px;overflow:hidden;">
         <tr><td style="background:#1C412C;padding:20px 28px;">
-          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>
             <td style="vertical-align:middle;padding-right:12px;">
-              <img src="${logoUrl}" width="34" height="41" alt="Oak Haven Yield" style="display:block;vertical-align:middle">
+              <!-- cream circle like on the sidebar, so dark logo stays visible on dark header on every client -->
+              <div style="width:42px;height:42px;background:#F5F2E9;border-radius:50%;text-align:center;line-height:42px;display:inline-block;overflow:hidden;">
+                <picture style="display:inline-block;vertical-align:middle;line-height:0;">
+                  <source srcset="${logoSvg}" type="image/svg+xml">
+                  <img src="${logoPng}" width="34" height="41" alt="Oak Haven Yield" style="display:block;width:34px;height:41px;max-width:34px;vertical-align:middle;border:0;outline:none;margin:0 auto;">
+                </picture>
+              </div>
             </td>
             <td style="vertical-align:middle;">
               <div style="line-height:1.1;">

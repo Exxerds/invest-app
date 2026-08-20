@@ -157,14 +157,23 @@ router.post('/messages', auth, async (req, res) => {
     }
     notify({
       audience: 'staff',
+      userId: clientId,
       kind: 'support',
       title: 'New support message',
       message: `${req.user.name}: ${rawText.slice(0, 80)}`,
       link: 'support',
     }).catch(() => undefined);
   } else {
-    // push to the client (if they enabled browser push)
+    // push to the client (if they enabled browser push) + in-app notification
     pushToUser(clientId, { title: 'New message from support', body: rawText }).catch(() => undefined);
+    notify({
+      audience: 'client',
+      userId: clientId,
+      kind: 'support_reply',
+      title: 'New message from support',
+      message: rawText.slice(0, 140),
+      link: 'support',
+    }).catch(() => undefined);
   }
 
   res.json({ ok: true, message: msg });
