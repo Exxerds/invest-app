@@ -29,6 +29,7 @@ import statementRoutes from './routes/statements.js';
 import settingsRoutes from './routes/settings.js';
 import supportRoutes from './routes/support.js';
 import { seedUsers } from './seed.js';
+import { ensureReady, describeBackend, USE_PG } from './db.js';
 
 dotenv.config();
 
@@ -136,7 +137,77 @@ function sweepAttempts() {
   for (const [ip, rec] of attempts) if (now - rec.start > WINDOW_MS) attempts.delete(ip);
 }
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+/**
+ * One-time bootstrap: create the tables, then the demo/admin accounts.
+ *
+ * On Vercel nothing ever called this — `start()` is skipped there because the
+ * platform owns the HTTP layer — so production ran against an EMPTY database:
+ * /api/auth/login found no users and the function crashed into a 502 that the
+ * front-end mislabelled as "the API server is not running".
+ *
+ * The promise is cached per instance (so it runs once per cold start) and
+ * cleared on failure so the next request can retry.
+ */
+let seedPromise = null;
+let seedState = 'pending';
+
+export function ensureSeeded() {
+  if (!seedPromise) {
+    seedPromise = (async () => {
+      await ensureReady();
+      await seedUsers();
+      seedState = 'ready';
+    })().catch((err) => {
+      seedState = `failed: ${err?.message || err}`;
+      console.error('[seed] Bootstrap failed:', err);
+      seedPromise = null; // allow a retry on the next request
+    });
+  }
+  return seedPromise;
+}
+
+/**
+ * Health check — must answer 200 {ok:true} everywhere, local and serverless,
+ * without touching the database (a DB outage should not look like a dead API).
+ */
+app.get('/api/health', (req, res) =>
+  res.json({
+    ok: true,
+    env: process.env.VERCEL ? 'vercel' : process.env.NODE_ENV || 'development',
+    storage: USE_PG ? 'postgres' : 'json-file',
+    seed: seedState,
+    time: new Date().toISOString(),
+  }),
+);
+
+/** Deeper probe: proves the database really answers. */
+app.get('/api/health/db', async (req, res) => {
+  try {
+    await ensureSeeded();
+    const { all } = await import('./db.js');
+    const users = await all('users');
+    res.json({ ok: true, storage: describeBackend(), users: users.length, seed: seedState });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || 'Database unavailable' });
+  }
+});
+
+/**
+ * Serverless cold start: seed before the first request reaches a route.
+ * Kicked off at module load AND awaited per request, so the very first call
+ * after a deploy already sees the accounts.
+ */
+if (process.env.VERCEL) {
+  ensureSeeded();
+  app.use(async (req, res, next) => {
+    try {
+      await ensureSeeded();
+    } catch (err) {
+      console.error('[server] Seeding error (continuing):', err);
+    }
+    next();
+  });
+}
 
 /**
  * PRODUCTION: serve the built front-end from the same origin.
@@ -239,7 +310,7 @@ async function start() {
       process.exit(1);
     }
 
-    await seedUsers();
+    await ensureSeeded();
 
     // '::' accepts both IPv6 (::1) and IPv4 (127.0.0.1) on all platforms
     const server = app.listen(PORT, '::', () => {

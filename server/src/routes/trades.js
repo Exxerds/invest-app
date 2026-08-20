@@ -13,6 +13,7 @@ import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
 import { livePrice } from './symbols.js';
+import { readCrmSettings } from '../crmSettings.js';
 import {
   quoteTrade,
   pnlOf,
@@ -253,6 +254,18 @@ router.post('/:id/close', auth, async (req, res) => {
 
   if (!isStaff(req.user) && existing.userId !== req.user.id) {
     return res.status(403).json({ error: 'Access denied' });
+  }
+
+  // Settings → "Allow manual position closing by clients". With the switch
+  // off only the back office may settle a position; the automatic
+  // stop-loss / take-profit sweep below is unaffected.
+  if (!isStaff(req.user)) {
+    const crm = await readCrmSettings();
+    if (!crm.manualClosing) {
+      return res.status(403).json({
+        error: 'Manual closing is disabled. Contact your advisor to close this position.',
+      });
+    }
   }
 
   if (existing.status === 'CLOSED') {

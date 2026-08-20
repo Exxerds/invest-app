@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import * as store from '../db.js';
 import { sendMail, letterLayout, publicUrl } from '../mailer.js';
+import { notify } from '../notifications.js';
 
 const router = Router();
 
@@ -85,6 +86,51 @@ function resetLetter(user, link) {
   `);
 }
 
+/**
+ * Every sign-up must show up in the CRM funnel — the back office was seeing
+ * accounts appear in "All users" with no matching card on the Sales Pipeline,
+ * so nobody was ever assigned to call them.
+ *
+ * Never throws: a CRM hiccup must not fail the registration itself.
+ */
+async function createLeadForRegistration(user) {
+  try {
+    const email = String(user.email || '').toLowerCase().trim();
+    if (!email) return null;
+
+    const leads = await store.all('leads');
+    const exists = leads.some(l => String(l.email || '').toLowerCase().trim() === email);
+    if (exists) return null;
+
+    const lead = await store.insert('leads', {
+      name: user.name,
+      email,
+      phone: '',
+      potentialAmount: 0,
+      stage: 'new',
+      notes: 'Self-registered on the website — awaiting e-mail confirmation.',
+      source: 'Registration',
+      manager: '',
+      comments: [],
+      createdBy: 'Website',
+      createdAt: new Date().toISOString(),
+    });
+
+    notify({
+      audience: 'staff',
+      kind: 'lead',
+      title: 'New registration lead',
+      message: `${user.name} (${email}) signed up on the website`,
+      link: 'leads',
+    }).catch(() => undefined);
+
+    return lead;
+  } catch (err) {
+    console.error('[register] Could not create the CRM lead:', err.message);
+    return null;
+  }
+}
+
 // ------------------------------------------------------------
 //  REGISTRATION
 // ------------------------------------------------------------
@@ -112,6 +158,9 @@ router.post('/register', async (req, res) => {
       status: 'pending',
       created_at: new Date().toISOString()
     });
+
+    // The sales funnel must know about the sign-up immediately
+    await createLeadForRegistration(user);
 
     const token = await createToken(user.id, 'confirm_email');
     const link = `${publicUrl(req)}/confirm-email?token=${token}`;
@@ -246,6 +295,9 @@ router.post('/resend-confirmation', async (req, res) => {
   const user = await store.findBy('users', 'email', String(email || '').toLowerCase().trim());
 
   if (user && user.status === 'pending') {
+    // The sales funnel must know about the sign-up immediately
+    await createLeadForRegistration(user);
+
     const token = await createToken(user.id, 'confirm_email');
     const link = `${publicUrl(req)}/confirm-email?token=${token}`;
     await sendMail({

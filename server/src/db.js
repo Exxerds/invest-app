@@ -272,6 +272,17 @@ export async function updateWhere(table, predicate, fields) {
   return backend.update(table, rec.id, fields);
 }
 
+/**
+ * Make sure the storage layer is usable before the first request.
+ * On PostgreSQL that means creating the tables and indexes (they are created
+ * lazily otherwise, which on a cold serverless start raced with the seeding
+ * and made /api/auth/login fail with a 502).
+ */
+export async function ensureReady() {
+  if (USE_PG) await ensureSchema();
+  return true;
+}
+
 export function describeBackend() {
   return USE_PG ? 'PostgreSQL (persistent)' : 'JSON file server/data.json (local dev)';
 }

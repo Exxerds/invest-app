@@ -85,7 +85,14 @@ export async function sendMail({ to, subject, html }) {
 
 /** Branded HTML e-mail layout (Oak Haven Yield: cream / forest green / warm gold) */
 export function letterLayout(title, contentHtml) {
-  const logoUrl = `${SITE_URL.replace(/\/$/, '')}/logo.svg`;
+  // The crest is dark green, so on the dark-green header bar it used to be
+  // practically invisible (and completely missing on phones that refuse SVG).
+  // It now sits on the same cream disc used in the app sidebar, and ships as
+  // <picture>: SVG where it is supported, PNG everywhere else (Gmail, Outlook,
+  // iOS Mail — none of them render SVG).
+  const base = (process.env.SITE_URL || SITE_URL).replace(/\/$/, '');
+  const logoSvg = `${base}/logo.svg`;
+  const logoPng = `${base}/logo.png`;
   return `<!DOCTYPE html>
 <html lang="en"><body style="margin:0;padding:0;background:#F5F2E9;font-family:Georgia,'Times New Roman',serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F2E9;padding:32px 12px;">
@@ -93,8 +100,15 @@ export function letterLayout(title, contentHtml) {
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e0d2;border-radius:14px;overflow:hidden;">
         <tr><td style="background:#1C412C;padding:20px 28px;">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td style="vertical-align:middle;padding-right:12px;">
-              <img src="${logoUrl}" width="34" height="41" alt="Oak Haven Yield" style="display:block;vertical-align:middle">
+            <td width="54" style="vertical-align:middle;padding-right:12px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" width="54" style="width:54px;height:54px;background:#F5F2E9;border-radius:27px;">
+                <tr><td align="center" valign="middle" style="width:54px;height:54px;text-align:center;vertical-align:middle;line-height:54px;">
+                  <picture>
+                    <source srcset="${logoSvg}" type="image/svg+xml">
+                    <img src="${logoPng}" width="34" height="41" alt="Oak Haven Yield" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;">
+                  </picture>
+                </td></tr>
+              </table>
             </td>
             <td style="vertical-align:middle;">
               <div style="line-height:1.1;">

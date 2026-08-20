@@ -54,10 +54,20 @@ export interface Lead {
   comments: LeadComment[];
 }
 
-/** CRM settings (admin-only toggles) */
+/** CRM settings (admin-only toggles), mirrored from the server */
 export interface CrmSettings {
   /** Hide full phone numbers from agents/managers (admin sees full numbers) */
   hidePhonesFromAgents: boolean;
+  /** Block a lead whose phone / e-mail already exists in the base */
+  duplicateControl: boolean;
+  /** Let clients close their own positions */
+  manualClosing: boolean;
+  /** Store call recordings */
+  callRecording: boolean;
+  /** Feature modules shown on the platform */
+  modules: Record<string, boolean>;
+  /** Enabled payment providers */
+  providers: Record<string, boolean>;
 }
 
 export interface TransactionRequest {

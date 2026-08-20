@@ -26,6 +26,13 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+/** Are we running against a local dev setup (Vite proxy → :4000)? */
+function isLocalDev(): boolean {
+  if (typeof window === 'undefined') return false;
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '0.0.0.0';
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
@@ -40,15 +47,36 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       },
     });
   } catch {
-    // Network failure → the API server (npm run dev) is probably not running
-    throw new Error('Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".');
-  }
-  // 502/503/504 come from the Vite proxy when the API server (:4000) is down.
-  // The body is an HTML error page, not JSON — show a human-readable hint instead.
-  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    // Network failure → offline, or (locally) the API server is not running
     throw new Error(
-      'The API server is not running. Open a terminal in the project folder and run «npm run dev» — ' +
-        'wait for the line "Oak Haven Yield API server running", then try again.',
+      isLocalDev()
+        ? 'Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".'
+        : 'Cannot reach the server. Check your internet connection and try again.',
+    );
+  }
+
+  // 502/503/504: locally that means the Vite proxy found nothing on :4000;
+  // in production it is the hosting platform reporting a backend hiccup.
+  // The two need completely different advice — telling a visitor on
+  // oakhavenyield.com to "run npm run dev" was pure confusion.
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    if (isLocalDev()) {
+      throw new Error(
+        'The API server is not running. Open a terminal in the project folder and run «npm run dev» — ' +
+          'wait for the line "Oak Haven Yield API server running", then try again.',
+      );
+    }
+    // The body is usually the platform's HTML error page — only surface it
+    // when the server actually answered with JSON.
+    const detail = await res
+      .clone()
+      .json()
+      .then((d: { error?: string }) => (typeof d?.error === 'string' ? d.error : ''))
+      .catch(() => '');
+    throw new Error(
+      `Server temporarily unavailable (${res.status}). Please retry in a few seconds.` +
+        (detail ? ` Details: ${detail}` : '') +
+        ' If the problem persists, contact support.',
     );
   }
 
@@ -568,14 +596,28 @@ export const apiSendMessage = (text: string, clientId?: number) =>
     method: 'POST', headers: authHeader(), body: JSON.stringify({ text, clientId }),
   });
 
+/** Everything the Settings screen persists (privacy rules, modules, providers) */
+export interface ApiCrmSettings {
+  hidePhonesFromAgents: boolean;
+  duplicateControl: boolean;
+  manualClosing: boolean;
+  callRecording: boolean;
+  modules: Record<string, boolean>;
+  providers: Record<string, boolean>;
+}
+
 export const apiCrmSettings = () =>
-  request<{ settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
+  request<{ settings: ApiCrmSettings }>('/workspace/crm-settings', {
     headers: authHeader(),
   });
 
-export const apiSaveCrmSettings = (hidePhonesFromAgents: boolean) =>
-  request<{ ok: true; settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
-    method: 'PUT', headers: authHeader(), body: JSON.stringify({ hidePhonesFromAgents }),
+/**
+ * Partial update — the server merges it into the stored record, so flipping
+ * one switch never resets the others.
+ */
+export const apiSaveCrmSettings = (patch: Partial<ApiCrmSettings>) =>
+  request<{ ok: true; settings: ApiCrmSettings }>('/workspace/crm-settings', {
+    method: 'PUT', headers: authHeader(), body: JSON.stringify(patch),
   });
 
 export const apiClientStatuses = () =>
