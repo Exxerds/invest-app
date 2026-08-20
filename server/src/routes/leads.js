@@ -15,6 +15,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
+import { readCrmSettings } from '../crmSettings.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -42,6 +43,20 @@ const clean = (v, max = 200) => String(v ?? '').slice(0, max);
 /** Digits only, so +1 (415) 555-0182 and 14155550182 match. */
 const normPhone = (v) => String(v ?? '').replace(/\D/g, '');
 const normEmail = (v) => String(v ?? '').trim().toLowerCase();
+
+/**
+ * Pipeline stages are stored in lower case ('new' | 'contact' | 'kyc' | 'active').
+ * The board matches on those ids, so a lead saved as "New" used to land in no
+ * column at all — the counter said 2 active leads while one card was visible.
+ */
+export const LEAD_STAGES = ['new', 'contact', 'kyc', 'active'];
+const normStage = (v) => {
+  const s = String(v ?? '').trim().toLowerCase();
+  if (LEAD_STAGES.includes(s)) return s;
+  if (s === 'callback') return 'contact';
+  if (s === 'dep' || s === 'deposit') return 'kyc';
+  return 'new';
+};
 
 /**
  * Duplicate Control (PDF p.13).
@@ -79,10 +94,13 @@ router.post('/public', async (req, res) => {
   const message = clean(b.message ?? b.notes ?? '', 2000);
   const source = clean(b.source, 120).trim() || 'Landing';
 
-  // Duplicate — same phone or email already in leads or users (do not reveal who owns it)
-  const [leads, users] = await Promise.all([store.all('leads'), store.all('users')]);
-  const dup = await findDuplicate({ phone, email: emailRaw }, { leads, users });
-  if (dup) return res.status(409).json({ error: 'This contact already exists' });
+  // Duplicate — same phone or email already in leads or users (do not reveal who owns it).
+  // Honours Settings → "Duplicate control": with the switch off the lead is kept.
+  const [leads, users, crm] = await Promise.all([store.all('leads'), store.all('users'), readCrmSettings()]);
+  if (crm.duplicateControl) {
+    const dup = await findDuplicate({ phone, email: emailRaw }, { leads, users });
+    if (dup) return res.status(409).json({ error: 'This contact already exists' });
+  }
 
   // Anti-spam: max 3 leads per normalized email per 24h
   const eNorm = normEmail(emailRaw);
@@ -95,7 +113,7 @@ router.post('/public', async (req, res) => {
     phone,
     email: emailRaw,
     potentialAmount: 0,
-    stage: 'New',
+    stage: 'new',
     notes: message ? `From website: ${message}` : '',
     source,
     manager: '',
@@ -118,15 +136,23 @@ router.post('/public', async (req, res) => {
 
 router.get('/', auth, async (req, res) => {
   const leads = await store.all('leads');
-  res.json({ leads: leads.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
+  res.json({
+    // Legacy rows may still carry "New"/"Callback" — normalise on the way out
+    // so every card lands in a column.
+    leads: leads
+      .map(l => ({ ...l, stage: normStage(l.stage) }))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+  });
 });
 
 router.post('/', auth, async (req, res) => {
   const b = req.body || {};
   if (!clean(b.name).trim()) return res.status(400).json({ error: 'Name is required' });
 
-  // Duplicate protection — can be overridden deliberately
-  if (!b.force) {
+  // Duplicate protection — can be overridden deliberately, and switched off
+  // globally in Settings → Privacy & access.
+  const crm = await readCrmSettings();
+  if (!b.force && crm.duplicateControl) {
     const [leads, users] = await Promise.all([store.all('leads'), store.all('users')]);
     const dup = await findDuplicate({ phone: b.phone, email: b.email }, { leads, users });
     if (dup) {
@@ -142,7 +168,7 @@ router.post('/', auth, async (req, res) => {
     phone: clean(b.phone, 40),
     email: clean(b.email, 120),
     potentialAmount: Number(b.potentialAmount) || 0,
-    stage: clean(b.stage, 60) || 'New',
+    stage: normStage(b.stage),
     notes: clean(b.notes, 2000),
     manager: clean(b.manager, 120) || req.user.name,
     comments: [],
@@ -164,7 +190,7 @@ router.patch('/:id', auth, async (req, res) => {
   if (b.phone !== undefined) patch.phone = clean(b.phone, 40);
   if (b.email !== undefined) patch.email = clean(b.email, 120);
   if (b.potentialAmount !== undefined) patch.potentialAmount = Number(b.potentialAmount) || 0;
-  if (b.stage !== undefined) patch.stage = clean(b.stage, 60);
+  if (b.stage !== undefined) patch.stage = normStage(b.stage);
   if (b.notes !== undefined) patch.notes = clean(b.notes, 2000);
   if (b.manager !== undefined) patch.manager = clean(b.manager, 120);
   patch.updatedAt = new Date().toISOString();
@@ -217,7 +243,11 @@ router.post('/import', auth, async (req, res) => {
     ? req.body.assignTo.map(a => clean(a, 120))
     : [req.user.name];
 
-  const [existingLeads, users] = await Promise.all([store.all('leads'), store.all('users')]);
+  const [existingLeads, users, crmImport] = await Promise.all([
+    store.all('leads'),
+    store.all('users'),
+    readCrmSettings(),
+  ]);
   const pool = [...existingLeads];
 
   const imported = [];
@@ -231,7 +261,9 @@ router.post('/import', auth, async (req, res) => {
       continue;
     }
 
-    const dup = await findDuplicate({ phone: row.phone, email: row.email }, { leads: pool, users });
+    const dup = crmImport.duplicateControl
+      ? await findDuplicate({ phone: row.phone, email: row.email }, { leads: pool, users })
+      : null;
     if (dup) {
       duplicates.push({ row: i + 1, name, reason: `${dup.field} matches ${dup.match}` });
       continue;
@@ -242,7 +274,7 @@ router.post('/import', auth, async (req, res) => {
       phone: clean(row.phone, 40),
       email: normEmail(row.email),
       potentialAmount: Number(row.potentialAmount) || 0,
-      stage: clean(row.stage, 60) || 'new',
+      stage: normStage(row.stage),
       notes: clean(row.notes, 2000),
       manager: assignees[imported.length % assignees.length],
       comments: [],

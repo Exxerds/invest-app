@@ -18,6 +18,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
+import { readCrmSettings, writeCrmSettings } from '../crmSettings.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -309,22 +310,29 @@ router.post('/messages', auth, async (req, res) => {
 
 /* ---------------- CRM preferences ---------------- */
 
+/**
+ * Everything the Settings screen shows: privacy rules, feature modules and
+ * payment providers. Defaults are merged in, so a client on an old build
+ * never receives `undefined` for a flag that was added later.
+ */
 router.get('/crm-settings', auth, staffOnly, async (req, res) => {
-  const rec = await store.byField('settings', 'key', 'crmSettings');
-  res.json({ settings: { hidePhonesFromAgents: false, ...(rec?.value || {}) } });
+  res.json({ settings: await readCrmSettings() });
 });
 
 router.put('/crm-settings', auth, async (req, res) => {
   if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Administrator access only' });
 
-  const value = { hidePhonesFromAgents: Boolean(req.body?.hidePhonesFromAgents) };
-  const rec = await store.byField('settings', 'key', 'crmSettings');
-  const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
-  if (rec) await store.update('settings', rec.id, payload);
-  else await store.insert('settings', { key: 'crmSettings', ...payload });
+  // A partial body is merged into what is already stored — toggling one
+  // switch must never reset the rest of the screen.
+  const settings = await writeCrmSettings(req.body || {}, req.user.name);
 
-  await logActivity({ actor: req.user, action: 'settings_changed', target: 'crmSettings', details: JSON.stringify(value) });
-  res.json({ ok: true, settings: value });
+  await logActivity({
+    actor: req.user,
+    action: 'settings_changed',
+    target: 'crmSettings',
+    details: JSON.stringify(req.body || {}).slice(0, 400),
+  });
+  res.json({ ok: true, settings });
 });
 
 /* ---------------- per-client status ---------------- */

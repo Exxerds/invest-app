@@ -114,6 +114,8 @@ interface CrmDashboardProps {
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
   settings: CrmSettings;
   onToggleHidePhones: () => void;
+  /** Persist any Settings toggle (merged server-side) */
+  onSaveSettings?: (patch: Partial<CrmSettings>, message?: string) => void;
   onNotify: (message: string) => void;
   notes: ClientNote[];
   onAddNote: (clientId: string, text: string) => void;
@@ -130,6 +132,17 @@ function maskPhone(phone: string): string {
   const visible = 4;
   if (phone.length <= visible) return '•••';
   return phone.slice(0, -visible).replace(/[0-9]/g, '*') + phone.slice(-visible);
+}
+
+/**
+ * One place decides how a phone number is rendered:
+ *   • empty / not provided → an em dash, never a masked "•••"
+ *   • agents with hidePhonesFromAgents on → last four digits only
+ */
+function phoneLabel(phone: string | undefined, hidden: boolean): string {
+  const value = String(phone || '').trim();
+  if (!value || value === '—') return '—';
+  return hidden ? maskPhone(value) : value;
 }
 
 /* ============================================================
@@ -218,6 +231,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onUpdateUserStatus,
   settings,
   onToggleHidePhones,
+  onSaveSettings,
   onNotify,
   notes,
   onAddNote,
@@ -257,20 +271,24 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const profileRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
 
-  // Settings toggles (interactive)
-  const [rules, setRules] = useState({
-    duplicateControl: true,
-    manualClosing: false,
-    callRecording: true,
-  });
-  const [modules, setModules] = useState<Record<string, boolean>>({
-    Spot: true, Futures: true, P2P: true, Binary: true, Staking: true,
-    'AI Trading': false, Swap: false, 'Copy trading': false,
-  });
-  const [providers, setProviders] = useState<Record<string, boolean>>({
-    'USDT TRC-20': true, 'Visa / Mastercard': true, 'SEPA transfer': false,
-    Bitcoin: true, PayPal: false, 'ACH transfer': true,
-  });
+  /**
+   * Settings toggles are SERVER state now — the switches used to flip a piece
+   * of local React state that nothing ever read, so "Duplicate control",
+   * "Allow manual closing" and "Enable call recording" did precisely nothing
+   * and reset on every refresh.
+   */
+  const rules = {
+    duplicateControl: settings.duplicateControl,
+    manualClosing: settings.manualClosing,
+    callRecording: settings.callRecording,
+  };
+  const modules = settings.modules || {};
+  const providers = settings.providers || {};
+
+  const saveSettings = (patch: Partial<CrmSettings>, message?: string) => {
+    if (!onSaveSettings) return onNotify('Settings cannot be saved right now.');
+    onSaveSettings(patch, message);
+  };
 
   // Support — real chat (TradeNation-style)
   const [supportConvs, setSupportConvs] = useState<ApiSupportConversation[]>([]);
@@ -279,9 +297,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const [supportMsgs, setSupportMsgs] = useState<ApiSupportMessage[]>([]);
   const [supportChatText, setSupportChatText] = useState('');
 
-  // poll conversations while Support tab is open
+  // Poll conversations while Support OR Dashboard is open — the dashboard's
+  // "Online chat" tile shows the real number of unanswered messages.
   useEffect(() => {
-    if (activeTab !== 'support') return;
+    if (activeTab !== 'support' && activeTab !== 'dashboard') return;
     let alive = true;
     const pull = async () => {
       try {
@@ -411,7 +430,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           id: `acc-${u.id}`,
           name: u.name,
           email: u.email,
-          phone: (u as ApiUser & { phone?: string }).phone || '—',
+          phone: (u as ApiUser & { phone?: string }).phone || '',
           kycStatus: approvedCount >= 3
             ? 'verified'
             : kycByUser.get(u.id) === 'rejected'
@@ -444,8 +463,28 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   );
 
   const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
-  const totalAum = investors.reduce((s, i) => s + i.balance + i.invested, 0);
+  /** Withdrawals waiting for a decision — what the dashboard tile really means */
+  const pendingWithdrawals = requests.filter(r => r.type === 'withdrawal' && r.status === 'pending').length;
+  /**
+   * Assets under management, straight from the database: every client's cash
+   * balance plus the money currently sitting in open positions.
+   */
+  const totalAum = allClients.reduce((sum, c) => sum + c.balance + c.invested, 0);
+  const approvedDeposits = requests.filter(r => r.type === 'deposit' && r.status === 'approved');
+  const depositsVolume = approvedDeposits.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
   const openTrades = trades.filter(t => t.status === 'OPEN').length;
+  /** Unanswered client messages across every conversation */
+  const unansweredChats = supportConvs.reduce((sum, c) => sum + (Number(c.unreadForStaff) || 0), 0);
+
+  /** Open the Support tab straight on this client's conversation */
+  const openSupportChat = (investorId: string) => {
+    const clientId = Number(String(investorId).replace(/^acc-/, ''));
+    if (Number.isFinite(clientId) && clientId > 0) {
+      setSupportActiveClientId(clientId);
+      setSupportMsgs([]);
+    }
+    setActiveTab('support');
+  };
 
   const openUser = (id: string) => {
     setSelectedUserId(id);
@@ -496,6 +535,56 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
     setNewPwd('');
     setPwdError(null);
     setPwdDone(false);
+  };
+
+  /**
+   * Clicking a bell entry must take the agent to the screen the event happened
+   * on — it used to only mark the item read and leave everyone guessing.
+   * Works the same for admins and managers; admin-only screens fall back to
+   * the dashboard for a manager.
+   */
+  const goTab = (tab: CrmTab) => {
+    if (!isAdmin && ADMIN_ONLY_TABS.includes(tab)) return setActiveTab('dashboard');
+    setActiveTab(tab);
+  };
+
+  const openNotification = (n: ApiNotification) => {
+    const kind = String(n.kind || '').toLowerCase();
+    const link = String(n.link || '').toLowerCase();
+    const title = String(n.title || '').toLowerCase();
+
+    // Support: open the conversation with THIS client straight away
+    if (kind.startsWith('support') || link === 'support') {
+      if (n.userId) {
+        setSupportActiveClientId(Number(n.userId));
+        setSupportMsgs([]);
+      }
+      return goTab('support');
+    }
+    if (kind === 'lead' || link === 'leads') return goTab('leads');
+    if (kind.startsWith('trade') || kind === 'order' || link === 'trading') return goTab('trading');
+    if (kind.startsWith('deposit')) return goTab('deposits');
+    if (kind.startsWith('withdraw')) return goTab('withdrawals');
+    if (kind.startsWith('call') || link === 'calls') return goTab('calls');
+    if (kind.startsWith('kyc') || link === 'kyc' || link === 'user-details') return goTab('users');
+
+    // Generic money movements: decide from the wording of the title
+    if (kind.startsWith('transaction') || link === 'transactions') {
+      if (title.includes('withdraw')) return goTab('withdrawals');
+      if (title.includes('deposit') || title.includes('top-up') || title.includes('top up')) {
+        return goTab('deposits');
+      }
+      return goTab('deposits');
+    }
+
+    if (title.includes('withdraw')) return goTab('withdrawals');
+    if (title.includes('deposit')) return goTab('deposits');
+    if (title.includes('lead')) return goTab('leads');
+    if (title.includes('support') || title.includes('message')) return goTab('support');
+    if (title.includes('call')) return goTab('calls');
+    if (title.includes('kyc') || title.includes('document')) return goTab('users');
+
+    goTab('dashboard');
   };
 
   const header = TAB_TITLES[activeTab];
@@ -649,7 +738,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         key={n.id}
                         onClick={() => {
                           onMarkNotificationsRead(n.id);
-                          if (n.link === 'user-details') setActiveTab('users');
+                          openNotification(n);
                           setBellOpen(false);
                         }}
                         className={`w-full flex items-start gap-2.5 px-4 py-2.5 text-left cursor-pointer hover:bg-[#F2EEDF] ${
@@ -770,8 +859,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {activeTab === 'dashboard' && (
             <div className="space-y-5">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Kpi icon={Users} label="Total users" value={String(investors.length)} hint="+12% this month" />
-                <Kpi icon={Activity} label="Active clients" value={String(investors.filter(i => i.kycStatus === 'verified').length)} tone="green" hint="+4%" />
+                <Kpi icon={Users} label="Total users" value={String(allClients.length)} />
+                <Kpi icon={Activity} label="Active clients" value={String(allClients.filter(i => i.kycStatus === 'verified').length)} tone="green" />
                 <Kpi icon={TrendingUp} label="Open trades" value={String(openTrades)} tone="blue" />
                 <Kpi icon={Ban} label="Blocked" value={String(users.filter(u => u.status === 'blocked').length)} tone="red" />
               </div>
@@ -779,23 +868,32 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <Card title="Online chat" subtitle="Unanswered messages" className="lg:col-span-1">
                   <div className="p-5">
-                    <div className="text-3xl font-extrabold text-[#B08B48]">0</div>
-                    <p className="text-[11px] text-[#213532]/70 mt-1">No unanswered messages</p>
+                    <div className="text-3xl font-extrabold text-[#B08B48]">{unansweredChats}</div>
+                    <p className="text-[11px] text-[#213532]/70 mt-1">
+                      {unansweredChats === 0
+                        ? 'No unanswered messages'
+                        : `across ${supportConvs.filter(c => c.unreadForStaff > 0).length} conversation(s)`}
+                    </p>
+                    <Btn size="sm" variant="ghost" className="mt-3" onClick={() => setActiveTab('support')}>
+                      Open chats
+                    </Btn>
                   </div>
                 </Card>
                 <Card title="Withdrawals" subtitle="Pending processing">
                   <div className="p-5">
-                    <div className="text-3xl font-extrabold text-[#1C412C]">{pendingRequestsCount}</div>
+                    <div className="text-3xl font-extrabold text-[#1C412C]">{pendingWithdrawals}</div>
                     <p className="text-[11px] text-[#213532]/70 mt-1">requests in queue</p>
                     <Btn size="sm" variant="ghost" className="mt-3" onClick={() => setActiveTab('withdrawals')}>
                       Open
                     </Btn>
                   </div>
                 </Card>
-                <Card title="Deposits" subtitle="Total volume">
+                <Card title="Deposits" subtitle="Assets under management">
                   <div className="p-5">
                     <div className="text-2xl font-extrabold text-emerald-700">${totalAum.toLocaleString('en-US')}</div>
-                    <p className="text-[11px] text-[#213532]/70 mt-1">{requests.filter(r => r.type === 'deposit').length} deposits</p>
+                    <p className="text-[11px] text-[#213532]/70 mt-1">
+                      {approvedDeposits.length} approved deposit(s) · ${depositsVolume.toLocaleString('en-US')}
+                    </p>
                   </div>
                 </Card>
                 <Card title="Quick registration" subtitle="Create a client account">
@@ -811,10 +909,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               {/* Trading modules row (PDF: Spot / Futures / Binary / P2P) */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {[
-                  { t: 'P2P Trading', v: '120', s: 'open orders', tone: 'gold' },
+                  { t: 'P2P Trading', v: '0', s: 'open orders', tone: 'gold' },
                   { t: 'Spot Trading', v: `${trades.filter(x => x.type === 'SPOT').length}`, s: 'last trades', tone: 'blue' },
                   { t: 'Futures Trading', v: `${trades.filter(x => x.type !== 'SPOT').length}`, s: 'open positions', tone: 'green' },
-                  { t: 'Binary Trading', v: '8', s: 'active bets', tone: 'red' },
+                  { t: 'Binary Trading', v: '0', s: 'active bets', tone: 'red' },
                 ].map(m => (
                   <Card key={m.t} className="p-5">
                     <div className="text-[11px] text-[#213532]/70 font-semibold uppercase tracking-wide">{m.t}</div>
@@ -827,7 +925,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               {/* Users quick list */}
               <Card title="Detailed user info" subtitle="Client base · CRM">
                 <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {investors.slice(0, 4).map(inv => (
+                  {allClients.slice(0, 4).map(inv => (
                     <div key={inv.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl p-4 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
@@ -835,7 +933,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                           <div className="min-w-0">
                             <div className="font-bold text-[#1C412C] text-[14px] truncate">{inv.name}</div>
                             <div className="text-[11px] text-[#213532]/70 truncate">{inv.email}</div>
-                            <div className="text-[11px] text-[#213532]/60 font-mono">{phonesHidden ? maskPhone(inv.phone) : inv.phone}</div>
+                            <div className="text-[11px] text-[#213532]/60 font-mono">{phoneLabel(inv.phone, phonesHidden)}</div>
                           </div>
                         </div>
                         <Badge tone={inv.kycStatus === 'verified' ? 'green' : inv.kycStatus === 'pending' ? 'gold' : 'red'}>
@@ -863,7 +961,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <Btn size="sm" variant="ghost" icon={PhoneCall} onClick={() => setActiveTab('calls')}>
                           Call
                         </Btn>
-                        <Btn size="sm" variant="ghost" icon={MessageSquare} onClick={() => setActiveTab('support')}>
+                        <Btn size="sm" variant="ghost" icon={MessageSquare} onClick={() => openSupportChat(inv.id)}>
                           Message
                         </Btn>
                       </div>
@@ -889,7 +987,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {/* ===================== ALL USERS ===================== */}
           {activeTab === 'users' && (
             <Card
-              title={`All users (${investors.length})`}
+              title={`All users (${allClients.length})`}
               subtitle="Platform accounts, balances and access"
               actions={
                 <div className="flex flex-wrap items-center gap-3">
@@ -933,7 +1031,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                             </div>
                           </button>
                         </Td>
-                        <Td className="font-mono text-[12px] text-[#213532]">{phonesHidden ? maskPhone(inv.phone) : inv.phone}</Td>
+                        <Td className="font-mono text-[12px] text-[#213532]">{phoneLabel(inv.phone, phonesHidden)}</Td>
                         <Td className="font-bold text-[#1C412C]">${inv.balance.toLocaleString('en-US')}</Td>
                         <Td className="text-[#213532]">${inv.invested.toLocaleString('en-US')}</Td>
                         <Td className="text-[12px] text-[#213532]/70">{inv.manager}</Td>
@@ -1049,6 +1147,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               onUpdateUserStatus={onUpdateUserStatus}
               isAdmin={isAdmin}
               onOpenStatementModal={(id, name) => setStatementModalUser({ id, name })}
+              onOpenChat={() => openSupportChat(selectedUser.id)}
             />
           )}
 
@@ -1175,7 +1274,12 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 ].map(b => (
                   <button
                     key={b.n}
-                    onClick={() => setProviders(p => ({ ...p, [b.n]: !p[b.n] }))}
+                    onClick={() =>
+                      saveSettings(
+                        { providers: { ...providers, [b.n]: !providers[b.n] } },
+                        `${b.n} ${!providers[b.n] ? 'enabled' : 'disabled'}`,
+                      )
+                    }
                     className={`text-left border rounded-2xl p-4 cursor-pointer transition-colors ${
                       providers[b.n]
                         ? 'bg-[#B08B48]/10 border-[#B08B48]/40 shadow-sm'
@@ -1233,7 +1337,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                           <div key={lead.id} className="bg-white border border-[#E4DECB] rounded-xl p-3 shadow-xs hover:border-[#B08B48]/50 transition-colors">
                             <div className="font-semibold text-[#1C412C] text-[13px]">{lead.name}</div>
                             <div className="text-[11px] text-[#213532]/70 font-mono">
-                              {phonesHidden ? maskPhone(lead.phone) : lead.phone}
+                              {phoneLabel(lead.phone, phonesHidden)}
                             </div>
                             <div className="text-[12px] text-[#B08B48] font-bold mt-1">
                               ${lead.potentialAmount.toLocaleString('en-US')}
@@ -1507,7 +1611,12 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <div className="text-[11px] text-[#213532]/70 mt-0.5">{r.s}</div>
                       </div>
                       <button
-                        onClick={() => setRules(p => ({ ...p, [r.key]: !p[r.key] }))}
+                        onClick={() =>
+                          saveSettings(
+                            { [r.key]: !rules[r.key] } as Partial<CrmSettings>,
+                            `${r.t} — ${!rules[r.key] ? 'enabled' : 'disabled'}`,
+                          )
+                        }
                         className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer shrink-0 ${
                           rules[r.key] ? 'bg-[#B08B48]' : 'bg-[#213532]/20'
                         }`}
@@ -1526,7 +1635,12 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   {Object.keys(modules).map(m => (
                     <button
                       key={m}
-                      onClick={() => setModules(p => ({ ...p, [m]: !p[m] }))}
+                      onClick={() =>
+                        saveSettings(
+                          { modules: { ...modules, [m]: !modules[m] } },
+                          `Module "${m}" ${!modules[m] ? 'enabled' : 'disabled'}`,
+                        )
+                      }
                       className={`flex items-center gap-2 border rounded-xl px-3.5 py-2.5 cursor-pointer transition-colors text-left ${
                         modules[m]
                           ? 'bg-[#B08B48]/15 border-[#B08B48]/40'
@@ -1681,6 +1795,8 @@ const UserDetails: React.FC<{
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
   isAdmin: boolean;
   onOpenStatementModal?: (userId: number, userName: string) => void;
+  /** Jump to Support with this client's conversation open */
+  onOpenChat?: () => void;
 }> = ({
   user,
   trades,
@@ -1704,6 +1820,7 @@ const UserDetails: React.FC<{
   onUpdateUserStatus,
   isAdmin,
   onOpenStatementModal,
+  onOpenChat,
 }) => {
   const [moreOpen, setMoreOpen] = useState(false);
   // Real block state comes from the platform account, not local UI state
@@ -1748,6 +1865,7 @@ const UserDetails: React.FC<{
   }, [kycDocuments]);
   const [dialogAmount, setDialogAmount] = useState('500');
   const [dialogText, setDialogText] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   useEffect(() => {
     setManager(user.manager);
@@ -2039,7 +2157,7 @@ const UserDetails: React.FC<{
               </Field>
             )}
             <Field label="Phone">
-              <span className="font-mono">{phonesHidden ? maskPhone(user.phone) : user.phone}</span>
+              <span className="font-mono">{phoneLabel(user.phone, phonesHidden)}</span>
             </Field>
             <Field label="Assigned manager">
               <Select
@@ -2402,19 +2520,40 @@ const UserDetails: React.FC<{
                 placeholder="Write a message to the client..."
                 className="w-full px-3.5 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-[13px] text-[#213532] resize-none focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20"
               />
+              <p className="text-[11px] text-[#213532]/60 pt-2">
+                Delivered to the client's Support chat — they see it instantly in their cabinet.
+              </p>
               <div className="flex justify-end gap-2 pt-1">
                 <Btn variant="ghost" onClick={() => setDialog(null)}>
                   Cancel
                 </Btn>
+                <Btn variant="ghost" onClick={() => { setDialog(null); onOpenChat?.(); }}>
+                  Open chat
+                </Btn>
                 <Btn
                   variant="gold"
-                  disabled={!dialogText.trim()}
-                  onClick={() => {
-                    onNotify(`Message sent to ${shortName}`);
-                    setDialog(null);
+                  disabled={!dialogText.trim() || sendingMessage}
+                  onClick={async () => {
+                    // A toast used to be the whole feature: nothing was sent
+                    // anywhere. Now it goes into the real support thread.
+                    const clientId = account?.id || Number(String(user.id).replace(/^acc-/, ''));
+                    if (!Number.isFinite(clientId) || !clientId) {
+                      return onNotify('This client does not have a platform account.');
+                    }
+                    setSendingMessage(true);
+                    try {
+                      await apiSendSupportMessage({ clientId: Number(clientId), text: dialogText.trim() });
+                      onNotify(`Message sent to ${shortName}`);
+                      setDialogText('');
+                      setDialog(null);
+                    } catch (err) {
+                      onNotify(err instanceof Error ? err.message : 'Could not send the message');
+                    } finally {
+                      setSendingMessage(false);
+                    }
                   }}
                 >
-                  Send
+                  {sendingMessage ? 'Sending…' : 'Send'}
                 </Btn>
               </div>
             </>

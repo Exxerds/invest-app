@@ -30,11 +30,7 @@ import {
   NewLeadModal, 
   NewProjectModal 
 } from './components/modals/OperationsModals';
-import { 
-  INITIAL_PROJECTS, 
-  INITIAL_REQUESTS,
-  INITIAL_MY_INVESTMENTS
-} from './data/mockData';
+import { INITIAL_PROJECTS } from './data/mockData';
 import type { 
   Project, 
   Investor, 
@@ -47,10 +43,30 @@ import type {
   KycStatus
 } from './types';
 import type { AdminTrade } from './components/crm/CrmTradesManager';
-import { CheckCircle2, TrendingUp } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
+import { OakCrest } from './components/brand/Logo';
 
 /** Where the user was before a refresh */
 const TAB_KEY = 'ohy_tab';
+
+/**
+ * Older builds cached the (sample) portfolio in localStorage under
+ * ohy_investments_* — those entries are why a brand-new account could still
+ * show "my-01 BTC/USDT $35 000". Wipe them once, on boot.
+ */
+function purgeLegacyPortfolioCache() {
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('ohy_investments_') || key.startsWith('my-'))) doomed.push(key);
+    }
+    doomed.forEach(k => localStorage.removeItem(k));
+  } catch {
+    /* private mode / storage disabled — nothing to clean */
+  }
+}
+purgeLegacyPortfolioCache();
 /** Holds the admin's own token while they view a client account */
 const ADMIN_TOKEN_KEY = 'ohy_admin_token';
 
@@ -75,11 +91,33 @@ export default function App() {
   // Client records are derived from the database inside the CRM
   const [investors, setInvestors] = useState<Investor[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [requests] = useState<TransactionRequest[]>(INITIAL_REQUESTS);
+  /**
+   * Deposit / withdrawal requests come from the server only. The former
+   * INITIAL_REQUESTS sample rows made a brand-new install look like it
+   * already had pending money movements.
+   */
+  const [requests] = useState<TransactionRequest[]>([]);
 
   // CRM users (from backend) + privacy settings
   const [users, setUsers] = useState<ApiUser[]>([]);
-  const [settings, setSettings] = useState<CrmSettings>({ hidePhonesFromAgents: false });
+  /**
+   * Mirrors server/src/crmSettings.js — the same defaults on both sides, so the
+   * Settings screen is never blank for the split second before the API answers.
+   */
+  const [settings, setSettings] = useState<CrmSettings>({
+    hidePhonesFromAgents: false,
+    duplicateControl: true,
+    manualClosing: false,
+    callRecording: true,
+    modules: {
+      Spot: true, Futures: true, P2P: true, Binary: true, Staking: true,
+      'AI Trading': false, Swap: false, 'Copy trading': false,
+    },
+    providers: {
+      'USDT TRC-20': true, 'Visa / Mastercard': true, 'SEPA transfer': false,
+      Bitcoin: true, PayPal: false, 'ACH transfer': true,
+    },
+  });
 
   // Agent notes are append-only: no edit/delete handlers exist by design
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
@@ -91,57 +129,14 @@ export default function App() {
   // Positions opened through the platform (persisted server-side)
   const [serverTrades, setServerTrades] = useState<ApiTrade[]>([]);
 
-  // Admin Trades State (Priority feature for CRM!)
-  const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([
-    {
-      id: 'trade-01',
-      investorId: 'inv-01',
-      asset: 'BTC/USDT (Crypto Spot)',
-      type: 'LONG',
-      amount: 15000,
-      entryPrice: 61400,
-      currentPrice: 64200,
-      leverage: 1,
-      pnl: 1450,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-02',
-      investorId: 'inv-01',
-      asset: 'ETH/USDT (Futures Long 10x)',
-      type: 'LONG',
-      amount: 10000,
-      entryPrice: 2680,
-      currentPrice: 2820,
-      leverage: 10,
-      pnl: 2100,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-03',
-      investorId: 'inv-01',
-      asset: 'XAU/USD — Gold (Precious Metal Spot)',
-      type: 'SPOT',
-      amount: 35000,
-      entryPrice: 2380,
-      currentPrice: 2415,
-      leverage: 1,
-      pnl: 4810,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-04',
-      investorId: 'inv-02',
-      asset: 'BTC/USDT (Futures Short 5x)',
-      type: 'SHORT',
-      amount: 25000,
-      entryPrice: 63500,
-      currentPrice: 62100,
-      leverage: 5,
-      pnl: 2750,
-      status: 'OPEN'
-    }
-  ]);
+  /**
+   * Locally-created positions (CRM → Trading → "Open position").
+   *
+   * It used to be seeded with four demo trades, which is why every fresh
+   * account showed $98k invested / $111k portfolio and four positions it
+   * never opened. A client's numbers must come from the server alone.
+   */
+  const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([]);
 
   // Modals state
   const [selectedProjectForInvest, setSelectedProjectForInvest] = useState<Project | null>(null);
@@ -332,26 +327,14 @@ export default function App() {
         } catch {
           /* ignore transient errors */
         }
-        // ...and their active investments
+        // ...and their active positions. The server is the single source of
+        // truth: no localStorage cache, no sample positions. An account with
+        // nothing opened shows an empty portfolio, as it should.
         try {
           const invRes = await apiMyInvestments();
-          if (invRes.investments && invRes.investments.length > 0) {
-            setMyInvestments(invRes.investments);
-          } else {
-            const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
-            if (saved) {
-              setMyInvestments(JSON.parse(saved));
-            } else {
-              setMyInvestments(INITIAL_MY_INVESTMENTS);
-            }
-          }
+          setMyInvestments(invRes.investments || []);
         } catch {
-          const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
-          if (saved) {
-            setMyInvestments(JSON.parse(saved));
-          } else {
-            setMyInvestments(INITIAL_MY_INVESTMENTS);
-          }
+          /* keep whatever we already had rather than inventing positions */
         }
       }
       try {
@@ -413,11 +396,27 @@ export default function App() {
     if (users.length === 0) return;
     setInvestors(prev => {
       const localById = new Map(prev.map(inv => [inv.id, inv]));
+
+      /**
+       * Invested / profit are DERIVED from the positions the server holds —
+       * they used to be hard-zeros here, so the CRM showed a client with open
+       * trades as having invested nothing.
+       */
+      const figuresFor = (userId: number) => {
+        const mine = serverTrades.filter(t => Number(t.userId) === Number(userId));
+        return {
+          invested: mine
+            .filter(t => t.status === 'OPEN')
+            .reduce((sum, t) => sum + (Number(t.amount) || 0), 0),
+          totalProfit: mine.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0),
+        };
+      };
+
       return users
         .filter(u => u.role === 'CLIENT')
         .map(u => {
           const existing = localById.get(String(u.id));
-          if (existing) return existing;
+          if (existing) return { ...existing, ...figuresFor(u.id) };
           const created = u.created_at ? new Date(u.created_at) : new Date();
           const dd = String(created.getDate()).padStart(2, '0');
           const mm = String(created.getMonth() + 1).padStart(2, '0');
@@ -431,14 +430,13 @@ export default function App() {
             phone: u.phone || '',
             kycStatus,
             balance: Number(u.balance) || 0,
-            invested: 0,
-            totalProfit: 0,
+            ...figuresFor(u.id),
             registrationDate: `${dd}.${mm}.${created.getFullYear()}`,
             manager: 'No manager',
           };
         });
     });
-  }, [users]);
+  }, [users, serverTrades]);
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
@@ -518,11 +516,7 @@ export default function App() {
       else setInvestorBalance(prev => Math.max(0, prev - amount));
 
       const newInv = res.investment;
-      setMyInvestments(prev => {
-        const next = [newInv, ...prev];
-        localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
-        return next;
-      });
+      setMyInvestments(prev => [newInv, ...prev]);
 
       setProjects(prev => prev.map(p => {
         if (p.id === project.id) {
@@ -552,11 +546,7 @@ export default function App() {
         accruedProfit: calculatedAccrued,
       };
 
-      setMyInvestments(prev => {
-        const next = [newInv, ...prev];
-        localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
-        return next;
-      });
+      setMyInvestments(prev => [newInv, ...prev]);
 
       setProjects(prev => prev.map(p => {
         if (p.id === project.id) {
@@ -620,11 +610,7 @@ export default function App() {
       returned = localPayout;
     }
 
-    setMyInvestments(prev => {
-      const next = prev.filter(i => String(i.id) !== String(invId));
-      localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
-      return next;
-    });
+    setMyInvestments(prev => prev.filter(i => String(i.id) !== String(invId)));
 
     showToast(
       `Position closed: $${returned.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} returned to balance ` +
@@ -967,21 +953,33 @@ export default function App() {
     }
   };
 
-  const handleToggleHidePhones = async () => {
+  /**
+   * Every Settings toggle goes through here: the patch is merged server-side,
+   * so the switches keep working instead of resetting on the next refresh.
+   */
+  const handleSaveSettings = async (patch: Partial<CrmSettings>, message?: string) => {
     if (currentUser?.role !== 'ADMIN') {
       showToast('Only an administrator can change this setting.', 'info');
       return;
     }
-    const next = !settings.hidePhonesFromAgents;
+    const previous = settings;
+    setSettings(prev => ({ ...prev, ...patch })); // optimistic — the UI must feel instant
     try {
-      const res = await apiSaveCrmSettings(next);
+      const res = await apiSaveCrmSettings(patch);
       setSettings(res.settings);
-      showToast(next
-        ? '✔ Phone numbers are now hidden from agents.'
-        : '✔ Agents can see full phone numbers again.');
+      if (message) showToast(`✔ ${message}`);
     } catch (err) {
+      setSettings(previous);
       showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the setting', 'info');
     }
+  };
+
+  const handleToggleHidePhones = () => {
+    const next = !settings.hidePhonesFromAgents;
+    handleSaveSettings(
+      { hidePhonesFromAgents: next },
+      next ? 'Phone numbers are now hidden from agents.' : 'Agents can see full phone numbers again.',
+    );
   };
 
   return (
@@ -1225,6 +1223,7 @@ export default function App() {
             onUpdateUserStatus={handleUpdateUserStatus}
             settings={settings}
             onToggleHidePhones={handleToggleHidePhones}
+            onSaveSettings={handleSaveSettings}
             onNotify={showToast}
             notes={clientNotes}
             onAddNote={handleAddClientNote}
@@ -1246,8 +1245,11 @@ export default function App() {
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
             <div className="max-w-sm">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-full bg-[#B08B48] flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-white" />
+                {/* Cream disc keeps the dark-green crest readable on the
+                    dark-green footer — same treatment as the sidebar and the
+                    e-mail header. */}
+                <div className="w-9 h-9 rounded-full bg-[#F5F2E9] flex items-center justify-center shrink-0">
+                  <OakCrest size={20} />
                 </div>
                 <span className="font-serif font-bold text-lg text-white tracking-wide">OAK HAVEN <span className="text-[#B08B48] italic">YIELD</span></span>
               </div>
