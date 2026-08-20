@@ -28,6 +28,7 @@ import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
 import { logActivity } from './workspace.js';
+import { readCrmSettings } from '../crmSettings.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -353,6 +354,13 @@ router.post('/:id/whisper', auth, async (req, res) => {
 
 router.post('/:id/recording', auth, async (req, res) => {
   if (!isStaff(req.user)) return res.status(403).json({ error: 'Staff access only' });
+
+  // Settings → "Enable call recording". Off means the platform refuses to
+  // store audio at all, instead of pretending the switch does something.
+  const crm = await readCrmSettings();
+  if (!crm.callRecording) {
+    return res.status(403).json({ error: 'Call recording is disabled in the platform settings.' });
+  }
 
   const callId = Number(req.params.id);
   const call = await store.byId('calls', callId);

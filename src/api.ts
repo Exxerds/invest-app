@@ -35,6 +35,13 @@ export class ApiError extends Error {
   }
 }
 
+/** Are we running against a local dev setup (Vite proxy → :4000)? */
+function isLocalDev(): boolean {
+  if (typeof window === 'undefined') return false;
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '0.0.0.0';
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
@@ -49,21 +56,40 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       },
     });
   } catch (e) {
-    // Network failure → the API server (npm run dev) is probably not running
-    const msg = e instanceof Error ? e.message : 'Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".';
-    throw new ApiError(msg.includes('Cannot reach') ? msg : 'Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".', 0);
-  }
-  // 502/503/504 come from the Vite proxy when the API server (:4000) is down.
-  // The body is an HTML error page, not JSON — show a human-readable hint instead.
-  if (res.status === 502 || res.status === 503 || res.status === 504) {
-    const text = await res.text().catch(() => '');
-    // if server returned JSON with error, try to parse
-    let json: any = {};
-    try { json = JSON.parse(text); } catch {}
-    const serverMsg = json?.error;
+    // Network failure → offline, or (locally) the API server is not running
+    const msg = e instanceof Error ? e.message : '';
+    const local = isLocalDev();
     throw new ApiError(
-      serverMsg || 'The API server is not running. Open a terminal in the project folder and run «npm run dev» — wait for the line "Oak Haven Yield API server running", then try again.',
-      res.status,
+      msg.includes('Cannot reach') ? msg : (local
+        ? 'Cannot reach the server. Make sure you ran «npm run dev» and the terminal shows "API server running".'
+        : 'Cannot reach the server. Check your internet connection and try again.'),
+      0
+    );
+  }
+
+  // 502/503/504: locally that means the Vite proxy found nothing on :4000;
+  // in production it is the hosting platform reporting a backend hiccup.
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    if (isLocalDev()) {
+      const text = await res.text().catch(() => '');
+      let json: any = {};
+      try { json = JSON.parse(text); } catch {}
+      const serverMsg = json?.error;
+      throw new ApiError(
+        serverMsg || 'The API server is not running. Open a terminal in the project folder and run «npm run dev» — wait for the line "Oak Haven Yield API server running", then try again.',
+        res.status
+      );
+    }
+    const detail = await res
+      .clone()
+      .json()
+      .then((d: { error?: string }) => (typeof d?.error === 'string' ? d.error : ''))
+      .catch(() => '');
+    throw new ApiError(
+      `Server temporarily unavailable (${res.status}). Please retry in a few seconds.` +
+        (detail ? ` Details: ${detail}` : '') +
+        ' If the problem persists, contact support.',
+      res.status
     );
   }
 
@@ -583,15 +609,31 @@ export const apiSendMessage = (text: string, clientId?: number) =>
     method: 'POST', headers: authHeader(), body: JSON.stringify({ text, clientId }),
   });
 
+/** Everything the Settings screen persists (privacy rules, modules, providers) */
+export interface ApiCrmSettings {
+  hidePhonesFromAgents: boolean;
+  duplicateControl: boolean;
+  manualClosing: boolean;
+  callRecording: boolean;
+  modules: Record<string, boolean>;
+  providers: Record<string, boolean>;
+}
+
 export const apiCrmSettings = () =>
-  request<{ settings: { hidePhonesFromAgents: boolean; manualClosing?: boolean; duplicateControl?: boolean; callRecording?: boolean } }>('/workspace/crm-settings', {
+  request<{ settings: ApiCrmSettings }>('/workspace/crm-settings', {
     headers: authHeader(),
   });
 
-export const apiSaveCrmSettings = (hidePhonesFromAgents: boolean, extra?: Record<string, boolean>) =>
-  request<{ ok: true; settings: { hidePhonesFromAgents: boolean; manualClosing?: boolean } }>('/workspace/crm-settings', {
-    method: 'PUT', headers: authHeader(), body: JSON.stringify({ hidePhonesFromAgents, ...(extra || {}) }),
+/**
+ * Partial update — the server merges it into the stored record, so flipping
+ * one switch never resets the others.
+ */
+export const apiSaveCrmSettings = (patchOrBool: Partial<ApiCrmSettings> | boolean, extra?: Record<string, boolean>) => {
+  const patch: Partial<ApiCrmSettings> = typeof patchOrBool === 'boolean' ? { hidePhonesFromAgents: patchOrBool, ...(extra as any) } : patchOrBool;
+  return request<{ ok: true; settings: ApiCrmSettings }>('/workspace/crm-settings', {
+    method: 'PUT', headers: authHeader(), body: JSON.stringify(patch),
   });
+};
 
 export const apiClientStatuses = () =>
   request<{ statuses: Record<string, string> }>('/workspace/client-status', { headers: authHeader() });

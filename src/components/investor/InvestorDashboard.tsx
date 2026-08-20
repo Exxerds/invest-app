@@ -482,6 +482,9 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         }
         setSupportPrevStaffCount(staffCount);
         setSupportMsgs(msgs.map(m => ({ id: m.id, from: m.from, text: m.text, createdAt: m.createdAt, senderName: m.senderName })));
+        // Re-opening the tab after writing earlier should still show the notice
+        // (until the desk replies — the render guard below takes care of that).
+        if (msgs.some(m => m.from === 'client')) setSupportSystemShown(true);
         apiSupportPresence().catch(() => undefined);
       } catch {
         /* ignore */
@@ -1561,7 +1564,14 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   </div>
                 );
               })}
-              {supportSystemShown && (
+              {/*
+                * "A manager is being connected…" is a waiting notice, not a chat
+                * message: it appears once the client has written and disappears
+                * for good as soon as a human from the desk answers.
+                */}
+              {supportSystemShown
+                && supportMsgs.some(m => m.from === 'client')
+                && !supportMsgs.some(m => m.from === 'staff') && (
                 <div className="text-center text-[11px] text-[#213532]/50 py-2">A manager is being connected to your conversation — typically within a few minutes.</div>
               )}
             </div>

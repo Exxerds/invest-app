@@ -1,10 +1,10 @@
 import React from 'react';
+import { OakCrest } from './brand/Logo';
 import { 
   Briefcase, 
   LayoutDashboard, 
   Users, 
   Wallet, 
-  TrendingUp, 
   LogOut,
   Globe,
   ChevronDown
@@ -46,8 +46,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => onTabChange('landing')}>
-            <div className="w-10 h-10 rounded-xl bg-[#1C412C] flex items-center justify-center shadow-sm">
-              <TrendingUp className="w-5 h-5 text-[#B08B48]" />
+            {/* The crest, not a generic arrow icon — same mark as the landing
+                page, the cabinet, the CRM and the e-mails. */}
+            <div className="w-10 h-10 rounded-full bg-[#F5F2E9] border border-[#E4DECB] flex items-center justify-center shadow-sm shrink-0">
+              <OakCrest size={22} />
             </div>
             <div>
               <span className="font-serif font-bold text-lg tracking-tight text-[#1C412C]">

@@ -30,6 +30,7 @@ import settingsRoutes from './routes/settings.js';
 import supportRoutes from './routes/support.js';
 import { seedUsers } from './seed.js';
 import { describeConnection, probeConnection, USE_PG, describeBackend, ensureSchema } from './db.js';
+import { ensureReady } from './db.js';
 
 dotenv.config();
 
@@ -168,8 +169,14 @@ async function ensureSeeded() {
   if (seedPromise) return seedPromise;
   seedPromise = (async () => {
     try {
-      if (USE_PG) {
-        await ensureSchema();
+      // ensure storage ready (tables) — uses ensureReady if available, else ensureSchema
+      try {
+        if (typeof ensureReady === 'function') await ensureReady();
+        else if (USE_PG) await ensureSchema();
+      } catch (e) {
+        // if ensureReady fails, try ensureSchema fallback
+        if (USE_PG) await ensureSchema();
+        else throw e;
       }
       await seedUsers();
       seedStatus = 'ready';
@@ -182,6 +189,24 @@ async function ensureSeeded() {
     return seedStatus;
   })();
   return seedPromise;
+}
+// export for other modules if needed
+export { ensureSeeded };
+
+/**
+ * Serverless has no writable disk, so the JSON-file store cannot survive there:
+ * accounts created on one instance vanish on the next. Say it loudly once, at
+ * boot, instead of letting it look like a random "invalid email or password".
+ */
+const EPHEMERAL_STORAGE = Boolean(process.env.VERCEL) && !USE_PG;
+if (EPHEMERAL_STORAGE) {
+  console.error('=============================================================');
+  console.error('[server] DATABASE_URL is NOT set on this deployment.');
+  console.error('[server] Storage falls back to a read-only JSON file: demo');
+  console.error('[server] accounts work per instance, but registrations and');
+  console.error('[server] balances are LOST. Add a Postgres connection string');
+  console.error('[server] in the Vercel project settings and redeploy.');
+  console.error('=============================================================');
 }
 
 app.get('/api/health', async (req, res) => {
@@ -198,10 +223,15 @@ app.get('/api/health', async (req, res) => {
   res.json({
     ok: true,
     time: new Date().toISOString(),
+    env: process.env.VERCEL ? 'vercel' : process.env.NODE_ENV || 'development',
+    storage: USE_PG ? 'postgres' : 'json-file',
     backend: describeBackend(),
     persistent: USE_PG,
     seed,
     db: describeConnection(),
+    ...(EPHEMERAL_STORAGE
+      ? { warning: 'DATABASE_URL is not set — data does not persist between requests' }
+      : {}),
   });
 });
 
@@ -250,14 +280,40 @@ app.get('/api/health/db', async (req, res) => {
       seed: `failed: ${e.message || String(e)}`,
     });
   }
+  // also return user count like main's health/db did
+  let users = undefined;
+  try {
+    const { all } = await import('./db.js');
+    const list = await all('users');
+    users = list.length;
+  } catch {}
   res.json({
     ok: true,
     ms: probe.ms,
     db: { ...db, database: probe.db || db.database },
     persistent: USE_PG,
+    storage: describeBackend(),
     seed,
+    ...(users !== undefined ? { users } : {}),
   });
 });
+
+/**
+ * Serverless cold start: seed before the first request reaches a route.
+ * Kicked off at module load AND awaited per request, so the very first call
+ * after a deploy already sees the accounts.
+ */
+if (process.env.VERCEL) {
+  ensureSeeded().catch(() => undefined);
+  app.use(async (req, res, next) => {
+    try {
+      await ensureSeeded();
+    } catch (err) {
+      console.error('[server] Seeding error (continuing):', err);
+    }
+    next();
+  });
+}
 
 /**
  * PRODUCTION: serve the built front-end from the same origin.
@@ -289,7 +345,7 @@ if (HAS_BUILD) {
 app.get('/', (req, res, next) => {
   if (HAS_BUILD) return next(); // production: static index.html handles it
   res.type('html').send(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8\"><title>Oak Haven Yield API</title>
+<html lang="en"><head><meta charset="utf-8"><title>Oak Haven Yield API</title>
 <style>
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
        background:#0a0b0e;color:#e2e8f0;font-family:system-ui,Segoe UI,Arial,sans-serif}
@@ -379,7 +435,7 @@ async function start() {
         console.error(`[server] ERROR: port ${PORT} is already in use.`);
         console.error('[server] Another copy of the API server is still running.');
         console.error('[server] Fix it:');
-        console.error('[server]   Windows → open Task Manager and end all \"Node.js\" processes,');
+        console.error('[server]   Windows → open Task Manager and end all "Node.js" processes,');
         console.error('[server]             or run:  npx kill-port 4000');
         console.error('[server]   macOS/Linux → run:  npx kill-port 4000');
         console.error('[server] Then start again with «npm run dev».');

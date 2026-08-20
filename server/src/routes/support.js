@@ -166,6 +166,9 @@ router.post('/messages', auth, async (req, res) => {
     }
     notify({
       audience: 'staff',
+      // userId carries WHICH client wrote, so clicking the bell entry can open
+      // that exact conversation instead of dumping the agent on the chat list.
+      userId: req.user.id,
       kind: 'support',
       title: 'New support message',
       message: `${req.user.name}: ${rawText.slice(0, 80)}`,

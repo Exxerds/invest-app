@@ -39,11 +39,11 @@ async function auth(req, res, next) {
     console.error('[auth] DB error:', e.message);
     return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
   }
-    if (!user) return res.status(401).json({ error: 'User not found' });
-    if (user.status === 'blocked') return res.status(403).json({ error: 'Account is blocked' });
-        req.user = user;
-    next();
-  }
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  if (user.status === 'blocked') return res.status(403).json({ error: 'Account is blocked' });
+  req.user = user;
+  next();
+}
 
 const isStaff = (u) => u.role === 'ADMIN' || u.role === 'MANAGER';
 const staffOnly = (req, res, next) =>
@@ -317,27 +317,28 @@ router.post('/messages', auth, async (req, res) => {
 
 /* ---------------- CRM preferences ---------------- */
 
+/**
+ * Everything the Settings screen shows: privacy rules, feature modules and
+ * payment providers. Defaults are merged in, so a client on an old build
+ * never receives `undefined` for a flag that was added later.
+ */
 router.get('/crm-settings', auth, staffOnly, async (req, res) => {
-  const settings = await readCrmSettings();
-  res.json({ settings });
+  res.json({ settings: await readCrmSettings() });
 });
 
 router.put('/crm-settings', auth, async (req, res) => {
   if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Administrator access only' });
 
-  const patch = {};
-  if (req.body?.hidePhonesFromAgents !== undefined) patch.hidePhonesFromAgents = Boolean(req.body.hidePhonesFromAgents);
-  if (req.body?.manualClosing !== undefined) patch.manualClosing = Boolean(req.body.manualClosing);
-  if (req.body?.duplicateControl !== undefined) patch.duplicateControl = Boolean(req.body.duplicateControl);
-  if (req.body?.callRecording !== undefined) patch.callRecording = Boolean(req.body.callRecording);
-  // legacy: allow full object via settings
-  if (req.body?.settings && typeof req.body.settings === 'object') {
-    Object.assign(patch, req.body.settings);
-  }
-  // also support direct flags
-  const settings = await writeCrmSettings(patch, req.user.name);
+  // A partial body is merged into what is already stored — toggling one
+  // switch must never reset the rest of the screen.
+  const settings = await writeCrmSettings(req.body || {}, req.user.name);
 
-  await logActivity({ actor: req.user, action: 'settings_changed', target: 'crmSettings', details: JSON.stringify(settings) });
+  await logActivity({
+    actor: req.user,
+    action: 'settings_changed',
+    target: 'crmSettings',
+    details: JSON.stringify(req.body || {}).slice(0, 400),
+  });
   res.json({ ok: true, settings });
 });
 
