@@ -100,13 +100,23 @@ export default function App() {
 
   // CRM users (from backend) + privacy settings
   const [users, setUsers] = useState<ApiUser[]>([]);
+  /**
+   * Mirrors server/src/crmSettings.js — the same defaults on both sides, so the
+   * Settings screen is never blank for the split second before the API answers.
+   */
   const [settings, setSettings] = useState<CrmSettings>({
     hidePhonesFromAgents: false,
     duplicateControl: true,
     manualClosing: false,
     callRecording: true,
-    modules: {},
-    providers: {},
+    modules: {
+      Spot: true, Futures: true, P2P: true, Binary: true, Staking: true,
+      'AI Trading': false, Swap: false, 'Copy trading': false,
+    },
+    providers: {
+      'USDT TRC-20': true, 'Visa / Mastercard': true, 'SEPA transfer': false,
+      Bitcoin: true, PayPal: false, 'ACH transfer': true,
+    },
   });
 
   // Agent notes are append-only: no edit/delete handlers exist by design
