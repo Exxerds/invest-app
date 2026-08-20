@@ -1093,14 +1093,27 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                                 </Btn>
                                 {statusLoadingId === u.id ? (
                                   <Loader2 className="w-4 h-4 animate-spin text-[#213532]/50" />
-                                ) : u.status !== 'blocked' ? (
-                                  <Btn size="sm" variant="danger" onClick={() => handleStatusChange(u, 'blocked')}>
-                                    Block
-                                  </Btn>
                                 ) : (
-                                  <Btn size="sm" variant="success" onClick={() => handleStatusChange(u, 'active')}>
-                                    Unblock
-                                  </Btn>
+                                  <>
+                                    {/* A "pending" account cannot sign in until the e-mail
+                                        is confirmed. When the letter never arrives (SMTP
+                                        down, address typo) support had no way out — this
+                                        activates it by hand. */}
+                                    {u.status === 'pending' && (
+                                      <Btn size="sm" variant="success" onClick={() => handleStatusChange(u, 'active')}>
+                                        Activate
+                                      </Btn>
+                                    )}
+                                    {u.status !== 'blocked' ? (
+                                      <Btn size="sm" variant="danger" onClick={() => handleStatusChange(u, 'blocked')}>
+                                        Block
+                                      </Btn>
+                                    ) : (
+                                      <Btn size="sm" variant="success" onClick={() => handleStatusChange(u, 'active')}>
+                                        Unblock
+                                      </Btn>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             )}
