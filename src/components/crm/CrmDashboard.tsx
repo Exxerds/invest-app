@@ -938,6 +938,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               investors={investors}
               trades={trades}
               focusInvestorId={tradingFocusId}
+              canManageTrades={currentUserRole === 'ADMIN' || Boolean(settings.manualClosing)}
               onUpdateInvestorBalance={onUpdateInvestorBalance}
               onCreateTrade={onCreateTrade}
               onUpdateTrade={onUpdateTrade}
@@ -1557,7 +1558,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   </div>
                   {([
                     { key: 'duplicateControl' as const, t: 'Duplicate control (block repeated leads)', s: 'Every new contact is checked against the base' },
-                    { key: 'manualClosing' as const, t: 'Allow manual position closing by clients', s: 'When off, only staff can close positions' },
+                    { key: 'manualClosing' as const, t: 'Allow manual position management (managers & clients)', s: 'When off, only the admin can open, edit or close client positions' },
                     { key: 'callRecording' as const, t: 'Enable call recording', s: 'Store call records for quality control' },
                   ]).map(r => (
                     <div key={r.key} className="flex items-center justify-between bg-[#F5F2E9] border border-[#E4DECB] rounded-xl p-4">

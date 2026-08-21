@@ -29,6 +29,7 @@ import pushRoutes from './routes/push.js';
 import statementRoutes from './routes/statements.js';
 import settingsRoutes from './routes/settings.js';
 import supportRoutes from './routes/support.js';
+import assetsRoutes from './routes/assets.js';
 import { seedUsers } from './seed.js';
 import { describeBackend } from './db.js';
 
@@ -208,6 +209,7 @@ app.use('/api/push', pushRoutes);
 app.use('/api/statements', statementRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/assets', assetsRoutes);
 
 // Unknown API route → JSON 404 (never fall through to the SPA)
 app.use('/api', (req, res) => res.status(404).json({ error: 'Unknown API endpoint' }));

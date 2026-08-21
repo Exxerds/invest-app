@@ -34,6 +34,9 @@ interface CrmTradesManagerProps {
   /** deep link: parent tells us WHICH client to open with (e.g. from a
    *  client card, user details, or a staff notification) */
   focusInvestorId?: string | null;
+  /** CRM rule: when the "manual closing" setting is off, only the
+   *  administrator may open / edit / close client positions. */
+  canManageTrades?: boolean;
   onUpdateInvestorBalance: (investorId: string, newBalance: number) => void;
   onCreateTrade: (trade: Omit<AdminTrade, 'id' | 'status'>) => void;
   onUpdateTrade: (tradeId: string, patch: Partial<AdminTrade>) => void;
@@ -66,6 +69,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
   investors,
   trades,
   focusInvestorId,
+  canManageTrades = true,
   onUpdateInvestorBalance,
   onCreateTrade,
   onUpdateTrade,
@@ -270,9 +274,18 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
         title={`Positions — ${selectedInvestor?.name}`}
         subtitle="Edit side, open time, entry / mark price, leverage and PnL — or force close"
         actions={
-          <Btn variant="gold" icon={Plus} onClick={() => setShowNewTradeModal(true)}>
-            Open trade for client
-          </Btn>
+          canManageTrades ? (
+            <Btn variant="gold" icon={Plus} onClick={() => setShowNewTradeModal(true)}>
+              Open trade for client
+            </Btn>
+          ) : (
+            <span
+              title="Only the administrator can manage client positions — the setting «Allow manual position closing by clients» is off"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#213532]/[.06] border border-[#E4DECB] text-[11px] font-semibold text-[#213532]/60 cursor-not-allowed"
+            >
+              🔒 Admin only
+            </span>
+          )
         }
       >
         <div className="overflow-x-auto">
@@ -311,14 +324,23 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                   </Td>
                   <Td className="text-right">
                     {t.status === 'OPEN' ? (
-                      <div className="flex items-center justify-end gap-2">
-                        <Btn size="sm" variant="ghost" icon={Edit3} onClick={() => openEditor(t)}>
-                          Edit trade
-                        </Btn>
-                        <Btn size="sm" variant="danger" onClick={() => onCloseTrade(t.id)}>
-                          Close
-                        </Btn>
-                      </div>
+                      canManageTrades ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <Btn size="sm" variant="ghost" icon={Edit3} onClick={() => openEditor(t)}>
+                            Edit trade
+                          </Btn>
+                          <Btn size="sm" variant="danger" onClick={() => onCloseTrade(t.id)}>
+                            Close
+                          </Btn>
+                        </div>
+                      ) : (
+                        <span
+                          title="Only the administrator can manage positions while the setting is off"
+                          className="inline-flex items-center px-2.5 py-1 rounded-lg bg-[#213532]/[.06] text-[11px] font-semibold text-[#213532]/55 cursor-not-allowed"
+                        >
+                          🔒 Admin only
+                        </span>
+                      )
                     ) : (
                       <span className="text-[11px] text-[#213532]/60">Completed</span>
                     )}

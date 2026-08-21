@@ -134,6 +134,17 @@ router.post('/withdraw', auth, async (req, res) => {
     return res.status(400).json({ error: 'Enter a valid amount' });
   }
 
+  // "WITHDRAWAL BLOCKED" is a CRM workflow status (Settings → client card).
+  // It must actually stop withdrawals, not just look like a label.
+  const statusesRec = await store.byField('settings', 'key', 'clientStatuses');
+  const myStatus = String(statusesRec?.value?.[String(req.user.id)] || '')
+    .toLowerCase().replace(/[-_]/g, ' ');
+  if (myStatus.includes('withdrawal blocked') || myStatus.includes('withdrawals blocked') || myStatus === 'blocked') {
+    return res.status(403).json({
+      error: 'Withdrawals are temporarily disabled on your account. Please contact your manager or support for details.',
+    });
+  }
+
   const balance = await balanceOf(req.user.id);
   const pending = (await store.allWhere('transactions', (t) =>
     t.userId === req.user.id && t.type === 'withdrawal' && t.status === 'pending'))

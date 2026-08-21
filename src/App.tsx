@@ -19,9 +19,10 @@ import {
   apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, 
   apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, 
   apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq,
+  apiAssets, apiCreateAsset,
   apiMyInvestments, apiCreateInvestment, apiClaimInvestmentProfit, apiQuote
 } from './api';
-import type { ApiTrade, ApiTransaction, ApiCall } from './api';
+import type { ApiTrade, ApiTransaction, ApiCall, ApiAsset } from './api';
 import { CallDock, IncomingCall } from './components/calls/CallPanel';
 import { enablePushNotifications } from './push';
 import { 
@@ -254,6 +255,8 @@ export default function App() {
     }
 
     const pull = async () => {
+      // Market instruments live on the server — same list for everyone
+      await reloadAssets();
       if (isStaff) {
         try {
           const res = await apiKycAll();
@@ -820,16 +823,43 @@ export default function App() {
     }
   };
 
-  const handleCreateProject = (newProjData: Omit<Project, 'id' | 'raisedAmount' | 'status'>) => {
-    const newProject: Project = {
-      ...newProjData,
-      id: `p-${Date.now()}`,
-      raisedAmount: 0,
-      status: 'active'
-    };
-    setProjects(prev => [newProject, ...prev]);
-    showToast(`✔ New asset «${newProject.title}» published!`);
-    setActiveTab('catalog');
+  /**
+   * Assets are platform data: they live on the server, so an instrument the
+   * admin publishes appears in every client's Market — not in one browser.
+   */
+  const handleCreateProject = async (newProjData: Omit<Project, 'id' | 'raisedAmount' | 'status'>) => {
+    try {
+      await apiCreateAsset(newProjData as Partial<ApiAsset> & { title: string });
+      await reloadAssets();
+      showToast(`✔ New asset «${newProjData.title}» published!`);
+      setActiveTab('catalog');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not create the asset', 'info');
+    }
+  };
+
+  const reloadAssets = async () => {
+    try {
+      const r = await apiAssets();
+      setProjects(r.assets.map(a => ({
+        id: `srv-${a.id}`,
+        title: a.title,
+        category: a.category as Project['category'],
+        categoryLabel: a.categoryLabel,
+        targetAmount: Number(a.targetAmount) || 0,
+        raisedAmount: Number(a.raisedAmount) || 0,
+        apr: Number(a.apr) || 0,
+        termMonths: Number(a.termMonths) || 0,
+        minCheck: Number(a.minCheck) || 0,
+        riskLevel: a.riskLevel,
+        status: a.status as Project['status'],
+        description: a.description,
+        imageUrl: a.imageUrl,
+        tags: Array.isArray(a.tags) ? a.tags : [],
+      })));
+    } catch {
+      /* keep the last known list on transient errors */
+    }
   };
 
   /* ========================================================

@@ -463,6 +463,37 @@ export const apiSubmitPublicLead = (data: { name: string; email: string; phone?:
     body: JSON.stringify(data),
   });
 
+// ---------- tradable assets (Market catalog) ----------
+
+export interface ApiAsset {
+  id: number;
+  title: string;
+  category: string;
+  categoryLabel: string;
+  targetAmount: number;
+  raisedAmount: number;
+  apr: number;
+  termMonths: number;
+  minCheck: number;
+  riskLevel: 'low' | 'medium' | 'high';
+  status: string;
+  description: string;
+  imageUrl: string;
+  tags: string[];
+  createdAt?: string;
+}
+
+export const apiAssets = () =>
+  request<{ assets: ApiAsset[] }>('/assets');
+
+export const apiCreateAsset = (data: Partial<ApiAsset> & { title: string }) =>
+  request<{ ok: true; asset: ApiAsset }>('/assets', {
+    method: 'POST', headers: authHeader(), body: JSON.stringify(data),
+  });
+
+export const apiDeleteAsset = (id: number | string) =>
+  request<{ ok: true }>(`/assets/${id}`, { method: 'DELETE', headers: authHeader() });
+
 // ---------- deposit wallets ----------
 
 export type CryptoType = 'BTC' | 'ETH' | 'USDC';

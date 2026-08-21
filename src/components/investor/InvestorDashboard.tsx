@@ -572,9 +572,13 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const totalInvested = openTrades.reduce((s, t) => s + Number(t.amount || 0), 0) + investedInPositions;
   const totalAccrued = openPnl + positionsAccrued;
   const walletsValue = WALLETS.reduce((s, w) => s + w.qty * w.price, 0);
-  // Equity = cash + margin locked + unrealised P/L + positions + their live P/L
-  const portfolioValue =
-    investorBalance + usedMargin + openPnl + walletsValue + investedInPositions + positionsAccrued;
+  /**
+   * Identity the client can verify by eye:
+   *   Total portfolio = Available balance + Invested + Live P/L
+   * (margin is INSIDE the invested amount, so it must not be added again —
+   *  it used to be counted twice, inflating the total).
+   */
+  const portfolioValue = investorBalance + walletsValue + totalInvested + totalAccrued;
 
   return (
     <div className="flex min-h-screen bg-[#F5F2E9] text-[#213532]">

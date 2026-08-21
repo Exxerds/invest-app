@@ -81,9 +81,18 @@ router.get('/all', auth, staffOnly, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   const b = req.body || {};
 
-  // Staff may open a position on behalf of a client
+  // Staff may open a position on behalf of a client — but when the
+  // "manual management" toggle is OFF, only the ADMIN may touch positions.
   let owner = req.user;
   if (b.userId && isStaff(req.user)) {
+    if (req.user.role !== 'ADMIN') {
+      const rec = await store.byField('settings', 'key', 'crmSettings');
+      if (!Boolean(rec?.value?.manualClosing)) {
+        return res.status(403).json({
+          error: 'Only the administrator can manage client positions (the setting "Allow manual position closing by clients" is off)',
+        });
+      }
+    }
     const target = await store.byId('users', Number(b.userId));
     if (!target) return res.status(404).json({ error: 'Client not found' });
     owner = target;
@@ -217,6 +226,16 @@ router.post('/', auth, async (req, res) => {
 /* ---------------- edit (staff) ---------------- */
 
 router.patch('/:id', auth, staffOnly, async (req, res) => {
+  // toggle OFF → only the admin edits client positions
+  if (req.user.role !== 'ADMIN') {
+    const rec = await store.byField('settings', 'key', 'crmSettings');
+    if (!Boolean(rec?.value?.manualClosing)) {
+      return res.status(403).json({
+        error: 'Only the administrator can manage client positions (the setting "Allow manual position closing by clients" is off)',
+      });
+    }
+  }
+
   const id = Number(req.params.id);
   const b = req.body || {};
   const patch = {};
@@ -255,13 +274,18 @@ router.post('/:id/close', auth, async (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  // "Allow manual position closing by clients" — CRM setting, admin-managed.
-  // When OFF (default) a client cannot close positions: staff do it for them.
-  if (req.user.role === 'CLIENT') {
+  // "Allow manual position management" — CRM setting, admin-managed.
+  // OFF (default): ONLY the administrator touches client positions
+  //                (not managers, not clients). ON: managers may, and
+  //                clients may close their own positions.
+  if (req.user.role !== 'ADMIN') {
     const rec = await store.byField('settings', 'key', 'crmSettings');
-    if (!rec?.value?.manualClosing) {
+    const manualOn = Boolean(rec?.value?.manualClosing);
+    if (!manualOn) {
       return res.status(403).json({
-        error: 'Manual closing is disabled on this platform — ask your manager to close the position',
+        error: req.user.role === 'CLIENT'
+          ? 'Manual closing is disabled on this platform — ask your manager to close the position'
+          : 'Only the administrator can manage client positions (the setting "Allow manual position closing by clients" is off)',
       });
     }
   }
