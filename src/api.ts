@@ -655,6 +655,15 @@ export const apiSetClientStatus = (clientId: string, status: string) =>
     method: 'PUT', headers: authHeader(), body: JSON.stringify({ clientId, status }),
   });
 
+// real withdrawal block switch (server-enforced)
+export const apiWithdrawBlocks = () =>
+  request<{ blocks: Record<string, boolean> }>('/workspace/withdraw-blocks', { headers: authHeader() });
+
+export const apiSetWithdrawBlock = (clientId: string, blocked: boolean) =>
+  request<{ ok: true; blocks: Record<string, boolean> }>('/workspace/withdraw-blocks', {
+    method: 'PUT', headers: authHeader(), body: JSON.stringify({ clientId, blocked }),
+  });
+
 export const apiActivity = (target?: string) =>
   request<{ activity: ApiActivity[] }>(
     `/workspace/activity${target ? `?target=${encodeURIComponent(target)}` : ''}`,

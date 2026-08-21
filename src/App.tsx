@@ -14,7 +14,7 @@ import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChan
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
 import { 
   apiStartCall, apiWhisper, apiCallInbox, apiCallStatus, apiNotes, apiAddNote, 
-  apiCrmSettings, apiSaveCrmSettings, apiClientStatuses, apiSetClientStatus, 
+  apiCrmSettings, apiSaveCrmSettings, apiClientStatuses, apiSetClientStatus, apiWithdrawBlocks, apiSetWithdrawBlock,
   apiLeads, apiCreateLead, apiUpdateLead, apiAddLeadComment, apiImpersonate, 
   apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, 
   apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, 
@@ -90,6 +90,8 @@ export default function App() {
   // Agent notes are append-only: no edit/delete handlers exist by design
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
   const [clientStatuses, setClientStatuses] = useState<Record<string, string>>({});
+  // Server-enforced payout blocks { '<userId>': true }
+  const [withdrawBlocks, setWithdrawBlocks] = useState<Record<string, boolean>>({});
 
   // KYC documents uploaded by clients, reviewed by admin/agent in the CRM
   const [kycDocuments, setKycDocuments] = useState<ApiKycDoc[]>([]);
@@ -281,6 +283,10 @@ export default function App() {
         try {
           const st = await apiClientStatuses();
           setClientStatuses(st.statuses);
+        } catch { /* ignore */ }
+        try {
+          const wb = await apiWithdrawBlocks();
+          setWithdrawBlocks(wb.blocks);
         } catch { /* ignore */ }
         try {
           const cs = await apiCrmSettings();
@@ -930,6 +936,17 @@ export default function App() {
     }
   };
 
+  /** CRM «Block withdrawal» — actually stops /transactions/withdraw server-side */
+  const handleSetWithdrawBlock = async (clientId: string, blocked: boolean) => {
+    try {
+      const res = await apiSetWithdrawBlock(clientId, blocked);
+      setWithdrawBlocks(res.blocks);
+      showToast(blocked ? '✔ Withdrawals blocked for this client.' : '✔ Withdrawals unblocked.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save', 'info');
+    }
+  };
+
   const handleSetClientStatus = async (clientId: string, status: string) => {
     try {
       const res = await apiSetClientStatus(clientId, status);
@@ -1218,6 +1235,8 @@ export default function App() {
             onAddNote={handleAddClientNote}
             clientStatuses={clientStatuses}
             onSetClientStatus={handleSetClientStatus}
+            withdrawBlocks={withdrawBlocks}
+            onSetWithdrawBlock={handleSetWithdrawBlock}
             kycDocuments={kycDocuments}
             onReviewKyc={handleReviewKyc}
             notifications={notifications}

@@ -119,6 +119,9 @@ interface CrmDashboardProps {
   onAddNote: (clientId: string, text: string) => void;
   clientStatuses: Record<string, string>;
   onSetClientStatus: (clientId: string, status: string) => void;
+  /** server-enforced payout block: { '<userId>': true } */
+  withdrawBlocks: Record<string, boolean>;
+  onSetWithdrawBlock: (clientId: string, blocked: boolean) => Promise<void>;
   kycDocuments: ApiKycDoc[];
   onReviewKyc: (docId: number, status: 'approved' | 'rejected', reason?: string) => void;
   notifications: ApiNotification[];
@@ -223,6 +226,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onAddNote,
   clientStatuses,
   onSetClientStatus,
+  withdrawBlocks,
+  onSetWithdrawBlock,
   kycDocuments,
   onReviewKyc,
   notifications,
@@ -842,7 +847,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
             <div className="space-y-5">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <Kpi icon={Users} label="Total users" value={String(investors.length)} />
-                <Kpi icon={Activity} label="Active clients" value={String(investors.filter(i => i.kycStatus === 'verified').length)} tone="green" />
+                <Kpi icon={Activity} label="Active clients" value={String(users.filter(u => u.role === 'CLIENT' && u.status === 'active').length)} tone="green" />
                 <Kpi icon={TrendingUp} label="Open trades" value={String(openTrades)} tone="blue" />
                 <Kpi icon={Ban} label="Blocked" value={String(users.filter(u => u.status === 'blocked').length)} tone="red" />
               </div>
@@ -1112,6 +1117,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               onAddNote={onAddNote}
               status={clientStatuses[selectedUser.id] || 'New'}
               onSetStatus={onSetClientStatus}
+              withdrawBlocks={withdrawBlocks}
+              onSetWithdrawBlock={onSetWithdrawBlock}
               currentUserName={displayName}
               kycDocuments={kycDocuments.filter(
                 d =>
@@ -1757,6 +1764,9 @@ const UserDetails: React.FC<{
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
   isAdmin: boolean;
   onOpenStatementModal?: (userId: number, userName: string) => void;
+  /** real payout block, saved on the server: { '<userId>': true } */
+  withdrawBlocks: Record<string, boolean>;
+  onSetWithdrawBlock: (clientId: string, blocked: boolean) => Promise<void>;
 }> = ({
   user,
   trades,
@@ -1780,11 +1790,16 @@ const UserDetails: React.FC<{
   onUpdateUserStatus,
   isAdmin,
   onOpenStatementModal,
+  withdrawBlocks,
+  onSetWithdrawBlock,
 }) => {
   const [moreOpen, setMoreOpen] = useState(false);
   // Real block state comes from the platform account, not local UI state
   const blocked = account?.status === 'blocked';
-  const [withdrawBlocked, setWithdrawBlocked] = useState(false);
+  // The payout block is stored ON THE SERVER (settings → withdrawBlocks):
+  // it survives reloads and is what actually stops /transactions/withdraw.
+  const plainClientId = String(account?.id ?? user.id).replace(/\D/g, '');
+  const withdrawBlocked = Boolean(withdrawBlocks[plainClientId]);
   const [statusBusy, setStatusBusy] = useState(false);
   const [manager, setManager] = useState(user.manager);
   const [balanceInput, setBalanceInput] = useState(String(user.balance));
@@ -1921,12 +1936,13 @@ const UserDetails: React.FC<{
     {
       icon: Lock,
       label: withdrawBlocked ? 'Unblock withdrawal' : 'Block withdrawal',
-      onClick: () => {
-        setWithdrawBlocked(v => !v);
+      onClick: async () => {
+        if (!account) return onNotify('This client does not have a platform account.');
+        await onSetWithdrawBlock(plainClientId, !withdrawBlocked);
         onNotify(
           withdrawBlocked
-            ? `Withdrawals unblocked for ${shortName} (applies once payouts run through the server).`
-            : `Withdrawals blocked for ${shortName} (applies once payouts run through the server).`,
+            ? `Withdrawals unblocked for ${shortName} — the change applies immediately.`
+            : `Withdrawals blocked for ${shortName} — the create-request button for this client is denied by the server as of now.`,
         );
       },
     },

@@ -371,4 +371,35 @@ router.get('/activity', auth, staffOnly, async (req, res) => {
   });
 });
 
+/* ---------------- withdrawal blocks («Block withdrawal» in the CRM) ----------------
+   A REAL switch: while a client id is in this map, POST /api/transactions/withdraw
+   answers 403. Stored as plain numeric user-id keys. */
+
+router.get('/withdraw-blocks', auth, staffOnly, async (req, res) => {
+  const rec = await store.byField('settings', 'key', 'withdrawBlocks');
+  res.json({ blocks: rec?.value || {} });
+});
+
+router.put('/withdraw-blocks', auth, staffOnly, async (req, res) => {
+  const clientId = String(req.body?.clientId || '').replace(/\D/g, '');
+  const blocked = Boolean(req.body?.blocked);
+  if (!clientId) return res.status(400).json({ error: 'clientId is required' });
+
+  const rec = await store.byField('settings', 'key', 'withdrawBlocks');
+  const value = { ...(rec?.value || {}) };
+  if (blocked) value[clientId] = true;
+  else delete value[clientId];
+
+  const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
+  if (rec) await store.update('settings', rec.id, payload);
+  else await store.insert('settings', { key: 'withdrawBlocks', ...payload });
+
+  await logActivity({
+    actor: req.user,
+    action: blocked ? 'withdrawals_blocked' : 'withdrawals_unblocked',
+    target: `user ${clientId}`,
+    details: '',
+  });
+  res.json({ ok: true, blocks: value });
+});
 export default router;
