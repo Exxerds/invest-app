@@ -64,7 +64,7 @@ import { Card, Btn, Badge, Field, Input, Select, Kpi, Th, Td, Avatar } from './u
 import { ImportLeadsModal } from '../modals/ImportLeadsModal';
 import { CreateClientModal } from '../modals/CreateClientModal';
 import { StatementModal } from '../modals/StatementModal';
-import { Upload } from 'lucide-react';
+import { Upload, Menu } from 'lucide-react';
 
 type CrmTab =
   | 'dashboard'
@@ -230,6 +230,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onMarkNotificationsRead,
 }) => {
   const [activeTab, setActiveTab] = useState<CrmTab>('dashboard');
+
+  // Mobile (< lg): the sidebar becomes a slide-in drawer over the content
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => setNavOpen(false), [activeTab]);
   const [openGroup, setOpenGroup] = useState<string | null>('Users');
   const [searchInvestor, setSearchInvestor] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string>(investors[0]?.id ?? '');
@@ -531,7 +535,17 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   return (
     <div className="flex min-h-screen bg-[#F5F2E9] text-[#213532]">
       {/* ==================== SIDEBAR ==================== */}
-      <aside className="w-[248px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] hidden lg:flex flex-col sticky top-0 h-screen text-[#F5F2E9]">
+      {/* mobile backdrop */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-[#1C412C]/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+      <aside className={`w-[248px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] flex flex-col text-[#F5F2E9]
+        fixed inset-y-0 left-0 z-50 h-screen overflow-y-auto transform transition-transform duration-200 ease-out
+        ${navOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:translate-x-0 lg:static lg:z-auto lg:sticky lg:top-0 lg:h-screen lg:overflow-visible`}>
         {/* Logo — same brand lockup as the landing page and the client
             cabinet. The crest is green, so it must sit on the cream disc
             to stay visible against the dark-green sidebar. */}
@@ -539,10 +553,18 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           <div className="w-10 h-10 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0">
             <OakCrest size={22} />
           </div>
-          <div className="leading-tight">
-            <OakWordmark tone="light" />
-            <div className="text-[9px] font-bold text-[#B08B48] tracking-widest mt-0.5">{roleLabel}</div>
-          </div>
+            <div className="leading-tight">
+              <OakWordmark tone="light" />
+              <div className="text-[9px] font-bold text-[#B08B48] tracking-widest mt-0.5">{roleLabel}</div>
+            </div>
+            {/* close drawer — mobile only */}
+            <button
+              onClick={() => setNavOpen(false)}
+              className="ml-auto lg:hidden w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer"
+              aria-label="Close menu"
+            >
+              <X className="w-4 h-4" />
+            </button>
         </div>
 
         {/* Profile */}
@@ -631,6 +653,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
         {/* Topbar */}
         <header className="h-16 shrink-0 border-b border-[#E4DECB] bg-white/90 backdrop-blur sticky top-0 z-30 flex items-center justify-between px-5 shadow-sm">
           <div className="flex items-center gap-2 text-[11px] text-[#213532]/70">
+            {/* burger — opens the drawer on phones */}
+            <button
+              onClick={() => setNavOpen(true)}
+              className="lg:hidden w-9 h-9 rounded-full bg-[#1C412C]/[.06] border border-[#E4DECB] flex items-center justify-center text-[#213532] hover:bg-[#1C412C]/[.12] cursor-pointer"
+              aria-label="Open menu"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
             <button
               onClick={() => setActiveTab('dashboard')}
               className="hover:text-[#1C412C] font-medium cursor-pointer"

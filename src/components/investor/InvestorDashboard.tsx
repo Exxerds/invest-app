@@ -26,6 +26,7 @@ import {
   X,
   Loader2,
   Store,
+  Menu,
 } from 'lucide-react';
 import type { ActiveInvestment } from '../../types';
 import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
@@ -178,6 +179,10 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     : (nameParts[0]?.slice(0, 2) || 'CL')).toUpperCase();
 
   const [tab, setTab] = useState<Tab>('dashboard');
+
+  // Mobile (< lg): the sidebar becomes a slide-in drawer over the content
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => setNavOpen(false), [tab]);
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
   const [amountStr, setAmountStr] = useState('500');
@@ -574,7 +579,17 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   return (
     <div className="flex min-h-screen bg-[#F5F2E9] text-[#213532]">
       {/* ============ SIDEBAR (Oak Haven green) ============ */}
-      <aside className="w-[230px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] hidden lg:flex flex-col sticky top-0 h-screen text-[#F5F2E9]">
+      {/* mobile backdrop */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-[#1C412C]/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+      <aside className={`w-[230px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] flex flex-col text-[#F5F2E9]
+        fixed inset-y-0 left-0 z-50 h-screen overflow-y-auto transform transition-transform duration-200 ease-out
+        ${navOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:translate-x-0 lg:static lg:z-auto lg:sticky lg:top-0 lg:h-screen lg:overflow-visible`}>
         <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/10">
           <div className="w-10 h-10 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0">
             <OakCrest size={22} />
@@ -583,6 +598,14 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             <OakWordmark tone="light" />
             <div className="text-[9px] font-bold text-[#B08B48] tracking-widest mt-0.5">CLIENT</div>
           </div>
+          {/* close drawer — mobile only */}
+          <button
+            onClick={() => setNavOpen(false)}
+            className="ml-auto lg:hidden w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer text-[#F5F2E9]"
+            aria-label="Close menu"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="px-4 py-4 flex items-center gap-3 border-b border-white/10">
@@ -631,7 +654,16 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       <div className="flex-1 min-w-0 p-5 space-y-5">
         {/* header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
+          <div className="flex items-center gap-3">
+            {/* burger — opens the drawer on phones */}
+            <button
+              onClick={() => setNavOpen(true)}
+              className="lg:hidden w-9 h-9 shrink-0 rounded-full bg-[#1C412C]/[.06] border border-[#E4DECB] flex items-center justify-center text-[#213532] hover:bg-[#1C412C]/[.12] cursor-pointer"
+              aria-label="Open menu"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+            <div>
             <h1 className="text-2xl font-extrabold text-[#1C412C] font-serif tracking-tight">
               {NAV.find(n => n.id === tab)?.label}
             </h1>
@@ -647,6 +679,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 </Badge>
               )}
             </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Btn variant="gold" icon={Wallet} onClick={onOpenDepositModal}>
