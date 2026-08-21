@@ -276,6 +276,19 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
 
   // Support — real chat (TradeNation-style)
   const [supportConvs, setSupportConvs] = useState<ApiSupportConversation[]>([]);
+
+  // Dashboard: the «Online chat» tile shows the REAL count of unanswered
+  // client messages, so fetch conversations when the tab opens too
+  useEffect(() => {
+    if (activeTab !== 'dashboard') return;
+    let alive = true;
+    apiSupportConversations()
+      .then(r => { if (alive) setSupportConvs(r.conversations); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [activeTab]);
+
+  const chatUnread = supportConvs.reduce((s, c) => s + (c.unreadForStaff || 0), 0);
   const [supportSearch, setSupportSearch] = useState('');
   const [supportActiveClientId, setSupportActiveClientId] = useState<number | null>(null);
   const [supportMsgs, setSupportMsgs] = useState<ApiSupportMessage[]>([]);
@@ -828,17 +841,20 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {activeTab === 'dashboard' && (
             <div className="space-y-5">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Kpi icon={Users} label="Total users" value={String(investors.length)} hint="+12% this month" />
-                <Kpi icon={Activity} label="Active clients" value={String(investors.filter(i => i.kycStatus === 'verified').length)} tone="green" hint="+4%" />
+                <Kpi icon={Users} label="Total users" value={String(investors.length)} />
+                <Kpi icon={Activity} label="Active clients" value={String(investors.filter(i => i.kycStatus === 'verified').length)} tone="green" />
                 <Kpi icon={TrendingUp} label="Open trades" value={String(openTrades)} tone="blue" />
                 <Kpi icon={Ban} label="Blocked" value={String(users.filter(u => u.status === 'blocked').length)} tone="red" />
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <Card title="Online chat" subtitle="Unanswered messages" className="lg:col-span-1">
-                  <div className="p-5">
-                    <div className="text-3xl font-extrabold text-[#B08B48]">0</div>
-                    <p className="text-[11px] text-[#213532]/70 mt-1">No unanswered messages</p>
+                  <div className="p-5 cursor-pointer" onClick={() => setActiveTab('support')}>
+                    <div className="text-3xl font-extrabold text-[#B08B48]">{chatUnread}</div>
+                    <p className="text-[11px] text-[#213532]/70 mt-1">
+                      {chatUnread === 0 ? 'No unanswered messages' : chatUnread === 1 ? '1 message awaits an answer' : `${chatUnread} messages await answers`}
+                    </p>
+                    <p className="text-[10px] text-[#B08B48] font-bold mt-2">Open support →</p>
                   </div>
                 </Card>
                 <Card title="Withdrawals" subtitle="Pending processing">
@@ -866,13 +882,13 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 </Card>
               </div>
 
-              {/* Trading modules row (PDF: Spot / Futures / Binary / P2P) */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Trading modules row — only real, computed figures. P2P and
+                  Binary products are not implemented on the platform, so the
+                  old hard-coded tiles (120 open orders / 8 active bets) went away. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  { t: 'P2P Trading', v: '120', s: 'open orders', tone: 'gold' },
-                  { t: 'Spot Trading', v: `${trades.filter(x => x.type === 'SPOT').length}`, s: 'last trades', tone: 'blue' },
-                  { t: 'Futures Trading', v: `${trades.filter(x => x.type !== 'SPOT').length}`, s: 'open positions', tone: 'green' },
-                  { t: 'Binary Trading', v: '8', s: 'active bets', tone: 'red' },
+                  { t: 'Spot Trading', v: `${trades.filter(x => x.type === 'SPOT').length}`, s: 'spot positions', tone: 'blue' },
+                  { t: 'Futures Trading', v: `${trades.filter(x => x.type !== 'SPOT').length}`, s: 'futures positions', tone: 'green' },
                 ].map(m => (
                   <Card key={m.t} className="p-5">
                     <div className="text-[11px] text-[#213532]/70 font-semibold uppercase tracking-wide">{m.t}</div>
@@ -2443,7 +2459,17 @@ const UserDetails: React.FC<{
                   <Td className="text-[#213532]/60 py-8 text-center">No positions</Td>
                 </tr>
               )}
-              {trades.map(t => (
+              {trades.map(t => {
+                // Open positions tick live: PnL is recomputed from the
+                // mark price, exactly like the server settles it.
+                const livePnl = (() => {
+                  const entry = Number(t.entryPrice) || 0;
+                  if (t.status !== 'OPEN' || !(entry > 0)) return Number(t.pnl) || 0;
+                  const units = (Number(t.amount) || 0) / entry;
+                  const dir = t.type === 'SHORT' ? -1 : 1;
+                  return Math.round((Number(t.currentPrice) - entry) * units * dir * 100) / 100;
+                })();
+                return (
                 <tr key={t.id} className="hover:bg-[#F2EEDF]/50">
                   <Td className="font-semibold text-[#1C412C]">{t.asset}</Td>
                   <Td>
@@ -2453,14 +2479,15 @@ const UserDetails: React.FC<{
                   <Td className="text-[#213532]">{t.entryPrice.toLocaleString('en-US')}</Td>
                   <Td className="text-[#213532]">{t.currentPrice.toLocaleString('en-US')}</Td>
                   <Td className="text-[#213532]">{t.leverage}x</Td>
-                  <Td className={t.pnl >= 0 ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
-                    {t.pnl >= 0 ? '+' : ''}${t.pnl.toLocaleString('en-US')}
+                  <Td className={livePnl >= 0 ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                    {livePnl >= 0 ? '+' : ''}${livePnl.toLocaleString('en-US')}
                   </Td>
                   <Td>
                     <Badge tone={t.status === 'OPEN' ? 'gold' : 'gray'}>{t.status}</Badge>
                   </Td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

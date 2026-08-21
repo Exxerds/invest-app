@@ -302,7 +302,16 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E4DECB]">
-              {clientTrades.map(t => (
+              {clientTrades.map(t => {
+                // Open positions tick live — recompute PnL from the mark
+                const livePnl = (() => {
+                  const entry = Number(t.entryPrice) || 0;
+                  if (t.status !== 'OPEN' || !(entry > 0)) return Number(t.pnl) || 0;
+                  const units = (Number(t.amount) || 0) / entry;
+                  const dir = t.type === 'SHORT' ? -1 : 1;
+                  return Math.round((Number(t.currentPrice) - entry) * units * dir * 100) / 100;
+                })();
+                return (
                 <tr key={t.id} className="hover:bg-[#F2EEDF]/50 transition-colors">
                   <Td className="font-semibold text-[#1C412C]">{t.asset}</Td>
                   <Td>
@@ -313,12 +322,12 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                     <div className="text-[12px] text-[#213532]">${t.entryPrice.toLocaleString('en-US')}</div>
                     <div className="text-[11px] text-[#213532]/60">Leverage {t.leverage}x</div>
                   </Td>
-                  <Td>
-                    <span className={`font-extrabold ${t.pnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {t.pnl >= 0 ? '+' : ''}
-                      {t.pnl.toLocaleString('en-US')} $
-                    </span>
-                  </Td>
+                    <Td>
+                      <span className={`font-extrabold ${livePnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {livePnl >= 0 ? '+' : ''}
+                        {livePnl.toLocaleString('en-US')} $
+                      </span>
+                    </Td>
                   <Td>
                     <Badge tone={t.status === 'OPEN' ? 'gold' : 'gray'}>{t.status}</Badge>
                   </Td>
@@ -346,7 +355,8 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                     )}
                   </Td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           {clientTrades.length === 0 && (
