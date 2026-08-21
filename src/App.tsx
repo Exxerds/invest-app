@@ -83,6 +83,9 @@ export default function App() {
     callRecording: true,
   });
 
+  // Platform rules that bend what a CLIENT may do (server-checked anyway)
+  const [clientPolicy, setClientPolicy] = useState({ manualClosing: false });
+
   // Agent notes are append-only: no edit/delete handlers exist by design
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
   const [clientStatuses, setClientStatuses] = useState<Record<string, string>>({});
@@ -197,10 +200,19 @@ export default function App() {
           setCurrentUser(res.user);
           setIsLoggedIn(true);
           setActiveTab('investor');
+          // flag rules of the cabinet (manual position closing etc.)
+          apiMe().then(m => m.policy && setClientPolicy(m.policy)).catch(() => undefined);
           showToast('✔ Email confirmed! Welcome to the platform!');
         })
         .catch((err) => {
-          showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Link is invalid', 'info');
+          const e = err as { code?: string; status?: number; message?: string };
+          if (e.status === 409 || e.code === 'ALREADY_CONFIRMED') {
+            // Second click on the same letter: friendly state + open the sign-in form
+            showToast('✔ This e-mail is already confirmed. Just sign in!');
+            setIsLoginModalOpen(true);
+          } else {
+            showToast(`✖ ${e.message || 'Link is invalid'}`, 'info');
+          }
         })
         .finally(() => window.history.replaceState({}, '', '/'));
     } else if (path === '/reset-password' && confirmToken) {
@@ -214,6 +226,7 @@ export default function App() {
         .then((res) => {
           setCurrentUser(res.user);
           setIsLoggedIn(true);
+          setClientPolicy(res.policy || { manualClosing: false });
           const saved = localStorage.getItem(TAB_KEY) as ActiveTab | null;
           const allowed: ActiveTab[] =
             res.user.role === 'CLIENT' ? ['investor', 'catalog'] : ['crm'];
@@ -398,9 +411,10 @@ export default function App() {
   /* ========================================================
      USER LOGIN & AUTH ACTIONS
   ======================================================== */
-  const handleLoginSuccess = (user: ApiUser) => {
+  const handleLoginSuccess = (user: ApiUser, policy?: { manualClosing: boolean }) => {
     setCurrentUser(user);
     setIsLoggedIn(true);
+    if (policy) setClientPolicy(policy);
     setActiveTab(user.role === 'CLIENT' ? 'investor' : 'crm');
     showToast(`✔ Signed in as ${user.name} (${user.role})!`);
   };
@@ -1060,6 +1074,7 @@ export default function App() {
             onOpenCatalog={() => setActiveTab('catalog')}
             onOpenDepositModal={() => setIsDepositModalOpen(true)}
             onOpenWithdrawModal={() => setIsWithdrawModalOpen(true)}
+            allowManualClosing={clientPolicy.manualClosing}
             onClaimDividends={handleClaimDividends}
             onLogout={handleLogout}
             onBalanceChanged={refreshMyFinances}

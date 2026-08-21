@@ -51,6 +51,11 @@ interface InvestorDashboardProps {
   onOpenCatalog: () => void;
   onOpenDepositModal: () => void;
   onOpenWithdrawModal: () => void;
+  /** Platform rule from the server (CRM setting «Allow manual position
+   *  closing by clients»). When false the client sees a locked button with
+   *  a human explanation instead of a dead «Close». The server re-checks
+   *  the rule anyway — this prop only shapes the interface. */
+  allowManualClosing?: boolean;
   onClaimDividends: (id: string, profit: number) => void;
   /** Clears the session and returns to the public site */
   onLogout?: () => void;
@@ -149,11 +154,18 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   onOpenCatalog,
   onOpenDepositModal,
   onOpenWithdrawModal,
+  allowManualClosing = false,
   onClaimDividends,
   onLogout,
   onBalanceChanged,
   onProfileUpdated,
 }) => {
+
+  /** Standard explanation used whenever a client hits a staff-only action */
+  const tellWhyNoManualClosing = () =>
+    setToast(
+      'Manual position closing is disabled on this platform. To close a position, contact your manager via Support — they will close it instantly.',
+    );
   /* Display name derived from the signed-in account (no demo persona) */
   const fullName = (user?.name || '').trim();
   const nameParts = fullName.split(/\s+/).filter(Boolean);
@@ -1205,10 +1217,16 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                                 size="sm"
                                 variant="danger"
                                 onClick={async () => {
-                                  await apiCloseTrade(t.id);
-                                  await reloadTrades();
-                                  onBalanceChanged?.();
-                                  setToast('Order cancelled');
+                                  // Cancelling an UNFILLED pending order is always allowed —
+                                  // the platform rule covers open positions only.
+                                  try {
+                                    await apiCloseTrade(t.id);
+                                    await reloadTrades();
+                                    onBalanceChanged?.();
+                                    setToast('Order cancelled');
+                                  } catch (err) {
+                                    setToast(err instanceof Error ? err.message : 'Could not cancel the order');
+                                  }
                                 }}
                               >
                                 Cancel
@@ -1302,17 +1320,26 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                               <Btn
                                 size="sm"
                                 variant="danger"
+                                title={allowManualClosing ? undefined : 'Closing is done by your manager on this platform'}
                                 onClick={async () => {
-                                  const res = await apiCloseTrade(t.id);
-                                  await reloadTrades();
-                                  onBalanceChanged?.();
-                                  const settled = Number(res?.trade?.pnl ?? 0);
-                                  setToast(
-                                    `${t.symbol} closed · ${settled >= 0 ? '+' : '-'}${usd(Math.abs(settled))}`,
-                                  );
+                                  if (!allowManualClosing) {
+                                    tellWhyNoManualClosing();
+                                    return;
+                                  }
+                                  try {
+                                    const res = await apiCloseTrade(t.id);
+                                    await reloadTrades();
+                                    onBalanceChanged?.();
+                                    const settled = Number(res?.trade?.pnl ?? 0);
+                                    setToast(
+                                      `${t.symbol} closed · ${settled >= 0 ? '+' : '-'}${usd(Math.abs(settled))}`,
+                                    );
+                                  } catch (err) {
+                                    setToast(err instanceof Error ? err.message : 'Could not close the position');
+                                  }
                                 }}
                               >
-                                Close
+                                {allowManualClosing ? 'Close' : '🔒 Close via manager'}
                               </Btn>
                             </Td>
                           </tr>

@@ -27,6 +27,19 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+/** Thrown for non-OK API responses; carries HTTP status and the server
+ *  `code` field (e.g. ALREADY_CONFIRMED / EXPIRED) so the UI can branch. */
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
@@ -55,7 +68,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error || `Server error (${res.status})`);
+    const d = data as { error?: string; code?: string };
+    throw new ApiError(d.error || `Server error (${res.status})`, res.status, d.code);
   }
   return data as T;
 }
@@ -80,14 +94,19 @@ export const apiConfirmEmail = (token: string) =>
     body: JSON.stringify({ token }),
   });
 
+export interface ClientPolicy {
+  /** true → the client may close own positions; false → staff closes for them */
+  manualClosing: boolean;
+}
+
 export const apiLogin = (email: string, password: string) =>
-  request<{ ok: true; token: string; user: ApiUser }>('/auth/login', {
+  request<{ ok: true; token: string; user: ApiUser; policy: ClientPolicy }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
 
 export const apiMe = () =>
-  request<{ user: ApiUser }>('/auth/me', {
+  request<{ user: ApiUser; policy: ClientPolicy }>('/auth/me', {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
 
