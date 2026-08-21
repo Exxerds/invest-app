@@ -6,6 +6,7 @@
 //  NOTE: if the server crashes, the full error text is written
 //  to server/server.log — open that file when reporting an issue.
 // ============================================================
+import 'dotenv/config'; // ← .env must land BEFORE db.js computes its backend mode
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -29,6 +30,7 @@ import statementRoutes from './routes/statements.js';
 import settingsRoutes from './routes/settings.js';
 import supportRoutes from './routes/support.js';
 import { seedUsers } from './seed.js';
+import { describeBackend } from './db.js';
 
 dotenv.config();
 
@@ -243,6 +245,8 @@ async function start() {
     // publicly known password — on production switch this off once your own
     // admin exists and the demo passwords are changed).
     if (process.env.SEED_DEMO !== 'off') await seedUsers();
+
+    console.log(`🗄  Storage backend: ${describeBackend()}`);
 
     // '::' accepts both IPv6 (::1) and IPv4 (127.0.0.1) on all platforms
     const server = app.listen(PORT, '::', () => {
