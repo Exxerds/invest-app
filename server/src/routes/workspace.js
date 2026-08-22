@@ -227,7 +227,7 @@ router.get('/notes', auth, staffOnly, async (req, res) => {
 
 router.post('/notes', auth, staffOnly, async (req, res) => {
   const text = clean(req.body?.text).trim();
-  const clientId = clean(req.body?.clientId, 60);
+  const clientId = String(clean(req.body?.clientId, 60)).replace(/^acc-/, '').replace(/\D/g, '') || clean(req.body?.clientId, 60);
   if (!text) return res.status(400).json({ error: 'Note cannot be empty' });
   if (!clientId) return res.status(400).json({ error: 'Client is required' });
 
@@ -346,12 +346,15 @@ router.get('/client-status', auth, staffOnly, async (req, res) => {
 });
 
 router.put('/client-status', auth, staffOnly, async (req, res) => {
-  const clientId = clean(req.body?.clientId, 60);
+  const rawId = clean(req.body?.clientId, 60);
+  const clientId = String(rawId).replace(/^acc-/, '').replace(/\D/g, '') || rawId;
   const status = clean(req.body?.status, 60);
   if (!clientId) return res.status(400).json({ error: 'Client is required' });
 
   const rec = await store.byField('settings', 'key', 'clientStatuses');
-  const value = { ...(rec?.value || {}), [clientId]: status };
+  const prev = { ...(rec?.value || {}) };
+  delete prev[`acc-${clientId}`];
+  const value = { ...prev, [clientId]: status };
   const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
   if (rec) await store.update('settings', rec.id, payload);
   else await store.insert('settings', { key: 'clientStatuses', ...payload });

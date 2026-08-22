@@ -18,7 +18,7 @@ import {
   apiLeads, apiCreateLead, apiUpdateLead, apiAddLeadComment, apiImpersonate, 
   apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, 
   apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, 
-  apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq,
+  apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq, apiOpenTrade, apiSupportPresence,
   apiAssets, apiCreateAsset,
   apiMyInvestments, apiCreateInvestment, apiClaimInvestmentProfit, apiQuote
 } from './api';
@@ -189,6 +189,15 @@ export default function App() {
   useEffect(() => {
     if (!isLoggedIn || currentUser?.role !== 'CLIENT') return;
     enablePushNotifications().catch(() => undefined);
+  }, [isLoggedIn, currentUser?.role]);
+
+  // Real last-seen heartbeat — any logged-in client pings while the tab is open
+  useEffect(() => {
+    if (!isLoggedIn || currentUser?.role !== 'CLIENT' || !getToken()) return;
+    const tick = () => { apiSupportPresence().catch(() => undefined); };
+    tick();
+    const t = setInterval(tick, 25000);
+    return () => clearInterval(t);
   }, [isLoggedIn, currentUser?.role]);
 
   useEffect(() => {
@@ -397,7 +406,10 @@ export default function App() {
             invested: 0,
             totalProfit: 0,
             registrationDate: `${dd}.${mm}.${created.getFullYear()}`,
-            manager: 'No manager',
+            manager: u.assignedManagerName || 'Unassigned',
+            lastSeen: u.lastSeen || null,
+            assignedManagerId: u.assignedManagerId || null,
+            defaultLeverage: u.defaultLeverage || 10,
           };
         });
     });
@@ -638,26 +650,27 @@ export default function App() {
     }
   };
 
-  const handleCreateTrade = (newTradeData: Omit<AdminTrade, 'id' | 'status'>) => {
-    const newTrade: AdminTrade = {
-      ...newTradeData,
-      id: `trade-${Date.now()}`,
-      status: 'OPEN'
-    };
-    setAdminTrades(prev => [newTrade, ...prev]);
-
-    setInvestors(prev => prev.map(inv => {
-      if (inv.id === newTradeData.investorId) {
-        return {
-          ...inv,
-          invested: inv.invested + newTradeData.amount,
-          totalProfit: inv.totalProfit + newTradeData.pnl
-        };
-      }
-      return inv;
-    }));
-
-    showToast(`✔ Opened trading position «${newTradeData.asset}» for the client!`);
+  const handleCreateTrade = async (newTradeData: Omit<AdminTrade, 'id' | 'status'>) => {
+    const userId = Number(String(newTradeData.investorId).replace(/^acc-/, ''));
+    const symbol = String(newTradeData.asset || '').split(' ')[0] || 'BTC/USDT';
+    try {
+      await apiOpenTrade({
+        userId,
+        symbol,
+        name: newTradeData.asset,
+        side: newTradeData.type,
+        amount: newTradeData.amount,
+        entryPrice: newTradeData.entryPrice,
+        currentPrice: newTradeData.currentPrice || newTradeData.entryPrice,
+        leverage: newTradeData.leverage,
+        openedAt: newTradeData.openedAt,
+      });
+      const t = await apiAllTrades();
+      setServerTrades(t.trades);
+      showToast(`✔ Opened trading position «${newTradeData.asset}» for the client!`);
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not open the position', 'info');
+    }
   };
 
   const handleUpdateTrade = async (tradeId: string, patch: Partial<AdminTrade>) => {

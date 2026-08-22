@@ -69,12 +69,6 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!(amount > 0)) return;
-    // Without a wallet address there is nowhere to send the money —
-    // filing a request would produce work without payment details.
-    if (isCrypto && !address) {
-      setError('No wallet address is attached to your account yet. Contact support — they will assign one, then you can deposit.');
-      return;
-    }
     setSending(true);
     setError(null);
     try {
@@ -219,16 +213,13 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                   </div>
                 ) : (
                   <div className="px-3 py-2.5 bg-amber-500/10 border border-amber-500/25 rounded-xl text-[12px] text-amber-800">
-                    <strong>No {cryptoType} address configured yet.</strong> Please contact support — they will
-                    attach a payment address to your account. Until then deposits are unavailable.
+                    No {cryptoType} address configured yet. Please contact your advisor for payment details.
                   </div>
                 )}
-                {address && (
-                  <p className="text-[11px] text-[#213532]/60 mt-1.5">
-                    Send exactly ${amount ? amount.toLocaleString('en-US') : '0'} worth of {cryptoType} to this
-                    address, then submit the request below.
-                  </p>
-                )}
+                <p className="text-[11px] text-[#213532]/60 mt-1.5">
+                  Send exactly ${amount ? amount.toLocaleString('en-US') : '0'} worth of {cryptoType} to this
+                  address, then submit the request below.
+                </p>
               </div>
             </>
           )}
@@ -257,12 +248,11 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={sending || (isCrypto && !address)}
-              title={isCrypto && !address ? 'No wallet address attached — contact support first' : undefined}
-              className="px-5 py-2 rounded-xl bg-[#1C412C] hover:bg-[#245238] disabled:opacity-50 disabled:cursor-not-allowed text-[#F5F2E9] text-sm font-bold shadow-sm cursor-pointer flex items-center gap-2"
+              disabled={sending}
+              className="px-5 py-2 rounded-xl bg-[#1C412C] hover:bg-[#245238] disabled:opacity-60 text-[#F5F2E9] text-sm font-bold shadow-sm cursor-pointer flex items-center gap-2"
             >
               {sending && <Loader2 className="w-4 h-4 animate-spin" />}
-              {sending ? 'Submitting...' : isCrypto && !address ? 'Address required' : 'Submit request'}
+              {sending ? 'Submitting...' : 'Submit request'}
             </button>
           </div>
         </form>

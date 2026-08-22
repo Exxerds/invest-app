@@ -113,8 +113,9 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
   const [type, setType] = useState<'LONG' | 'SHORT' | 'SPOT'>('LONG');
   const [amountStr, setAmountStr] = useState('15000');
   const [entryPriceStr, setEntryPriceStr] = useState('62400');
-  const [leverageStr, setLeverageStr] = useState('10');
-  const [pnlStr, setPnlStr] = useState('1450');
+  const [leverageStr, setLeverageStr] = useState(String(selectedInvestor?.defaultLeverage || 10));
+  const [pnlStr, setPnlStr] = useState('0');
+  const [openedAtStr, setOpenedAtStr] = useState('');
 
   const [editingTrade, setEditingTrade] = useState<AdminTrade | null>(null);
   // Full trade editor (PDF p.10 "Full control over the position")
@@ -178,6 +179,19 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
     }
   };
 
+  const computePnl = (entry: number, current: number, amount: number, side: string) => {
+    if (!(entry > 0)) return 0;
+    const units = amount / entry;
+    const dir = side === 'SHORT' ? -1 : 1;
+    return Math.round((current - entry) * units * dir * 100) / 100;
+  };
+  const currentFromPnl = (entry: number, pnl: number, amount: number, side: string) => {
+    if (!(entry > 0) || !(amount > 0)) return entry;
+    const units = amount / entry;
+    const dir = side === 'SHORT' ? -1 : 1;
+    return Math.round((entry + pnl / (units * dir)) * 1000000) / 1000000;
+  };
+
   const handleCreateTradeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const entry = parseNumber(entryPriceStr, 0);
@@ -187,9 +201,10 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
       type,
       amount: parseNumber(amountStr, 0),
       entryPrice: entry,
-      currentPrice: entry * 1.05,
-      leverage: parseNumber(leverageStr, 1),
+      currentPrice: entry,
+      leverage: parseNumber(leverageStr, selectedInvestor?.defaultLeverage || 1),
       pnl: parseNumber(pnlStr, 0),
+      openedAt: openedAtStr ? new Date(openedAtStr).toISOString() : new Date().toISOString(),
     });
     setShowNewTradeModal(false);
   };
@@ -441,7 +456,13 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                   type="text"
                   inputMode="decimal"
                   value={editForm.entryPrice}
-                  onChange={e => setEditForm(f => ({ ...f, entryPrice: sanitizeDecimal(e.target.value) }))}
+                  onChange={e => setEditForm(f => {
+                    const entryPrice = sanitizeDecimal(e.target.value);
+                    const entry = parseNumber(entryPrice, 0);
+                    const current = parseNumber(f.currentPrice, 0);
+                    const amount = parseNumber(f.amount, 0);
+                    return { ...f, entryPrice, pnl: String(computePnl(entry, current, amount, f.type)) };
+                  })}
                   className="w-full"
                 />
               </div>
@@ -451,7 +472,13 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                   type="text"
                   inputMode="decimal"
                   value={editForm.currentPrice}
-                  onChange={e => setEditForm(f => ({ ...f, currentPrice: sanitizeDecimal(e.target.value) }))}
+                  onChange={e => setEditForm(f => {
+                    const currentPrice = sanitizeDecimal(e.target.value);
+                    const current = parseNumber(currentPrice, 0);
+                    const entry = parseNumber(f.entryPrice, 0);
+                    const amount = parseNumber(f.amount, 0);
+                    return { ...f, currentPrice, pnl: String(computePnl(entry, current, amount, f.type)) };
+                  })}
                   className="w-full"
                 />
               </div>
@@ -464,7 +491,13 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                 type="text"
                 inputMode="decimal"
                 value={editForm.pnl}
-                onChange={e => setEditForm(f => ({ ...f, pnl: e.target.value.replace(/[^0-9.-]/g, '').replace(/^0+(?=\d)/, '') }))}
+                onChange={e => setEditForm(f => {
+                  const pnl = e.target.value.replace(/[^0-9.-]/g, '').replace(/^0+(?=\d)/, '');
+                  const entry = parseNumber(f.entryPrice, 0);
+                  const amount = parseNumber(f.amount, 0);
+                  const currentPrice = String(currentFromPnl(entry, parseNumber(pnl, 0), amount, f.type));
+                  return { ...f, pnl, currentPrice };
+                })}
                 className={`w-full text-lg font-extrabold ${
                   editNumPnl >= 0 ? 'text-emerald-700' : 'text-rose-700'
                 }`}
@@ -605,6 +638,20 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
               <div>
                 <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Leverage (x)</label>
                 <Input type="text" inputMode="numeric" placeholder="Leverage" value={leverageStr} onChange={e => setLeverageStr(sanitizeInteger(e.target.value))} className="w-full" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Opening time</label>
+              <div className="flex gap-2">
+                <Input
+                  type="datetime-local"
+                  value={openedAtStr}
+                  onChange={e => setOpenedAtStr(e.target.value)}
+                  className="flex-1"
+                />
+                <Btn type="button" variant="ghost" onClick={() => setOpenedAtStr(toLocalInput())}>
+                  Now
+                </Btn>
               </div>
             </div>
             <div>

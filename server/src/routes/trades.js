@@ -195,7 +195,9 @@ router.post('/', auth, async (req, res) => {
     entryPrice,
     currentPrice: num(b.currentPrice, entryPrice),
     marginRate: q.marginRate,
-    leverage: Math.round(q.leverage * 100) / 100,
+    leverage: isStaff(req.user) && num(b.leverage) > 0
+      ? Math.max(1, num(b.leverage, 1))
+      : Math.round(q.leverage * 100) / 100,
     stopLoss: prot.stopLoss,
     takeProfit: prot.takeProfit,
     pnl: 0,

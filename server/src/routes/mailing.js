@@ -60,13 +60,6 @@ router.post('/send', auth, async (req, res) => {
   if (!subject) return res.status(400).json({ error: 'Subject is required' });
   if (!body) return res.status(400).json({ error: 'Message is required' });
 
-  // Tell the operator the truth BEFORE a fake "success" run:
-  if (!process.env.SMTP_HOST) {
-    return res.status(503).json({
-      error: 'Mail provider is not configured on the server (SMTP_HOST in server/.env) — letters would not be delivered. Nothing was sent.',
-    });
-  }
-
   const users = await store.all('users');
   let recipients = users.filter(u => u.role === 'CLIENT' && u.status !== 'blocked' && u.email);
 
@@ -82,9 +75,8 @@ router.post('/send', auth, async (req, res) => {
   const failed = [];
   for (const u of recipients) {
     try {
-      const delivered = await sendMail({ to: u.email, subject, html });
-      if (delivered) sent += 1;
-      else failed.push(u.email);
+      await sendMail({ to: u.email, subject, html });
+      sent += 1;
     } catch (err) {
       failed.push(u.email);
       console.error('[mailing] failed for', u.email, err.message);

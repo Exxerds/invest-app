@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { X, Lock, Mail, ArrowRight, ShieldCheck, Loader2 } from 'lucide-react';
 import { apiLogin, apiResendConfirmation } from '../../api';
-import type { ApiUser, ClientPolicy } from '../../api';
+import type { ApiUser } from '../../api';
 
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onLoginSuccess: (user: ApiUser, policy?: ClientPolicy) => void;
+  onLoginSuccess: (user: ApiUser) => void;
   onOpenForgotPassword: () => void;
   onOpenRegister: () => void;
 }
@@ -34,7 +34,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     try {
       const res = await apiLogin(email, password);
       localStorage.setItem('tn_token', res.token);
-      onLoginSuccess(res.user, res.policy);
+      onLoginSuccess(res.user);
       onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Login failed';

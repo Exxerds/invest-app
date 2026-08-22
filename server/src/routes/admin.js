@@ -66,6 +66,7 @@ router.post('/users', auth('STAFF'), async (req, res) => {
     const hash = await bcrypt.hash(String(password), 10);
     const userRole = req.user.role === 'ADMIN' && ['CLIENT', 'MANAGER', 'ADMIN'].includes(role) ? role : 'CLIENT';
     
+    const assignedToCreator = req.user.role === 'MANAGER' && userRole === 'CLIENT';
     const user = await store.insert('users', {
       name: String(name).trim(),
       email: lowerEmail,
@@ -76,6 +77,9 @@ router.post('/users', auth('STAFF'), async (req, res) => {
       balance: Number(balance) || 0,
       created_at: new Date().toISOString(),
       createdBy: req.user.name,
+      assignedManagerId: assignedToCreator ? req.user.id : null,
+      assignedManagerName: assignedToCreator ? req.user.name : '',
+      defaultLeverage: 10,
     });
 
     res.json({
@@ -98,18 +102,28 @@ router.post('/users', auth('STAFF'), async (req, res) => {
 });
 router.get('/users', auth('STAFF'), async (req, res) => {
   const all = await store.all('users');
-  // A manager sees clients only; an administrator sees everyone
-  const rows = req.user.role === 'ADMIN' ? all : all.filter(u => u.role === 'CLIENT');
+  let rows;
+  if (req.user.role === 'ADMIN') {
+    rows = all;
+  } else {
+    // A manager sees only the clients assigned to them
+    rows = all.filter(u =>
+      u.role === 'CLIENT' && Number(u.assignedManagerId) === Number(req.user.id),
+    );
+  }
   const users = rows.map((u) => ({
     id: u.id,
     name: u.name,
     email: u.email,
     role: u.role,
     status: u.status,
-    // The CRM shows real balances, so they travel with the account
     balance: Number(u.balance) || 0,
     phone: u.phone || '',
     created_at: u.created_at,
+    lastSeen: u.lastSeen || null,
+    assignedManagerId: u.assignedManagerId || null,
+    assignedManagerName: u.assignedManagerName || '',
+    defaultLeverage: Number(u.defaultLeverage) || 10,
   }));
   res.json({ users });
 });
@@ -156,17 +170,44 @@ router.post('/users/:id/password', auth('ADMIN'), async (req, res) => {
 // ------------------------------------------------------------
 //  Block / unblock / role
 // ------------------------------------------------------------
-router.patch('/users/:id', auth('ADMIN'), async (req, res) => {
+router.patch('/users/:id', auth('STAFF'), async (req, res) => {
   const id = Number(req.params.id);
-  const { status, role } = req.body || {};
+  const { status, role, assignedManagerId, defaultLeverage } = req.body || {};
 
   const user = await store.byId('users', id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  if (id === req.user.id) return res.status(400).json({ error: 'You cannot change your own account here' });
+  if (id === req.user.id && (status || role)) {
+    return res.status(400).json({ error: 'You cannot change your own account here' });
+  }
 
   const fields = {};
-  if (status && ['active', 'blocked', 'pending'].includes(status)) fields.status = status;
-  if (role && ['CLIENT', 'MANAGER', 'ADMIN'].includes(role)) fields.role = role;
+  if (req.user.role === 'ADMIN') {
+    if (status && ['active', 'blocked', 'pending'].includes(status)) fields.status = status;
+    if (role && ['CLIENT', 'MANAGER', 'ADMIN'].includes(role)) fields.role = role;
+  } else if (status || role) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  if (assignedManagerId !== undefined) {
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Admin access required' });
+    if (assignedManagerId === null || assignedManagerId === '') {
+      fields.assignedManagerId = null;
+      fields.assignedManagerName = '';
+    } else {
+      const mgr = await store.byId('users', Number(assignedManagerId));
+      if (!mgr || !['ADMIN', 'MANAGER'].includes(mgr.role)) {
+        return res.status(400).json({ error: 'Manager not found' });
+      }
+      fields.assignedManagerId = mgr.id;
+      fields.assignedManagerName = mgr.name;
+    }
+  }
+
+  if (defaultLeverage !== undefined) {
+    const lev = Math.max(1, Math.min(500, Number(defaultLeverage) || 1));
+    fields.defaultLeverage = lev;
+  }
+
   await store.update('users', id, fields);
 
   logActivity({

@@ -62,8 +62,9 @@ router.get('/conversations', auth, async (req, res) => {
     let name = clientUser?.name || `Client #${clientId}`;
     let email = clientUser?.email || '';
     let online = false;
-    if (clientUser && clientUser.lastSeen) {
-      online = Date.now() - Number(clientUser.lastSeen) < 60 * 1000;
+    const lastSeen = clientUser?.lastSeen || null;
+    if (lastSeen) {
+      online = Date.now() - Number(lastSeen) < 60 * 1000;
     }
 
     result.push({
@@ -71,6 +72,7 @@ router.get('/conversations', auth, async (req, res) => {
       name,
       email,
       online,
+      lastSeen,
       unreadForStaff,
       lastMessageAt: last?.createdAt || null,
       lastPreview,

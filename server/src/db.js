@@ -4,13 +4,13 @@
 //    DATABASE_URL set  → PostgreSQL  (production / Vercel)
 //    DATABASE_URL absent → JSON file (local development)
 //
-//  ⚠ ESM gotcha this guard solves: all imports at the top of the
-//  entry file are evaluated BEFORE its body runs — so calling
-//  dotenv.config() in index.js is TOO LATE for this module.
-//  Loading .env right here (first line) makes DATABASE_URL work
-//  no matter who imports us and when.
+//  Both expose the SAME async API, so routes never care which
+//  one is active. Locally you keep the zero-setup JSON file;
+//  on Vercel the data lives in a real database that survives
+//  every request (serverless has no persistent disk).
+//
+//  Tables are created automatically on first use.
 // ============================================================
-import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,7 +59,7 @@ async function getPool() {
  * so both backends behave the same and no migration is needed when the
  * shape of a record changes.
  */
-const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactions', 'leads', 'settings', 'notes', 'messages', 'activity', 'calls', 'signals', 'pushSubs', 'investments', 'assets'];
+const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactions', 'leads', 'settings', 'notes', 'messages', 'activity', 'calls', 'signals', 'pushSubs', 'investments'];
 
 async function ensureSchema() {
   if (g.__ohySchema) return g.__ohySchema;

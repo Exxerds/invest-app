@@ -123,7 +123,11 @@ router.post('/public', async (req, res) => {
 });
 
 router.get('/', auth, async (req, res) => {
-  const leads = await store.all('leads');
+  let leads = await store.all('leads');
+  if (req.user.role !== 'ADMIN') {
+    const mine = String(req.user.name || '').toLowerCase();
+    leads = leads.filter(l => String(l.manager || '').toLowerCase() === mine);
+  }
   res.json({ leads: leads.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
 });
 

@@ -15,11 +15,7 @@ import { seedUsers } from '../server/src/seed.js';
 // accounts exist. It runs once per instance, not on every request.
 let ready = null;
 function ensureSeeded() {
-  if (!ready) {
-    ready = process.env.SEED_DEMO === 'off'
-      ? Promise.resolve()
-      : seedUsers().catch(err => console.error('[seed]', err));
-  }
+  if (!ready) ready = seedUsers().catch(err => console.error('[seed]', err));
   return ready;
 }
 

@@ -870,47 +870,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
         </div>
       </Section>
 
-      {/* ==================== DOCUMENTATION ==================== */}
-      <Section id="docs" className="bg-white border-y border-[#1C412C]/10">
-        <div className="grid lg:grid-cols-2 gap-10">
-          <div>
-            <Eyebrow>Documentation</Eyebrow>
-            <H2>Legal information</H2>
-            <p className="text-[#213532]/75 mt-3 text-[14px]">
-              All the documents governing the relationship between the client and the company.
-            </p>
-            <div className="mt-6 grid sm:grid-cols-2 gap-3">
-              {['Client Agreement', 'Privacy Policy', 'AML & KYC Policy', 'Risk Disclosure', 'Terms & Conditions', 'Payment Policy'].map(d => (
-                <a
-                  key={d}
-                  href="#docs"
-                  className="flex items-center gap-2.5 bg-white border border-[#1C412C]/12 shadow-sm rounded-xl px-4 py-3 text-[13px] text-[#213532] hover:border-[#B08B48]/45 hover:text-[#1C412C] transition-colors"
-                >
-                  <FileText className="w-4 h-4 text-[#B08B48] shrink-0" />
-                  {d}
-                </a>
-              ))}
-            </div>
-          </div>
-          <div className="bg-white border border-rose-500/25 rounded-2xl p-6">
-            <div className="flex items-center gap-2 text-rose-600 font-bold text-[14px]">
-              <ShieldCheck className="w-4.5 h-4.5" /> Risk warning
-            </div>
-            <p className="text-[13px] text-[#213532]/75 mt-3 leading-relaxed">
-              Trading leveraged products such as CFDs and futures involves a high level of risk and may not be suitable
-              for all investors. You could sustain a loss of some or all of your invested capital; therefore, you should
-              not speculate with capital that you cannot afford to lose. Past performance is not indicative of future
-              results. Please ensure you fully understand the risks involved and seek independent advice if necessary.
-            </p>
-          </div>
-        </div>
-      </Section>
-
-      {/* ==================== NEWS (temporarily hidden) ====================
-           Removed at the client's request pending approval.
-           To bring it back, restore this section from git history
-           (commit "hide news block, fix register arrow, TradingView redirects").
-      ==================================================================== */}
+      {/* ==================== NEWS (temporarily hidden) ==================== */}
 
       {/* ==================== FAQ ==================== */}
       <Section id="faq" className="bg-white border-y border-[#1C412C]/10">
@@ -946,6 +906,72 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               </div>
             );
           })}
+        </div>
+      </Section>
+
+      {/* ==================== LEGAL (below FAQ, from Master Agreement) ==================== */}
+      <Section id="docs" className="bg-[#F5F2E9] border-y border-[#1C412C]/10">
+        <div className="text-center max-w-2xl mx-auto mb-8">
+          <Eyebrow>Documentation</Eyebrow>
+          <H2>Legal information</H2>
+          <p className="text-[#213532]/75 mt-3 text-[14px]">
+            Extracts from the Oak Haven Yield Master Agreement. Click a document to jump to its text.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
+          {[
+            { id: 'legal-client', t: 'Client Agreement' },
+            { id: 'legal-aml', t: 'AML & KYC Policy' },
+            { id: 'legal-terms', t: 'Terms & Conditions' },
+            { id: 'legal-risk', t: 'Risk Disclosure' },
+          ].map(d => (
+            <a
+              key={d.id}
+              href={`#${d.id}`}
+              className="flex items-center gap-2.5 bg-white border border-[#1C412C]/12 shadow-sm rounded-xl px-4 py-3 text-[13px] text-[#213532] hover:border-[#B08B48]/45 hover:text-[#1C412C] transition-colors"
+            >
+              <FileText className="w-4 h-4 text-[#B08B48] shrink-0" />
+              {d.t}
+            </a>
+          ))}
+        </div>
+
+        <div className="space-y-8 max-w-4xl mx-auto text-[13.5px] leading-relaxed text-[#213532]/85">
+          <article id="legal-client" className="scroll-mt-[90px] bg-white border border-[#1C412C]/12 rounded-2xl p-6">
+            <h3 className="text-[18px] font-extrabold text-[#1C412C] mb-3">Client Agreement</h3>
+            <p>This Client Agreement (“Agreement”) is entered into between Oak Haven Yield (“the Firm”, “we”) and the individual or entity that opens an account (“the Client”). By registering, funding or using the platform the Client accepts these terms in full.</p>
+            <p className="mt-3">The Firm provides access to a web-based trading environment covering listed and OTC instruments, including but not limited to equities, currencies, commodities, indices and digital assets. Nothing on the platform is investment advice, a solicitation to buy or sell, or a guarantee of profit.</p>
+            <p className="mt-3">The Client confirms that they are of legal age, act on their own behalf, have the legal capacity to enter into this Agreement, and will provide accurate identification and contact data. The account is personal and may not be transferred. The Client is solely responsible for the security of login credentials.</p>
+            <p className="mt-3">Orders are executed on a best-effort basis at the displayed price or the next available market price. The Firm may refuse, delay or reverse an order in case of obvious error, insufficient margin, suspected abuse or legal restriction. Open positions may be adjusted or closed by the desk where required for risk, compliance or operational integrity.</p>
+            <p className="mt-3">Deposits and withdrawals are processed only to accounts or wallets in the Client’s own name after identity verification. The Firm may withhold a payout pending review. Fees, spreads and margin requirements are published in the cabinet and may change with notice on the platform.</p>
+            <p className="mt-3">This Agreement is governed by the laws applicable to the Firm’s place of establishment. Disputes shall first be referred to the support desk; unresolved matters may be submitted to the competent courts.</p>
+          </article>
+
+          <article id="legal-aml" className="scroll-mt-[90px] bg-white border border-[#1C412C]/12 rounded-2xl p-6">
+            <h3 className="text-[18px] font-extrabold text-[#1C412C] mb-3">AML &amp; KYC Policy</h3>
+            <p>Oak Haven Yield applies a risk-based anti-money-laundering and know-your-customer programme consistent with FATF recommendations and applicable AML statutes.</p>
+            <p className="mt-3">Before withdrawals (and, where required, before trading) the Client must complete identity verification: a government photo ID (front and back) and a recent proof of address. The Firm may request source-of-funds evidence, a video call or additional documents at any time.</p>
+            <p className="mt-3">We screen clients against sanctions, PEP and adverse-media lists. We will not onboard or will terminate relationships with persons from restricted jurisdictions or those we reasonably suspect of money laundering, terrorist financing, fraud or sanctions evasion.</p>
+            <p className="mt-3">Transactions are monitored. Unusual patterns — structuring, third-party deposits, rapid in-and-out flows, mismatched names on payment methods — are escalated. The Firm may freeze the account, refuse a transfer and file a suspicious-activity report without notifying the Client where the law so requires.</p>
+            <p className="mt-3">Records of identification and transactions are retained for at least five years after the relationship ends, or longer if required by law. Staff access is limited to a need-to-know basis.</p>
+          </article>
+
+          <article id="legal-terms" className="scroll-mt-[90px] bg-white border border-[#1C412C]/12 rounded-2xl p-6">
+            <h3 className="text-[18px] font-extrabold text-[#1C412C] mb-3">Terms &amp; Conditions</h3>
+            <p>These Terms govern use of oakhavenyield.com, the client cabinet, support chat, voice calls and any related services. Access may be suspended for maintenance, security or legal reasons.</p>
+            <p className="mt-3">The Client must not use the service for unlawful activity, market manipulation, sharing of access, reverse engineering, or automated scraping. Communications with advisors may be recorded for quality and compliance when the call-recording setting is enabled.</p>
+            <p className="mt-3">Market data displayed on the site is provided “as is” from third-party feeds. Charts, quotes and social-proof indicators are informational and may be delayed. The Firm is not liable for interruptions, quote gaps, or losses arising from the Client’s hardware, network or decisions.</p>
+            <p className="mt-3">Intellectual property in the brand, software and content remains with Oak Haven Yield. The Client receives a limited, revocable licence to use the cabinet for personal trading only.</p>
+            <p className="mt-3">We may update these Terms by publishing a new version on this page. Continued use after the update constitutes acceptance. If a provision is held invalid, the remainder stays in force.</p>
+          </article>
+
+          <article id="legal-risk" className="scroll-mt-[90px] bg-white border border-rose-500/25 rounded-2xl p-6">
+            <h3 className="text-[18px] font-extrabold text-rose-700 mb-3">Risk Disclosure</h3>
+            <p>Trading leveraged products such as CFDs, futures, forex and digital assets involves a high level of risk and may not be suitable for all investors. You can lose some or all of the capital you deposit, and in certain market conditions losses may exceed the deposited amount.</p>
+            <p className="mt-3">Leverage magnifies both gains and losses. A small adverse move can trigger a margin call or automatic liquidation. Spreads, slippage and overnight financing can reduce returns. Past performance is not indicative of future results. Hypothetical or back-tested figures are not a promise of profit.</p>
+            <p className="mt-3">Crypto-assets are volatile and may become illiquid or untradeable. Regulatory changes can restrict access overnight. You should not speculate with funds you cannot afford to lose. Seek independent financial, tax and legal advice if you are unsure.</p>
+            <p className="mt-3">By opening an account you confirm that you have read this disclosure, understand the risks, and accept that Oak Haven Yield does not guarantee any particular outcome.</p>
+          </article>
         </div>
       </Section>
 

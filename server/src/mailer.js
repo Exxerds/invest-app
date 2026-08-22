@@ -54,21 +54,15 @@ export function publicUrl(req) {
  * Send an e-mail.
  * Without SMTP configured it stores the HTML in server/mails/ and logs it.
  */
-/**
- * Send an e-mail. WITHOUT SMTP the letter is NOT delivered — it is logged
- * and (on normal hosts) saved to server/mails/. Returns TRUE only when the
- * letter actually went out through the mail provider.
- */
 export async function sendMail({ to, subject, html }) {
   if (transporter) {
     await transporter.sendMail({ from: FROM_EMAIL, to, subject, html });
     console.log(`[mail] "${subject}" sent to ${to}`);
-    return true;
+    return;
   }
 
   // ---- No SMTP configured ----
-  console.warn(`[mail] ⚠ SMTP is NOT configured — the letter for ${to} ("${subject}") was NOT delivered!`);
-  console.warn('[mail] Fix: fill SMTP_HOST/SMTP_USER/SMTP_PASS in server/.env and restart the service.');
+  // Log the letter so the link is always recoverable.
   console.log(`\n[mail] Letter for ${to}: "${subject}"`);
   const links = [...html.matchAll(/https?:\/\/[^\s"<]+/g)].map(m => m[0]);
   links.forEach(l => console.log(`[mail] LINK ${l}`));
@@ -87,7 +81,6 @@ export async function sendMail({ to, subject, html }) {
     }
   }
   console.log('');
-  return false; // not delivered — no SMTP transporter
 }
 
 /** Branded HTML e-mail layout (Oak Haven Yield: cream / forest green / warm gold) */

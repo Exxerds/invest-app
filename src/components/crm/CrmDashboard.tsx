@@ -8,9 +8,9 @@
 // ============================================================
 import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Investor, Lead, TransactionRequest, LeadStage, CrmSettings, ClientNote } from '../../types';
-import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
+import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone, lookupClientStatus, bareClientId, formatLastSeen } from '../../types';
 import type { ApiKycDoc, ApiNotification, ApiCall, ApiAnalytics, ApiManagerStat } from '../../api';
-import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates, apiResetUserPortfolio, apiSupportConversations, apiSupportMessages, apiSendSupportMessage, apiSupportRead, apiUserActivity } from '../../api';
+import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates, apiResetUserPortfolio, apiSupportConversations, apiSupportMessages, apiSendSupportMessage, apiSupportRead, apiUserActivity, apiAdminUpdateUser } from '../../api';
 import type { ApiActivityEntry, ApiSupportConversation, ApiSupportMessage } from '../../api';
 import type { ApiUser } from '../../api';
 import { sanitizeDecimal } from '../../utils/number';
@@ -110,6 +110,7 @@ interface CrmDashboardProps {
   users: ApiUser[];
   currentUserName: string;
   currentUserRole: string;
+  currentUserId?: number;
   onChangeUserPassword: (userId: number, newPassword: string) => Promise<void>;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
   settings: CrmSettings;
@@ -217,6 +218,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   users,
   currentUserName,
   currentUserRole,
+  currentUserId: _currentUserId,
   onChangeUserPassword,
   onUpdateUserStatus,
   settings,
@@ -241,6 +243,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   useEffect(() => setNavOpen(false), [activeTab]);
   const [openGroup, setOpenGroup] = useState<string | null>('Users');
   const [searchInvestor, setSearchInvestor] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedUserId, setSelectedUserId] = useState<string>(investors[0]?.id ?? '');
 
   // Lead import and client creation modals
@@ -443,7 +446,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           invested,
           totalProfit: profit,
           registrationDate: (u.created_at || '').slice(0, 10),
-          manager: clientStatuses[`acc-${u.id}`] ? '' : 'Unassigned',
+          manager: u.assignedManagerName || 'Unassigned',
+          lastSeen: u.lastSeen || null,
+          assignedManagerId: u.assignedManagerId || null,
+          defaultLeverage: u.defaultLeverage || 10,
         } as Investor;
       });
   }, [users, trades, kycDocuments, clientStatuses]);
@@ -456,12 +462,16 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const selectedUser =
     allClients.find(i => i.id === selectedUserId || i.id === `acc-${selectedUserId}`) || allClients[0];
 
-  const filteredInvestors = allClients.filter(
-    inv =>
-      inv.name.toLowerCase().includes(searchInvestor.toLowerCase()) ||
-      inv.email.toLowerCase().includes(searchInvestor.toLowerCase()) ||
-      inv.phone.includes(searchInvestor),
-  );
+  const filteredInvestors = allClients.filter(inv => {
+    const q = searchInvestor.toLowerCase();
+    const matchesText =
+      inv.name.toLowerCase().includes(q) ||
+      inv.email.toLowerCase().includes(q) ||
+      inv.phone.includes(searchInvestor);
+    const st = lookupClientStatus(clientStatuses, inv.id);
+    const matchesStatus = statusFilter === 'all' || st === statusFilter;
+    return matchesText && matchesStatus;
+  });
 
   const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
   const totalAum = investors.reduce((s, i) => s + i.balance + i.invested, 0);
@@ -825,6 +835,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 <h1 className="text-2xl font-extrabold text-[#1C412C] font-serif tracking-tight">{header.title}</h1>
                 <p className="text-[12px] text-[#213532]/70 mt-0.5">{header.sub}</p>
               </div>
+              {isAdmin && (
               <div className="flex flex-wrap items-center gap-2">
                 <Btn variant="gold" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
                   Create client
@@ -839,6 +850,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   New asset
                 </Btn>
               </div>
+              )}
             </div>
           )}
 
@@ -877,6 +889,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     <p className="text-[11px] text-[#213532]/70 mt-1">{requests.filter(r => r.type === 'deposit').length} deposits</p>
                   </div>
                 </Card>
+                {isAdmin ? (
                 <Card title="Quick registration" subtitle="Create a client account">
                   <div className="p-5 space-y-2">
                     <Btn variant="gold" size="sm" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
@@ -885,6 +898,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     <p className="text-[11px] text-[#213532]/70">Automatic account creation with active access</p>
                   </div>
                 </Card>
+                ) : (
+                <Card title="Your book" subtitle="Clients assigned to you">
+                  <div className="p-5">
+                    <div className="text-3xl font-extrabold text-[#1C412C]">{allClients.length}</div>
+                    <p className="text-[11px] text-[#213532]/70 mt-1">assigned clients</p>
+                  </div>
+                </Card>
+                )}
               </div>
 
               {/* Trading modules row — only real, computed figures. P2P and
@@ -904,22 +925,27 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               </div>
 
               {/* Users quick list */}
-              <Card title="Detailed user info" subtitle="Client base · CRM">
+              <Card title="Detailed user info" subtitle="Last comment and client status persist in the database">
                 <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {investors.slice(0, 4).map(inv => (
+                  {allClients.slice(0, 8).map(inv => {
+                    const crmStatus = lookupClientStatus(clientStatuses, inv.id);
+                    const lastNote = notes
+                      .filter(n => bareClientId(n.clientId) === bareClientId(inv.id))
+                      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+                    const seen = formatLastSeen(inv.lastSeen);
+                    return (
                     <div key={inv.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl p-4 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
                           <Avatar name={inv.name} size={42} />
                           <div className="min-w-0">
                             <div className="font-bold text-[#1C412C] text-[14px] truncate">{inv.name}</div>
+                            <div className={`text-[11px] font-bold ${seen.online ? 'text-emerald-600' : 'text-[#213532]/55'}`}>{seen.label}</div>
                             <div className="text-[11px] text-[#213532]/70 truncate">{inv.email}</div>
                             <div className="text-[11px] text-[#213532]/60 font-mono">{phonesHidden ? maskPhone(inv.phone) : inv.phone}</div>
                           </div>
                         </div>
-                        <Badge tone={inv.kycStatus === 'verified' ? 'green' : inv.kycStatus === 'pending' ? 'gold' : 'red'}>
-                          {inv.kycStatus}
-                        </Badge>
+                        <Badge tone={statusTone(crmStatus)}>{crmStatus}</Badge>
                       </div>
                       <div className="grid grid-cols-3 gap-2 mt-4">
                         <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
@@ -931,8 +957,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                           <div className="text-[13px] font-extrabold text-[#1C412C]">${inv.invested.toLocaleString('en-US')}</div>
                         </div>
                         <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
-                          <div className="text-[10px] text-[#213532]/60 font-medium">Profit</div>
-                          <div className="text-[13px] font-extrabold text-emerald-700">+${inv.totalProfit.toLocaleString('en-US')}</div>
+                          <div className="text-[10px] text-[#213532]/60 font-medium">Last comment</div>
+                          <div className="text-[12px] font-semibold text-[#1C412C] truncate" title={lastNote?.text || ''}>
+                            {lastNote ? lastNote.text : '—'}
+                          </div>
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2 mt-4">
@@ -947,7 +975,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         </Btn>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </Card>
             </div>
@@ -974,9 +1003,15 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               subtitle="Platform accounts, balances and access"
               actions={
                 <div className="flex flex-wrap items-center gap-3">
+                  {isAdmin && (
                   <Btn variant="gold" size="sm" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
                     Create client
                   </Btn>
+                  )}
+                  <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="min-w-52">
+                    <option value="all">All statuses</option>
+                    {CLIENT_STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                  </Select>
                   <div className="relative w-64">
                     <Search className="w-4 h-4 text-[#213532]/40 absolute left-3 top-1/2 -translate-y-1/2" />
                     <Input
@@ -1010,6 +1045,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                             <Avatar name={inv.name} size={34} />
                             <div>
                               <div className="font-semibold text-[#1C412C]">{inv.name}</div>
+                              <div className={`text-[10px] font-bold ${formatLastSeen(inv.lastSeen).online ? 'text-emerald-600' : 'text-[#213532]/50'}`}>{formatLastSeen(inv.lastSeen).label}</div>
                               <div className="text-[11px] text-[#213532]/60">{inv.email}</div>
                             </div>
                           </button>
@@ -1019,8 +1055,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <Td className="text-[#213532]">${inv.invested.toLocaleString('en-US')}</Td>
                         <Td className="text-[12px] text-[#213532]/70">{inv.manager}</Td>
                         <Td>
-                          <Badge tone={inv.kycStatus === 'verified' ? 'green' : inv.kycStatus === 'pending' ? 'gold' : 'red'}>
-                            {inv.kycStatus === 'verified' ? 'Active' : inv.kycStatus}
+                          <Badge tone={statusTone(lookupClientStatus(clientStatuses, inv.id))}>
+                            {lookupClientStatus(clientStatuses, inv.id)}
                           </Badge>
                         </Td>
                         <Td className="text-right">
@@ -1041,7 +1077,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 </table>
               </div>
 
-              {/* Platform accounts (backend users) */}
+              {isAdmin && (
               <div className="border-t border-[#E4DECB] p-5">
                 <h4 className="text-[13px] font-semibold text-[#1C412C] mb-3">Platform accounts ({users.length})</h4>
                 <div className="overflow-x-auto">
@@ -1094,6 +1130,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   </table>
                 </div>
               </div>
+              )}
             </Card>
           )}
 
@@ -1113,10 +1150,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               onGoTransactions={() => setActiveTab('deposits')}
               onUpdateBalance={onUpdateInvestorBalance}
               onNotify={onNotify}
-              notes={notes.filter(n => n.clientId === selectedUser.id)}
-              onAddNote={onAddNote}
-              status={clientStatuses[selectedUser.id] || 'New'}
-              onSetStatus={onSetClientStatus}
+              notes={notes.filter(n => bareClientId(n.clientId) === bareClientId(selectedUser.id))}
+              onAddNote={(id, text) => onAddNote(bareClientId(id), text)}
+              status={lookupClientStatus(clientStatuses, selectedUser.id)}
+              onSetStatus={(id, st) => onSetClientStatus(bareClientId(id), st)}
+              staffUsers={users.filter(u => u.role === 'ADMIN' || u.role === 'MANAGER')}
               withdrawBlocks={withdrawBlocks}
               onSetWithdrawBlock={onSetWithdrawBlock}
               currentUserName={displayName}
@@ -1285,6 +1323,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   <span className="text-sm font-bold text-[#1C412C]">Sales Pipeline</span>
                   <Badge tone="gray">{leads.length} active leads</Badge>
                 </div>
+                {isAdmin && (
                 <div className="flex items-center gap-2">
                   <Btn variant="ghost" size="sm" icon={Upload} onClick={() => setIsImportLeadsOpen(true)}>
                     Import CSV
@@ -1293,6 +1332,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     Add Lead
                   </Btn>
                 </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1315,6 +1355,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         .map(lead => (
                           <div key={lead.id} className="bg-white border border-[#E4DECB] rounded-xl p-3 shadow-xs hover:border-[#B08B48]/50 transition-colors">
                             <div className="font-semibold text-[#1C412C] text-[13px]">{lead.name}</div>
+                            {(() => {
+                              const match = users.find(u =>
+                                (u.email && lead.phone && u.phone && String(u.phone).replace(/\D/g,'') === String(lead.phone).replace(/\D/g,'')) ||
+                                (u.email && (lead as any).email && u.email.toLowerCase() === String((lead as any).email).toLowerCase())
+                              );
+                              const seen = formatLastSeen(match?.lastSeen);
+                              return <div className={`text-[10px] font-bold ${seen.online ? 'text-emerald-600' : 'text-[#213532]/50'}`}>{seen.label}</div>;
+                            })()}
                             <div className="text-[11px] text-[#213532]/70 font-mono">
                               {phonesHidden ? maskPhone(lead.phone) : lead.phone}
                             </div>
@@ -1359,14 +1407,33 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   <Input placeholder="Search by name, email, phone..." value={supportSearch} onChange={e => setSupportSearch(e.target.value)} className="w-full" />
                   {(() => {
                     const q = supportSearch.trim().toLowerCase();
-                    const filtered = supportConvs.filter(c => {
-                      if (!q) return true;
-                      const u = users.find(x => x.id === c.clientId) as any;
-                      const phone = u?.phone || '';
-                      return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || String(phone).toLowerCase().includes(q);
+                    const convById = new Map(supportConvs.map(c => [c.clientId, c]));
+                    const clientUsers = users.filter(u => u.role === 'CLIENT');
+                    const list = (q
+                      ? clientUsers.filter(u =>
+                          u.name.toLowerCase().includes(q) ||
+                          u.email.toLowerCase().includes(q) ||
+                          String(u.phone || '').toLowerCase().includes(q),
+                        )
+                      : supportConvs.map(c => clientUsers.find(u => u.id === c.clientId) || { id: c.clientId, name: c.name, email: c.email, role: 'CLIENT' as const, status: 'active' as const })
+                    );
+                    const filtered = list.map(u => {
+                      const c = convById.get(u.id);
+                      const seen = formatLastSeen(u.lastSeen ?? c?.lastSeen);
+                      return {
+                        clientId: u.id,
+                        name: u.name,
+                        email: u.email,
+                        online: seen.online,
+                        lastSeenLabel: seen.label,
+                        unreadForStaff: c?.unreadForStaff || 0,
+                        lastPreview: c?.lastPreview || '',
+                        createdAt: c?.createdAt || null,
+                        lastMessageAt: c?.lastMessageAt || null,
+                      };
                     });
                     if (filtered.length === 0) {
-                      return <div className="text-center text-[12px] text-[#213532]/60 py-8">No conversations yet — chats appear when clients write to you.</div>;
+                      return <div className="text-center text-[12px] text-[#213532]/60 py-8">{q ? 'No clients match this search.' : 'No conversations yet — search a client by name to write first.'}</div>;
                     }
                     return (
                       <div className="space-y-2">
@@ -1380,7 +1447,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                                 <Avatar name={c.name} size={36} />
                                 <div className="flex-1 min-w-0">
                                   <div className="text-[13px] font-bold text-[#1C412C] truncate">{c.name}</div>
-                                  <div className={`text-[11px] font-bold ${c.online ? 'text-emerald-600' : 'text-rose-600'}`}>{c.online ? 'ONLINE' : 'OFFLINE'}</div>
+                                  <div className={`text-[11px] font-bold ${c.online ? 'text-emerald-600' : 'text-rose-600'}`}>{c.online ? 'ONLINE' : ((c as any).lastSeenLabel || 'OFFLINE')}</div>
                                   <div className="text-[11px] text-[#213532]/60 truncate">{c.email}</div>
                                   {c.lastPreview && <div className="text-[11px] text-[#213532]/50 truncate mt-0.5">{c.lastPreview}</div>}
                                 </div>
@@ -1767,6 +1834,7 @@ const UserDetails: React.FC<{
   /** real payout block, saved on the server: { '<userId>': true } */
   withdrawBlocks: Record<string, boolean>;
   onSetWithdrawBlock: (clientId: string, blocked: boolean) => Promise<void>;
+  staffUsers?: ApiUser[];
 }> = ({
   user,
   trades,
@@ -1792,6 +1860,7 @@ const UserDetails: React.FC<{
   onOpenStatementModal,
   withdrawBlocks,
   onSetWithdrawBlock,
+  staffUsers = [],
 }) => {
   const [moreOpen, setMoreOpen] = useState(false);
   // Real block state comes from the platform account, not local UI state
@@ -1801,7 +1870,7 @@ const UserDetails: React.FC<{
   const plainClientId = String(account?.id ?? user.id).replace(/\D/g, '');
   const withdrawBlocked = Boolean(withdrawBlocks[plainClientId]);
   const [statusBusy, setStatusBusy] = useState(false);
-  const [manager, setManager] = useState(user.manager);
+  const [, setManager] = useState(user.manager);
   const [balanceInput, setBalanceInput] = useState(String(user.balance));
   const moreRef = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<null | 'topup' | 'bonus' | 'message'>(null);
@@ -2156,17 +2225,44 @@ const UserDetails: React.FC<{
             </Field>
             <Field label="Assigned manager">
               <Select
-                value={manager}
-                onChange={e => {
-                  setManager(e.target.value);
-                  onNotify(`Manager changed to ${e.target.value}`);
+                value={String(account?.assignedManagerId || '')}
+                onChange={async e => {
+                  if (!account || !isAdmin) return onNotify('Only an administrator can reassign a client.');
+                  const val = e.target.value;
+                  try {
+                    await apiAdminUpdateUser(account.id, { assignedManagerId: val ? Number(val) : null });
+                    setManager(staffUsers.find(m => String(m.id) === val)?.name || 'Unassigned');
+                    onNotify(val ? 'Manager assigned and saved.' : 'Client unassigned.');
+                  } catch (err) {
+                    onNotify(err instanceof Error ? err.message : 'Could not assign manager');
+                  }
                 }}
+                disabled={!isAdmin}
               >
-                <option>No manager (super-admin)</option>
-                <option>Laura Bennett (Senior Advisor)</option>
-                <option>Daniel Foster (Desk 2)</option>
-                <option value={user.manager}>{user.manager}</option>
+                <option value="">Unassigned</option>
+                {staffUsers.map(m => (
+                  <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
+                ))}
               </Select>
+            </Field>
+            <Field label="Default leverage">
+              <div className="flex items-center gap-2">
+                <Input
+                  className="w-24"
+                  defaultValue={String(account?.defaultLeverage || user.defaultLeverage || 10)}
+                  onBlur={async e => {
+                    if (!account) return;
+                    const lev = Math.max(1, Number(e.target.value) || 10);
+                    try {
+                      await apiAdminUpdateUser(account.id, { defaultLeverage: lev });
+                      onNotify(`Default leverage for this client is now ${lev}x`);
+                    } catch (err) {
+                      onNotify(err instanceof Error ? err.message : 'Could not save leverage');
+                    }
+                  }}
+                />
+                <span className="text-[11px] text-[#213532]/60">x · used when opening a new position</span>
+              </div>
             </Field>
             <Field label="Registration date">{user.registrationDate}</Field>
             <Field label="KYC document">{user.documentName || '—'}</Field>

@@ -31,6 +31,32 @@ export interface Investor {
   registrationDate: string;
   manager: string;
   documentName?: string;
+  lastSeen?: number | null;
+  assignedManagerId?: number | null;
+  defaultLeverage?: number;
+}
+
+/** Normalize CRM ids (`acc-7` / `7`) so statuses and notes always match. */
+export function bareClientId(id: string | number | undefined | null): string {
+  return String(id ?? '').replace(/^acc-/, '').replace(/\D/g, '');
+}
+
+export function lookupClientStatus(map: Record<string, string>, id: string | number | undefined | null): string {
+  const bare = bareClientId(id);
+  if (!bare) return 'New';
+  return map[bare] || map[`acc-${bare}`] || map[String(id)] || 'New';
+}
+
+export function formatLastSeen(lastSeen?: number | null): { online: boolean; label: string } {
+  if (!lastSeen) return { online: false, label: 'Never seen' };
+  const ago = Date.now() - Number(lastSeen);
+  if (ago < 60 * 1000) return { online: true, label: 'ONLINE' };
+  const mins = Math.floor(ago / 60000);
+  if (mins < 60) return { online: false, label: `Last seen ${mins}m ago` };
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return { online: false, label: `Last seen ${hours}h ago` };
+  const days = Math.floor(hours / 24);
+  return { online: false, label: `Last seen ${days}d ago` };
 }
 
 export type LeadStage = 'new' | 'contact' | 'kyc' | 'active';

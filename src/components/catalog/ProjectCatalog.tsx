@@ -13,16 +13,12 @@ import {
 
 interface ProjectCatalogProps {
   projects: Project[];
-  /** staff only: shows the "+ Create a new asset in the CRM panel" shortcut.
-   *  Clients must never see a back-office entry point. */
-  canManageAssets?: boolean;
   onOpenInvestModal: (project: Project) => void;
   onSwitchToCrm: () => void;
 }
 
 export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
   projects,
-  canManageAssets = false,
   onOpenInvestModal,
   onSwitchToCrm
 }) => {
@@ -81,17 +77,15 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
           </p>
         </div>
 
-        {canManageAssets && (
-          <div className="mt-6 flex flex-wrap items-center gap-3 relative z-10">
-            <button
-              onClick={onSwitchToCrm}
-              className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-[#F5F2E9] rounded-xl text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer"
-            >
-              <PlusCircle className="w-4 h-4 text-[#B08B48]" />
-              <span>+ Create a new asset in the CRM panel</span>
-            </button>
-          </div>
-        )}
+        <div className="mt-6 flex flex-wrap items-center gap-3 relative z-10">
+          <button
+            onClick={onSwitchToCrm}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-[#F5F2E9] rounded-xl text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4 text-[#B08B48]" />
+            <span>+ Create a new asset in the CRM panel</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and search bar */}

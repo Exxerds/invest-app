@@ -14,6 +14,10 @@ export interface ApiUser {
   role: 'CLIENT' | 'MANAGER' | 'ADMIN';
   status: 'pending' | 'active' | 'blocked';
   created_at?: string;
+  lastSeen?: number | null;
+  assignedManagerId?: number | null;
+  assignedManagerName?: string;
+  defaultLeverage?: number;
 }
 
 export const TOKEN_KEY = 'tn_token';
@@ -154,7 +158,12 @@ export const apiAdminChangePassword = (userId: number, newPassword: string) =>
   });
 
 /** Admin updates user status (active/blocked/pending) or role */
-export const apiAdminUpdateUser = (userId: number, data: { status?: string; role?: string }) =>
+export const apiAdminUpdateUser = (userId: number, data: {
+  status?: string;
+  role?: string;
+  assignedManagerId?: number | null;
+  defaultLeverage?: number;
+}) =>
   request<{ ok: true; message: string }>(`/admin/users/${userId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${getToken()}` },
@@ -902,6 +911,7 @@ export interface ApiSupportConversation {
   name: string;
   email: string;
   online: boolean;
+  lastSeen?: number | null;
   unreadForStaff: number;
   lastMessageAt: string | null;
   lastPreview: string;

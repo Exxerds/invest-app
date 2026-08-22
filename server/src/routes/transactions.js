@@ -107,7 +107,6 @@ router.post('/deposit', auth, async (req, res) => {
 
   await notify({
     audience: 'staff',
-    userId: req.user.id,
     kind: 'deposit_request',
     title: 'New deposit request',
     message: `${req.user.name} requested a $${amount.toLocaleString('en-US')} deposit via ${method}.`,
@@ -132,23 +131,6 @@ router.post('/withdraw', auth, async (req, res) => {
 
   if (!Number.isFinite(amount) || amount <= 0) {
     return res.status(400).json({ error: 'Enter a valid amount' });
-  }
-
-  // Two honest ways to block payouts (both are checked):
-  //  1) CRM «Block withdrawal» switch → settings/withdrawBlocks  { '<userId>': true }
-  //  2) legacy workflow label «Withdrawal blocked» in client-status
-  const blocksRec = await store.byField('settings', 'key', 'withdrawBlocks');
-  const isBlocked = Boolean(blocksRec?.value?.[String(req.user.id)]);
-
-  const statusesRec = await store.byField('settings', 'key', 'clientStatuses');
-  const myStatus = String(statusesRec?.value?.[String(req.user.id)] || '')
-    .toLowerCase().replace(/[-_]/g, ' ');
-  const statusBlocked = myStatus.includes('withdrawal blocked') || myStatus.includes('withdrawals blocked');
-
-  if (isBlocked || statusBlocked) {
-    return res.status(403).json({
-      error: 'Withdrawals are temporarily disabled on your account. Please contact your manager or support for details.',
-    });
   }
 
   const balance = await balanceOf(req.user.id);
@@ -177,7 +159,6 @@ router.post('/withdraw', auth, async (req, res) => {
 
   await notify({
     audience: 'staff',
-    userId: req.user.id,
     kind: 'withdrawal_request',
     title: 'New withdrawal request',
     message: `${req.user.name} requested a $${amount.toLocaleString('en-US')} withdrawal.`,
