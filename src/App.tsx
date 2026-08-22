@@ -1353,8 +1353,10 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
             <div className="max-w-sm">
-              <div className="flex items-center gap-2.5">
-                <img src="/brand-crest.png" alt="Oak Haven Yield" className="w-14 h-14 object-contain scale-125" />
+              <div className="flex items-center gap-3">
+                <span className="w-16 h-16 rounded-full bg-[#F5F2E9] flex items-center justify-center shrink-0 overflow-hidden">
+                  <img src="/brand-crest.png" alt="" className="w-[88px] h-[88px] object-contain max-w-none" />
+                </span>
                 <span className="font-serif font-bold text-lg text-white tracking-wide">OAK HAVEN <span className="text-[#B08B48] italic">YIELD</span></span>
               </div>
               <p className="text-xs leading-relaxed mt-3">

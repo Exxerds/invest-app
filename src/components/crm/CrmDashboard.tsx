@@ -599,8 +599,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
             cabinet. The crest is green, so it must sit on the cream disc
             to stay visible against the dark-green sidebar. */}
         <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/10">
-          <div className="w-12 h-12 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0 overflow-hidden">
-            <OakCrest size={48} />
+          <div className="w-14 h-14 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0 overflow-hidden">
+            <OakCrest size={56} />
           </div>
             <div className="leading-tight">
               <OakWordmark tone="light" />
