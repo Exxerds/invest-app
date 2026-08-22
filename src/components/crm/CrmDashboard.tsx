@@ -57,6 +57,7 @@ import {
   Download,
   Circle,
   IdCard,
+  Briefcase,
 } from 'lucide-react';
 import { CrmTradesManager } from './CrmTradesManager';
 import type { AdminTrade } from './CrmTradesManager';
@@ -65,6 +66,7 @@ import { Card, Btn, Badge, Field, Input, Select, Kpi, Th, Td, Avatar } from './u
 import { ImportLeadsModal } from '../modals/ImportLeadsModal';
 import { CreateClientModal } from '../modals/CreateClientModal';
 import { StatementModal } from '../modals/StatementModal';
+import { CrmMarketsPanel } from './CrmMarketsPanel';
 import { Upload, Menu } from 'lucide-react';
 
 type CrmTab =
@@ -82,6 +84,7 @@ type CrmTab =
   | 'calls'
   | 'analytics'
   | 'client-cards'
+  | 'markets'
   | 'settings';
 
 interface CrmDashboardProps {
@@ -103,6 +106,8 @@ interface CrmDashboardProps {
   onRejectRequest: (requestId: string) => void;
   projects: Project[];
   onOpenNewProjectModal: () => void;
+  onUpdateProject?: (id: string, patch: Partial<Project>) => void;
+  onDeleteProject?: (id: string) => void;
   trades: AdminTrade[];
   onUpdateInvestorBalance: (investorId: string, newBalance: number) => void;
   onCreateTrade: (trade: Omit<AdminTrade, 'id' | 'status'>) => void;
@@ -152,7 +157,7 @@ type NavItem = {
 };
 
 /** Sections that only an administrator may open (platform-wide configuration) */
-const ADMIN_ONLY_TABS: CrmTab[] = ['settings', 'banks'];
+const ADMIN_ONLY_TABS: CrmTab[] = ['settings', 'banks', 'markets'];
 
 /**
  * A single flat menu. The Platform / CRM split was removed at the client's
@@ -178,6 +183,7 @@ const MAIN_NAV: NavItem[] = [
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'support', label: 'Support', icon: LifeBuoy },
   { id: 'calls', label: 'Calls', icon: PhoneCall },
+  { id: 'markets', label: 'Markets', icon: Briefcase, adminOnly: true },
   { id: 'banks', label: 'Partner banks', icon: Landmark, adminOnly: true },
   { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
 ];
@@ -198,6 +204,7 @@ const TAB_TITLES: Record<CrmTab, { title: string; sub: string }> = {
   calls: { title: 'Calls', sub: 'WebRTC calls, prompter and screen sharing' },
   analytics: { title: 'Analytics', sub: 'Base quality, managers and trading stats' },
   settings: { title: 'Settings', sub: 'Global platform and CRM rules' },
+  markets: { title: 'Markets', sub: 'Create, edit and remove tradable assets' },
 };
 
 export const CrmDashboard: React.FC<CrmDashboardProps> = ({
@@ -214,6 +221,9 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onWhisper,
   onRejectRequest,
   onOpenNewProjectModal,
+  onUpdateProject,
+  onDeleteProject,
+  projects,
   trades,
   onUpdateInvestorBalance,
   onCreateTrade,
@@ -1543,6 +1553,15 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
 
           {/* ===================== ANALYTICS ===================== */}
           {activeTab === 'analytics' && <AnalyticsPanel onNotify={onNotify} />}
+
+          {activeTab === 'markets' && (
+            <CrmMarketsPanel
+              projects={projects}
+              onCreate={onOpenNewProjectModal}
+              onUpdate={onUpdateProject}
+              onDelete={onDeleteProject}
+            />
+          )}
 
           {/* ===================== SETTINGS ===================== */}
           {activeTab === 'settings' && (

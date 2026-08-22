@@ -500,6 +500,11 @@ export const apiCreateAsset = (data: Partial<ApiAsset> & { title: string }) =>
     method: 'POST', headers: authHeader(), body: JSON.stringify(data),
   });
 
+export const apiUpdateAsset = (id: number | string, data: Partial<ApiAsset>) =>
+  request<{ ok: true; asset: ApiAsset }>(`/assets/${id}`, {
+    method: 'PATCH', headers: authHeader(), body: JSON.stringify(data),
+  });
+
 export const apiDeleteAsset = (id: number | string) =>
   request<{ ok: true }>(`/assets/${id}`, { method: 'DELETE', headers: authHeader() });
 

@@ -92,7 +92,7 @@ export async function sendMail({ to, subject, html }) {
 
 /** Branded HTML e-mail layout (Oak Haven Yield: cream / forest green / warm gold) */
 export function letterLayout(title, contentHtml) {
-  const logoUrl = `${SITE_URL.replace(/\/$/, '')}/logo.svg`;
+  const logoUrl = `${SITE_URL.replace(/\/$/, '')}/brand-crest.png`;
   return `<!DOCTYPE html>
 <html lang="en"><body style="margin:0;padding:0;background:#F5F2E9;font-family:Georgia,'Times New Roman',serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F2E9;padding:32px 12px;">

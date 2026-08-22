@@ -91,7 +91,7 @@ router.post('/', staffOnly, async (req, res) => {
     riskLevel: ['low', 'medium', 'high'].includes(b.riskLevel) ? b.riskLevel : 'medium',
     status: cleanStr(b.status, 20) || 'active',
     description: cleanStr(b.description, 1000),
-    imageUrl: cleanStr(b.imageUrl, 500),
+    imageUrl: cleanStr(b.imageUrl, 2000000),
     tags: Array.isArray(b.tags) ? b.tags.slice(0, 6).map(t => cleanStr(t, 40)) : [],
     createdAt: new Date().toISOString(),
   });

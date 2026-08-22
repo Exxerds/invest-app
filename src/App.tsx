@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import type { ActiveTab } from './components/Header';
 import { LandingPage } from './components/landing/LandingPage';
+import { LegalPage } from './components/legal/LegalPage';
+import type { LegalSlug } from './legal/docs';
 import { InvestorDashboard } from './components/investor/InvestorDashboard';
 import { ProjectCatalog } from './components/catalog/ProjectCatalog';
 import { CrmDashboard } from './components/crm/CrmDashboard';
@@ -19,7 +21,7 @@ import {
   apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, 
   apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, 
   apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq, apiOpenTrade, apiSupportPresence,
-  apiAssets, apiCreateAsset,
+  apiAssets, apiCreateAsset, apiUpdateAsset, apiDeleteAsset,
   apiMyInvestments, apiCreateInvestment, apiClaimInvestmentProfit, apiQuote
 } from './api';
 import type { ApiTrade, ApiTransaction, ApiCall, ApiAsset } from './api';
@@ -46,15 +48,21 @@ import type {
   KycStatus
 } from './types';
 import type { AdminTrade } from './components/crm/CrmTradesManager';
-import { CheckCircle2, TrendingUp } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 /** Where the user was before a refresh */
 const TAB_KEY = 'ohy_tab';
 /** Holds the admin's own token while they view a client account */
 const ADMIN_TOKEN_KEY = 'ohy_admin_token';
 
+function legalSlugFromPath(path: string): LegalSlug | null {
+  const m = path.match(/^\/legal\/(client|aml|terms|risk)\/?$/);
+  return m ? (m[1] as LegalSlug) : null;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('landing');
+  const [legalSlug, setLegalSlug] = useState<LegalSlug | null>(() => legalSlugFromPath(window.location.pathname));
 
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<ApiUser | null>(null);
@@ -63,6 +71,12 @@ export default function App() {
   useEffect(() => {
     if (isLoggedIn && activeTab !== 'landing') localStorage.setItem(TAB_KEY, activeTab);
   }, [activeTab, isLoggedIn]);
+
+  useEffect(() => {
+    const onPop = () => setLegalSlug(legalSlugFromPath(window.location.pathname));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   // Core State — everything starts EMPTY; the server fills it (no demo data)
   const [projects, setProjects] = useState<Project[]>([]);
@@ -203,6 +217,8 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const path = window.location.pathname;
+    const initialLegal = legalSlugFromPath(path);
+    if (initialLegal) setLegalSlug(initialLegal);
     const confirmToken = params.get('token');
 
     if (path === '/confirm-email' && confirmToken) {
@@ -242,7 +258,9 @@ export default function App() {
           const saved = localStorage.getItem(TAB_KEY) as ActiveTab | null;
           const allowed: ActiveTab[] =
             res.user.role === 'CLIENT' ? ['investor', 'catalog'] : ['crm'];
-          setActiveTab(saved && allowed.includes(saved) ? saved : allowed[0]);
+          if (!legalSlugFromPath(window.location.pathname)) {
+            setActiveTab(saved && allowed.includes(saved) ? saved : allowed[0]);
+          }
         })
         .catch(() => setToken(null));
     }
@@ -868,10 +886,42 @@ export default function App() {
       await apiCreateAsset(newProjData as Partial<ApiAsset> & { title: string });
       await reloadAssets();
       showToast(`✔ New asset «${newProjData.title}» published!`);
-      setActiveTab('catalog');
     } catch (err) {
       showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not create the asset', 'info');
     }
+  };
+
+  const handleUpdateProject = async (id: string, patch: Partial<Project>) => {
+    const numId = Number(String(id).replace(/^srv-/, ''));
+    try {
+      await apiUpdateAsset(numId, patch as Partial<ApiAsset>);
+      await reloadAssets();
+      showToast('✔ Asset saved.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the asset', 'info');
+    }
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    const numId = Number(String(id).replace(/^srv-/, ''));
+    try {
+      await apiDeleteAsset(numId);
+      await reloadAssets();
+      showToast('✔ Asset removed.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not delete the asset', 'info');
+    }
+  };
+
+  const openLegal = (slug: LegalSlug) => {
+    setLegalSlug(slug);
+    window.history.pushState({}, '', `/legal/${slug}`);
+  };
+
+  const closeLegal = () => {
+    setLegalSlug(null);
+    window.history.pushState({}, '', '/');
+    setActiveTab('landing');
   };
 
   const reloadAssets = async () => {
@@ -1128,7 +1178,7 @@ export default function App() {
       )}
 
       {/* Top Header (hidden on landing & CRM — they have their own navbars) */}
-      {activeTab !== 'crm' && activeTab !== 'landing' && activeTab !== 'investor' && (
+      {activeTab !== 'crm' && activeTab !== 'landing' && activeTab !== 'investor' && !legalSlug && (
       <Header
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -1148,7 +1198,11 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full">
-        {activeTab === 'landing' && (
+        {legalSlug && (
+          <LegalPage slug={legalSlug} onBack={closeLegal} onOpen={openLegal} />
+        )}
+
+        {activeTab === 'landing' && !legalSlug && (
           <LandingPage
             onOpenLoginModal={() => setIsLoginModalOpen(true)}
             onOpenRegisterModal={() => setIsRegisterModalOpen(true)}
@@ -1195,7 +1249,7 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'crm' && isStaff && (
+        {activeTab === 'crm' && isStaff && !legalSlug && (
           <CrmDashboard
             leads={leads}
             onMoveLeadStage={handleMoveLeadStage}
@@ -1261,6 +1315,8 @@ export default function App() {
             onRejectRequest={handleRejectRequest}
             projects={projects}
             onOpenNewProjectModal={() => setIsNewProjectModalOpen(true)}
+            onUpdateProject={handleUpdateProject}
+            onDeleteProject={handleDeleteProject}
             trades={combinedTrades}
             onUpdateInvestorBalance={handleUpdateInvestorBalance}
             onCreateTrade={handleCreateTrade}
@@ -1292,15 +1348,13 @@ export default function App() {
       </main>
 
       {/* Footer (like Shoreline Direct: risk warning + payments + copyright) */}
-      {activeTab !== 'crm' && activeTab !== 'investor' && (
+      {activeTab !== 'crm' && activeTab !== 'investor' && !legalSlug && (
       <footer className="bg-[#1C412C] border-t border-[#B08B48]/25 text-[#F5F2E9]/70">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
             <div className="max-w-sm">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-full bg-[#B08B48] flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-white" />
-                </div>
+                <img src="/brand-crest.png" alt="Oak Haven Yield" className="w-9 h-9 object-contain" />
                 <span className="font-serif font-bold text-lg text-white tracking-wide">OAK HAVEN <span className="text-[#B08B48] italic">YIELD</span></span>
               </div>
               <p className="text-xs leading-relaxed mt-3">
@@ -1336,10 +1390,10 @@ export default function App() {
           <div className="mt-6 pt-6 border-t border-white/15 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
             <span>© 2026 Oak Haven Yield. All Rights Reserved.</span>
             <div className="flex items-center gap-5">
-              <button onClick={() => setActiveTab('landing')} className="hover:text-white transition-colors cursor-pointer">
-                Privacy Policy
+              <button onClick={() => openLegal('client')} className="hover:text-white transition-colors cursor-pointer">
+                Client Agreement
               </button>
-              <button onClick={() => setActiveTab('landing')} className="hover:text-white transition-colors cursor-pointer">
+              <button onClick={() => openLegal('terms')} className="hover:text-white transition-colors cursor-pointer">
                 Terms & Conditions
               </button>
             </div>
