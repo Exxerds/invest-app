@@ -114,6 +114,15 @@ router.get('/ice-servers', auth, async (req, res) => {
       username: process.env.TURN_USER,
       credential: process.env.TURN_PASS || '',
     });
+    // Fallback lane for networks that strangle plain UDP:
+    // TURN-over-TLS on 5349 looks like regular HTTPS traffic.
+    if (process.env.TURN_TLS_HOST) {
+      servers.push({
+        urls: `turns:${process.env.TURN_TLS_HOST}:5349`,
+        username: process.env.TURN_USER,
+        credential: process.env.TURN_PASS || '',
+      });
+    }
   }
 
   res.json({ iceServers: servers });

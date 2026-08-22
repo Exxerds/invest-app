@@ -9,6 +9,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import * as store from '../db.js';
 import { sendMail, letterLayout, publicUrl } from '../mailer.js';
+import { notify } from '../notifications.js';
+import { logActivity } from './workspace.js';
 
 const router = Router();
 
@@ -113,6 +115,38 @@ router.post('/register', async (req, res) => {
       created_at: new Date().toISOString()
     });
 
+    // every registration automatically lands in the CRM lead pipeline
+    try {
+      const settingsRec = await store.byField('settings', 'key', 'crmSettings');
+      const dupControl = settingsRec?.value?.duplicateControl !== false; // ON by default
+      const alreadyLead = await store.allWhere('leads', (l) => String(l.email || '').toLowerCase() === lower);
+      if (!dupControl || alreadyLead.length === 0) {
+        await store.insert('leads', {
+          name: user.name,
+          phone: '',
+          email: user.email,
+          potentialAmount: 0,
+          stage: 'new',
+          notes: 'Registered on the platform (self sign-up)',
+          source: 'Registration',
+          manager: '',
+          comments: [],
+          createdBy: 'Platform',
+          createdAt: new Date().toISOString(),
+        });
+        notify({
+          audience: 'staff',
+          kind: 'lead_registered',
+          title: 'New registration',
+          message: `${user.name} (${user.email}) created an account on the platform.`,
+          link: 'leads',
+        }).catch(() => undefined);
+      }
+    } catch (e) {
+      // never let the lead pipeline break a registration
+      console.error('[register] lead pipeline skipped:', e && e.message);
+    }
+
     const token = await createToken(user.id, 'confirm_email');
     const link = `${publicUrl(req)}/confirm-email?token=${token}`;
 
@@ -148,8 +182,23 @@ router.post('/register', async (req, res) => {
 // ------------------------------------------------------------
 router.post('/confirm-email', async (req, res) => {
   const { token } = req.body || {};
+
+  // Friendly state for a repeated click on an already-used link:
+  // the user finds out their e-mail IS confirmed and gets a login page,
+  // not a scary "invalid link".
+  const raw = await store.byField('tokens', 'token', String(token || ''));
+  if (raw && raw.type === 'confirm_email' && raw.used === 1) {
+    const u = await store.byId('users', raw.user_id);
+    if (u && u.status === 'active') {
+      return res.status(409).json({
+        code: 'ALREADY_CONFIRMED',
+        error: 'This e-mail address is already confirmed. You can sign in.',
+      });
+    }
+  }
+
   const t = await findValidToken(token, 'confirm_email');
-  if (!t) return res.status(400).json({ error: 'Link is invalid or expired' });
+  if (!t) return res.status(400).json({ code: 'INVALID_OR_EXPIRED', error: 'Link is invalid or expired' });
 
   await store.update('tokens', t.id, { used: 1 });
   const user = await store.update('users', t.user_id, { status: 'active' });
@@ -175,8 +224,18 @@ router.post('/login', async (req, res) => {
     return res.status(403).json({ error: 'Account is blocked. Contact support.' });
   }
 
-  res.json({ ok: true, token: signJwt(user), user: publicUser(user) });
+  // audit trail entry — visible in the CRM "View user logs" dialog
+  logActivity({ actor: user, action: 'login', target: `user ${user.id}`, details: '' }).catch(() => undefined);
+
+  const policy = await clientPolicy();
+  res.json({ ok: true, token: signJwt(user), user: publicUser(user), policy });
 });
+
+/** Platform rules the client's cabinet UI must respect */
+async function clientPolicy() {
+  const rec = await store.byField('settings', 'key', 'crmSettings').catch(() => null);
+  return { manualClosing: Boolean(rec?.value?.manualClosing) };
+}
 
 // ------------------------------------------------------------
 //  CURRENT USER
@@ -190,7 +249,8 @@ router.get('/me', async (req, res) => {
     const payload = jwt.verify(token, JWT_SECRET);
     const user = await store.byId('users', payload.userId);
     if (!user) return res.status(401).json({ error: 'User not found' });
-    res.json({ user: publicUser(user) });
+    const policy = await clientPolicy();
+    res.json({ user: publicUser(user), policy });
   } catch {
     res.status(401).json({ error: 'Session expired, sign in again' });
   }
@@ -229,7 +289,17 @@ router.post('/reset-password', async (req, res) => {
   }
 
   const t = await findValidToken(token, 'reset_password');
-  if (!t) return res.status(400).json({ error: 'Link is invalid or expired' });
+  if (!t) {
+    // differentiate for a better UI, but never leak which part failed
+    const raw = await store.byField('tokens', 'token', String(token || ''));
+    const expired = raw && raw.used !== 1 && !(raw.expires_at > new Date().toISOString());
+    return res.status(400).json({
+      code: expired ? 'EXPIRED' : 'INVALID',
+      error: expired
+        ? 'This reset link has expired (links are valid for 1 hour). Please request a new one.'
+        : 'Link is invalid or has already been used',
+    });
+  }
 
   await store.update('tokens', t.id, { used: 1 });
   const hash = await bcrypt.hash(String(newPassword), 10);
