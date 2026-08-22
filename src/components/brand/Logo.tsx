@@ -23,13 +23,13 @@ export const BRAND = {
 /** Official crest — replace public/brand-crest.png to update the mark everywhere. */
 export const CREST_SRC = '/brand-crest.png';
 
-export const OakCrest: React.FC<{ size?: number; className?: string }> = ({ size = 40, className = '' }) => (
+export const OakCrest: React.FC<{ size?: number; className?: string }> = ({ size = 56, className = '' }) => (
   <img
     src={CREST_SRC}
     alt="Oak Haven Yield"
     width={size}
     height={size}
-    className={`object-contain ${className}`}
+    className={`object-contain shrink-0 ${className}`}
     style={{ width: size, height: size }}
   />
 );

@@ -45,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => onTabChange('landing')}>
-            <img src="/brand-crest.png" alt="Oak Haven Yield" className="w-10 h-10 object-contain" />
+            <img src="/brand-crest.png" alt="Oak Haven Yield" className="w-14 h-14 object-contain" />
             <div>
               <span className="font-serif font-bold text-lg tracking-tight text-[#1C412C]">
                 OAK HAVEN <span className="text-[#B08B48] italic font-sans font-extrabold">YIELD</span>
