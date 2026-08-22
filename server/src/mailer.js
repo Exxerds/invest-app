@@ -76,10 +76,10 @@ function loadCrestPng() {
     crestPng = execFileSync('convert', [
       CREST_SRC,
       '-trim', '+repage',
-      '-resize', '200x200',
+      '-resize', '480x480',
       '-gravity', 'center',
       '-background', '#F5F2E9',
-      '-extent', '200x200',
+      '-extent', '480x480',
       'png:-',
     ]);
   } catch {
