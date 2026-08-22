@@ -363,7 +363,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const [letterBody, setLetterBody] = useState(
     'Dear client,\n\nYour account statement for the current period is now available in your personal cabinet.\n\nBest regards,\nOak Haven Yield',
   );
-  const [letterAudience, setLetterAudience] = useState('All clients');
+  const [letterAudience, setLetterAudience] = useState('One client');
   const [sendingLetter, setSendingLetter] = useState(false);
   const [walletDraft, setWalletDraft] = useState<Record<string, string>>({ BTC: '', ETH: '', USDC: '' });
   const [marginDraft, setMarginDraft] = useState<Record<string, number>>({});
@@ -384,14 +384,19 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
       .then(r => setWalletDraft(r.wallets))
       .catch(() => undefined);
   }, [activeTab]);
-  const [mailAudience, setMailAudience] = useState({ all: 0, active: 0, noDeposit: 0 });
+  const [mailAudience, setMailAudience] = useState<{
+    all: number; active: number; noDeposit: number;
+    clients: { id: number; name: string; email: string; status: string }[];
+  }>({ all: 0, active: 0, noDeposit: 0, clients: [] });
+  const [letterUserId, setLetterUserId] = useState('');
+  const [letterClientQuery, setLetterClientQuery] = useState('');
 
   // Live recipient counts straight from the database
   useEffect(() => {
     if (activeTab !== 'happy-letter') return;
     apiMailAudience()
       .then(setMailAudience)
-      .catch(() => setMailAudience({ all: 0, active: 0, noDeposit: 0 }));
+      .catch(() => setMailAudience({ all: 0, active: 0, noDeposit: 0, clients: [] }));
   }, [activeTab]);
 
   // Close dropdowns on outside click
@@ -1234,12 +1239,24 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   setSendingLetter(true);
                   try {
                     const audience =
-                      letterAudience === 'Active only'
+                      letterAudience === 'One client'
+                        ? 'one'
+                        : letterAudience === 'Active only'
                         ? 'active'
                         : letterAudience === 'No deposit'
                         ? 'noDeposit'
                         : 'all';
-                    const r = await apiSendMailing(letterSubject, letterBody, audience);
+                    if (audience === 'one' && !letterUserId) {
+                      onNotify('Pick a client first.');
+                      setSendingLetter(false);
+                      return;
+                    }
+                    const r = await apiSendMailing(
+                      letterSubject,
+                      letterBody,
+                      audience,
+                      audience === 'one' ? Number(letterUserId) : undefined,
+                    );
                     onNotify(r.message);
                   } catch (err) {
                     onNotify(err instanceof Error ? err.message : 'Could not send the letter');
@@ -1252,17 +1269,46 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 <div>
                   <label className="text-[11px] font-bold uppercase text-[#213532]/70">Recipients</label>
                   <Select className="w-full mt-1.5" value={letterAudience} onChange={e => setLetterAudience(e.target.value)}>
+                    <option>One client</option>
                     <option>All clients</option>
                     <option>Active only</option>
                     <option>No deposit</option>
                   </Select>
+                  {letterAudience === 'One client' && (
+                    <div className="mt-2 space-y-2">
+                      <Input
+                        className="w-full"
+                        placeholder="Search by name or e-mail..."
+                        value={letterClientQuery}
+                        onChange={e => setLetterClientQuery(e.target.value)}
+                      />
+                      <Select className="w-full" value={letterUserId} onChange={e => setLetterUserId(e.target.value)}>
+                        <option value="">Select a client…</option>
+                        {(mailAudience.clients.length
+                          ? mailAudience.clients
+                          : users.filter(u => u.role === 'CLIENT').map(u => ({ id: u.id, name: u.name, email: u.email, status: u.status }))
+                        )
+                          .filter(c => {
+                            const q = letterClientQuery.trim().toLowerCase();
+                            if (!q) return true;
+                            return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q);
+                          })
+                          .map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} — {c.email}
+                            </option>
+                          ))}
+                      </Select>
+                    </div>
+                  )}
                   <div className="text-[11px] text-[#213532]/60 mt-1">
-                    {letterAudience === 'Active only'
-                      ? mailAudience.active
+                    {letterAudience === 'One client'
+                      ? (letterUserId ? '1 recipient selected' : 'Pick one client')
+                      : letterAudience === 'Active only'
+                      ? `${mailAudience.active} recipient(s) selected`
                       : letterAudience === 'No deposit'
-                      ? mailAudience.noDeposit
-                      : mailAudience.all}{' '}
-                    recipient(s) selected
+                      ? `${mailAudience.noDeposit} recipient(s) selected`
+                      : `${mailAudience.all} recipient(s) selected`}
                   </div>
                 </div>
                 <div>

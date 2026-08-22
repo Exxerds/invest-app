@@ -548,17 +548,22 @@ export const apiQuote = (symbol: string) =>
 // ---------- mass mailing ("Happy letter") ----------
 
 export const apiMailAudience = () =>
-  request<{ all: number; active: number; noDeposit: number }>('/mailing/audience', {
+  request<{
+    all: number;
+    active: number;
+    noDeposit: number;
+    clients: { id: number; name: string; email: string; status: string }[];
+  }>('/mailing/audience', {
     headers: authHeader(),
   });
 
-export const apiSendMailing = (subject: string, body: string, audience: string) =>
+export const apiSendMailing = (subject: string, body: string, audience: string, userId?: number) =>
   request<{ ok: true; sent: number; failed: number; total: number; message: string }>(
     '/mailing/send',
     {
       method: 'POST',
       headers: authHeader(),
-      body: JSON.stringify({ subject, body, audience }),
+      body: JSON.stringify({ subject, body, audience, userId }),
     },
   );
 
