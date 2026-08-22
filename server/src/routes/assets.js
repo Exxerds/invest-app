@@ -27,10 +27,10 @@ const CATEGORIES = {
 };
 
 const DEFAULT_ASSETS = [
-  { title: 'BTC/USDT — Spot & Futures Trading', category: 'crypto', categoryLabel: CATEGORIES.crypto, targetAmount: 1000000, raisedAmount: 0, apr: 24.5, termMonths: 12, minCheck: 1000, riskLevel: 'medium', status: 'active', description: 'Trade the leading cryptocurrency with a direct Binance price feed. Spot orders and margin leverage up to 100x.', imageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80', tags: ['Binance Feed', 'Spot & Futures', 'Leverage 1x-100x'] },
+  { title: 'BTC/USDT — Spot & Futures Trading', category: 'crypto', categoryLabel: CATEGORIES.crypto, targetAmount: 1000000, raisedAmount: 0, apr: 24.5, termMonths: 12, minCheck: 1000, riskLevel: 'medium', status: 'active', description: 'Trade the leading cryptocurrency with a direct Binance price feed. Spot orders and margin leverage up to 100x.', imageUrl: '/markets/bitcoin.jpg', tags: ['Binance Feed', 'Spot & Futures', 'Leverage 1x-100x'] },
   { title: 'ETH/USDT — Ethereum Perpetual Futures', category: 'futures', categoryLabel: CATEGORIES.futures, targetAmount: 500000, raisedAmount: 0, apr: 32.0, termMonths: 6, minCheck: 2500, riskLevel: 'high', status: 'active', description: 'Ethereum perpetual futures with automatic Stop Loss / Take Profit control and instant PnL calculation.', imageUrl: 'https://images.unsplash.com/photo-1622630998477-20aa696ecb05?auto=format&fit=crop&w=800&q=80', tags: ['Ethereum', 'Futures 20x', 'Stop Loss / TP'] },
-  { title: 'XAU/USD — Gold / Precious Metal Spot', category: 'forex', categoryLabel: CATEGORIES.forex, targetAmount: 800000, raisedAmount: 0, apr: 18.0, termMonths: 12, minCheck: 5000, riskLevel: 'low', status: 'active', description: 'Gold trading with Twelve Data quotes. Inflation-protected asset with high liquidity on global exchanges.', imageUrl: 'https://images.unsplash.com/photo-1610375461246-83df859d849d?auto=format&fit=crop&w=800&q=80', tags: ['Gold XAU', 'Twelve Data', 'Safe-haven asset'] },
-  { title: 'SOL/USDT — Solana Trading Pool', category: 'crypto', categoryLabel: CATEGORIES.crypto, targetAmount: 400000, raisedAmount: 0, apr: 45.0, termMonths: 6, minCheck: 1000, riskLevel: 'high', status: 'active', description: 'High-yield strategies on Solana. Instant Market and Limit order execution in a single interface.', imageUrl: 'https://images.unsplash.com/photo-1639762681485-074b0f938ba0?auto=format&fit=crop&w=800&q=80', tags: ['Solana', 'High volatility', 'Market/Limit'] },
+  { title: 'XAU/USD — Gold / Precious Metal Spot', category: 'forex', categoryLabel: CATEGORIES.forex, targetAmount: 800000, raisedAmount: 0, apr: 18.0, termMonths: 12, minCheck: 5000, riskLevel: 'low', status: 'active', description: 'Gold trading with Twelve Data quotes. Inflation-protected asset with high liquidity on global exchanges.', imageUrl: '/markets/gold.jpg', tags: ['Gold XAU', 'Twelve Data', 'Safe-haven asset'] },
+  { title: 'SOL/USDT — Solana Trading Pool', category: 'crypto', categoryLabel: CATEGORIES.crypto, targetAmount: 400000, raisedAmount: 0, apr: 45.0, termMonths: 6, minCheck: 1000, riskLevel: 'high', status: 'active', description: 'High-yield strategies on Solana. Instant Market and Limit order execution in a single interface.', imageUrl: '/markets/solana.jpg', tags: ['Solana', 'High volatility', 'Market/Limit'] },
   { title: 'EUR/USD — Forex Currency Pair', category: 'forex', categoryLabel: CATEGORIES.forex, targetAmount: 600000, raisedAmount: 0, apr: 14.2, termMonths: 12, minCheck: 2500, riskLevel: 'low', status: 'funded', description: 'Classic currency trading on the international Forex market with tight spreads and margin support.', imageUrl: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?auto=format&fit=crop&w=800&q=80', tags: ['Forex', 'EUR/USD', 'Pool closed'] },
   { title: 'AI Quant Strategy Pool (Binance Feed)', category: 'pool', categoryLabel: CATEGORIES.pool, targetAmount: 750000, raisedAmount: 0, apr: 28.4, termMonths: 12, minCheck: 5000, riskLevel: 'medium', status: 'active', description: 'Algorithmic trading pool using high-frequency arbitrage on spot and futures markets.', imageUrl: 'https://images.unsplash.com/photo-1642543492481-44e81e3914a7?auto=format&fit=crop&w=800&q=80', tags: ['AI Quant', 'Arbitrage', '24/7 Trading'] },
 ];
@@ -43,6 +43,19 @@ async function ensureSeed() {
   if (existing.length === 0) {
     for (const a of DEFAULT_ASSETS) await store.insert('assets', { ...a, createdAt: new Date().toISOString() });
     console.log(`[assets] Seeded ${DEFAULT_ASSETS.length} default instruments`);
+  } else {
+    const localByHint = [
+      { re: /solana|1639762681485/i, url: '/markets/solana.jpg' },
+      { re: /btc|1518770660439/i, url: '/markets/bitcoin.jpg' },
+      { re: /xau|gold|1610375461246/i, url: '/markets/gold.jpg' },
+    ];
+    for (const a of existing) {
+      const blob = `${a.title} ${a.imageUrl || ''}`;
+      const hit = localByHint.find(h => h.re.test(blob));
+      if (hit && a.imageUrl !== hit.url && (!a.imageUrl || String(a.imageUrl).startsWith('http'))) {
+        await store.update('assets', a.id, { imageUrl: hit.url });
+      }
+    }
   }
 }
 

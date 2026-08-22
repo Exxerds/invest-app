@@ -720,10 +720,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   const getDefaultImage = (cat: AssetCategory) => {
     switch (cat) {
-      case 'crypto': return 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80';
-      case 'forex': return 'https://images.unsplash.com/photo-1610375461246-83df859d849d?auto=format&fit=crop&w=800&q=80';
-      case 'futures': return 'https://images.unsplash.com/photo-1622630998477-20aa696ecb05?auto=format&fit=crop&w=800&q=80';
-      case 'pool': return 'https://images.unsplash.com/photo-1642543492481-44e81e3914a7?auto=format&fit=crop&w=800&q=80';
+      case 'crypto': return '/markets/bitcoin.jpg';
+      case 'forex': return '/markets/gold.jpg';
+      case 'futures': return '/markets/solana.jpg';
+      case 'pool': return '/markets/solana.jpg';
     }
   };
 
