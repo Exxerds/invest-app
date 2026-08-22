@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import type { Project } from '../../types';
 import { Card, Btn, Input, Select } from './ui';
-import { Plus, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { sanitizeDecimal, sanitizeInteger, parseNumber } from '../../utils/number';
 
 export const CrmMarketsPanel: React.FC<{
   projects: Project[];
-  onCreate: () => void;
+  onCreate?: () => void;
   onUpdate?: (id: string, patch: Partial<Project>) => void;
   onDelete?: (id: string) => void;
 }> = ({ projects, onCreate, onUpdate, onDelete }) => {
@@ -51,9 +51,6 @@ export const CrmMarketsPanel: React.FC<{
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Btn variant="gold" icon={Plus} onClick={onCreate}>New asset</Btn>
-      </div>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {projects.map(p => (
           <Card key={p.id} className="overflow-hidden">

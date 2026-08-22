@@ -114,6 +114,7 @@ interface CrmDashboardProps {
   onUpdateTrade: (tradeId: string, patch: Partial<AdminTrade>) => void;
   onCloseTrade: (tradeId: string) => void;
   onAddLeadComment: (leadId: string, text: string) => void;
+  onRefreshLeads?: () => void;
   users: ApiUser[];
   currentUserName: string;
   currentUserRole: string;
@@ -230,6 +231,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onUpdateTrade,
   onCloseTrade,
   onAddLeadComment,
+  onRefreshLeads,
   users,
   currentUserName,
   currentUserRole,
@@ -1281,6 +1283,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         placeholder="Search by name or e-mail..."
                         value={letterClientQuery}
                         onChange={e => setLetterClientQuery(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }}
                       />
                       <div className="max-h-48 overflow-y-auto border border-[#E4DECB] rounded-xl divide-y divide-[#E4DECB] bg-white">
                         {(() => {
@@ -1312,14 +1315,26 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                       </div>
                     </div>
                   )}
-                  <div className="text-[11px] text-[#213532]/60 mt-1">
-                    {letterAudience === 'One client'
-                      ? (letterUserId ? '1 recipient selected' : 'Pick one client')
-                      : letterAudience === 'Active only'
-                      ? `${mailAudience.active} recipient(s) selected`
-                      : letterAudience === 'No deposit'
-                      ? `${mailAudience.noDeposit} recipient(s) selected`
-                      : `${mailAudience.all} recipient(s) selected`}
+                  <div className="text-[11px] text-[#213532]/70 mt-2 leading-relaxed">
+                    {(() => {
+                      const pool = users.filter(u => u.role === 'CLIENT' && u.status !== 'blocked');
+                      if (letterAudience === 'One client') {
+                        const one = pool.find(u => String(u.id) === String(letterUserId));
+                        return one
+                          ? `Will send to 1 person: ${one.name} (${one.email})`
+                          : 'Pick one client from the list — nobody is selected yet.';
+                      }
+                      const list =
+                        letterAudience === 'Active only'
+                          ? pool.filter(u => u.status === 'active')
+                          : letterAudience === 'No deposit'
+                          ? pool.filter(u => !Number(u.balance))
+                          : pool;
+                      if (!list.length) return 'Will send to 0 people with this filter.';
+                      const names = list.map(u => u.name).slice(0, 8).join(', ');
+                      const extra = list.length > 8 ? ` +${list.length - 8} more` : '';
+                      return `Will send to ${list.length}: ${names}${extra}`;
+                    })()}
                   </div>
                 </div>
                 <div>
@@ -1880,8 +1895,9 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
         onClose={() => setIsCreateClientOpen(false)}
         managers={users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name).length ? users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name) : ['Laura Bennett (Senior Advisor)', 'Daniel Foster (Desk 2)', 'Oleg Vasilyev (Desk 3)']}
         onClientCreated={(newUser) => {
-          onNotify(`✔ Client ${newUser.name} created successfully.`);
-          setActiveTab('users');
+          onNotify(`✔ Client ${newUser.name} created — also added to Leads.`);
+          onRefreshLeads?.();
+          setActiveTab('leads');
         }}
       />
 

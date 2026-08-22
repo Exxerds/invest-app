@@ -445,7 +445,7 @@ export interface ApiLead {
 export const apiLeads = () =>
   request<{ leads: ApiLead[] }>('/leads', { headers: authHeader() });
 
-export const apiCreateLead = (data: Partial<ApiLead>) =>
+export const apiCreateLead = (data: Partial<ApiLead> & { force?: boolean }) =>
   request<{ ok: true; lead: ApiLead }>('/leads', {
     method: 'POST',
     headers: authHeader(),

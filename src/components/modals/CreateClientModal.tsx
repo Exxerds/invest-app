@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, AlertCircle, ShieldCheck, Loader2 } from 'lucide-react';
 import { Btn, Input, Select } from '../crm/ui';
-import { apiAdminCreateUser, apiCheckDuplicate } from '../../api';
+import { apiAdminCreateUser, apiCheckDuplicate, apiCreateLead } from '../../api';
 import type { ApiUser } from '../../api';
 import { sanitizeDecimal, parseNumber } from '../../utils/number';
 
@@ -78,6 +78,20 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({
         status,
         role: 'CLIENT',
       });
+      try {
+        await apiCreateLead({
+          name: name.trim(),
+          phone: phone.trim(),
+          email: email.trim(),
+          potentialAmount: parseNumber(balanceStr, 0),
+          stage: 'active',
+          notes: 'Created from admin quick registration',
+          manager,
+          force: true,
+        });
+      } catch {
+        /* account exists even if the lead card fails */
+      }
       onClientCreated(res.user);
       onClose();
     } catch (err) {
