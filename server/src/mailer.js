@@ -11,6 +11,7 @@ import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 dotenv.config();
@@ -59,9 +60,46 @@ export function publicUrl(req) {
  * and (on normal hosts) saved to server/mails/. Returns TRUE only when the
  * letter actually went out through the mail provider.
  */
+const CREST_SRC = [
+  path.join(__dirname, '..', '..', 'public', 'brand-crest.png'),
+  path.join(__dirname, '..', 'public', 'brand-crest.png'),
+  '/opt/oakhaven/public/brand-crest.png',
+].find(p => fs.existsSync(p));
+
+const CREST_CID = 'oakhaven-crest';
+let crestPng = null;
+
+function loadCrestPng() {
+  if (crestPng) return crestPng;
+  if (!CREST_SRC) return null;
+  try {
+    crestPng = execFileSync('convert', [
+      CREST_SRC,
+      '-trim', '+repage',
+      '-resize', '200x200',
+      '-gravity', 'center',
+      '-background', '#F5F2E9',
+      '-extent', '200x200',
+      'png:-',
+    ]);
+  } catch {
+    try { crestPng = fs.readFileSync(CREST_SRC); } catch { crestPng = null; }
+  }
+  return crestPng;
+}
+
 export async function sendMail({ to, subject, html }) {
   if (transporter) {
-    await transporter.sendMail({ from: FROM_EMAIL, to, subject, html });
+    const png = loadCrestPng();
+    await transporter.sendMail({
+      from: FROM_EMAIL,
+      to,
+      subject,
+      html,
+      attachments: png
+        ? [{ filename: 'crest.png', content: png, cid: CREST_CID, contentType: 'image/png' }]
+        : [],
+    });
     console.log(`[mail] "${subject}" sent to ${to}`);
     return true;
   }
@@ -92,7 +130,6 @@ export async function sendMail({ to, subject, html }) {
 
 /** Branded HTML e-mail layout (Oak Haven Yield: cream / forest green / warm gold) */
 export function letterLayout(title, contentHtml) {
-  const logoUrl = `${SITE_URL.replace(/\/$/, '')}/brand-crest.png`;
   return `<!DOCTYPE html>
 <html lang="en"><body style="margin:0;padding:0;background:#F5F2E9;font-family:Georgia,'Times New Roman',serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F2E9;padding:32px 12px;">
@@ -101,11 +138,7 @@ export function letterLayout(title, contentHtml) {
         <tr><td style="background:#1C412C;padding:22px 28px;">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
             <td style="vertical-align:middle;padding-right:16px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" width="80" height="80" style="width:80px;height:80px;background:#F5F2E9;border-radius:40px;">
-                <tr><td align="center" valign="middle" style="width:80px;height:80px;overflow:hidden;border-radius:40px;">
-                  <img src="${logoUrl}" width="80" height="80" alt="Oak Haven Yield" style="display:block;width:80px;height:80px;object-fit:cover;border:0;border-radius:40px;">
-                </td></tr>
-              </table>
+              <img src="cid:${CREST_CID}" width="96" height="96" alt="Oak Haven Yield" style="display:block;width:96px;height:96px;border:0;border-radius:48px;background:#F5F2E9;">
             </td>
             <td style="vertical-align:middle;">
               <div style="line-height:1.1;">
