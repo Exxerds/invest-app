@@ -312,6 +312,50 @@ router.post('/users/:id/impersonate', auth('ADMIN'), async (req, res) => {
    zeroes the cash balance and writes an audit withdrawal so the
    history does not go silent.
    ------------------------------------------------------------ */
+router.delete('/users/:id', auth('ADMIN'), async (req, res) => {
+  const id = Number(req.params.id);
+  const user = await store.byId('users', id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account' });
+  if (user.role === 'ADMIN') return res.status(400).json({ error: 'Admin accounts cannot be deleted this way' });
+
+  const email = String(user.email || '').toLowerCase();
+  const phone = String(user.phone || '').replace(/\D/g, '');
+  const name = String(user.name || '').trim().toLowerCase();
+
+  const deleted = {
+    user: await store.removeWhere('users', u => Number(u.id) === id),
+    tokens: await store.removeWhere('tokens', t => Number(t.userId) === id),
+    kyc: await store.removeWhere('kyc', d => Number(d.userId) === id),
+    notifications: await store.removeWhere('notifications', n => Number(n.userId) === id),
+    trades: await store.removeWhere('trades', t => Number(t.userId) === id),
+    transactions: await store.removeWhere('transactions', t => Number(t.userId) === id),
+    investments: await store.removeWhere('investments', i => Number(i.userId) === id),
+    notes: await store.removeWhere('notes', n => String(n.clientId) === String(id) || String(n.clientId) === `acc-${id}`),
+    messages: await store.removeWhere('messages', m => Number(m.threadId) === id || Number(m.clientId) === id),
+    pushSubs: await store.removeWhere('pushSubs', p => Number(p.userId) === id),
+    calls: await store.removeWhere('calls', c => Number(c.clientId) === id),
+    leads: await store.removeWhere('leads', l => {
+      const lEmail = String(l.email || '').toLowerCase();
+      const lPhone = String(l.phone || '').replace(/\D/g, '');
+      const lName = String(l.name || '').trim().toLowerCase();
+      if (email && lEmail && lEmail === email) return true;
+      if (phone.length >= 6 && lPhone && lPhone === phone) return true;
+      if (name && lName && lName === name) return true;
+      return Number(l.userId) === id;
+    }),
+  };
+
+  logActivity({
+    actor: req.user,
+    action: 'user_deleted',
+    target: `user ${id}`,
+    details: `${user.email} · ${JSON.stringify(deleted)}`,
+  }).catch(() => undefined);
+
+  res.json({ ok: true, message: `${user.name} was removed from users, leads and related records.`, deleted });
+});
+
 router.post('/users/:id/reset-portfolio', auth('ADMIN'), async (req, res) => {
   const id = Number(req.params.id);
   const user = await store.byId('users', id);

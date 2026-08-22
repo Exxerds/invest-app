@@ -58,6 +58,7 @@ import {
   Circle,
   IdCard,
   Briefcase,
+  Trash2,
 } from 'lucide-react';
 import { CrmTradesManager } from './CrmTradesManager';
 import type { AdminTrade } from './CrmTradesManager';
@@ -121,6 +122,7 @@ interface CrmDashboardProps {
   currentUserId?: number;
   onChangeUserPassword: (userId: number, newPassword: string) => Promise<void>;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
+  onDeleteUser?: (userId: number) => Promise<void>;
   onPatchUser?: (userId: number, patch: Partial<ApiUser>) => void;
   settings: CrmSettings;
   onToggleSetting: (key: keyof CrmSettings) => void;
@@ -238,6 +240,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   currentUserId: _currentUserId,
   onChangeUserPassword,
   onUpdateUserStatus,
+  onDeleteUser,
   onPatchUser,
   settings,
   onToggleSetting,
@@ -1195,6 +1198,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               onChangePassword={openPwdModal}
               onImpersonate={onImpersonateUser}
               onUpdateUserStatus={onUpdateUserStatus}
+              onDeleteUser={onDeleteUser}
               onPatchUser={onPatchUser}
               isAdmin={isAdmin}
               onOpenStatementModal={(id, name) => setStatementModalUser({ id, name })}
@@ -1331,9 +1335,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                           ? pool.filter(u => !Number(u.balance))
                           : pool;
                       if (!list.length) return 'Will send to 0 people with this filter.';
-                      const names = list.map(u => u.name).slice(0, 8).join(', ');
-                      const extra = list.length > 8 ? ` +${list.length - 8} more` : '';
-                      return `Will send to ${list.length}: ${names}${extra}`;
+                      if (list.length <= 4) {
+                        return `Will send to ${list.length}: ${list.map(u => u.name).join(', ')}`;
+                      }
+                      return `Will send to ${list.length} clients. Individual names are hidden when the list is large.`;
                     })()}
                   </div>
                 </div>
@@ -1940,6 +1945,7 @@ const UserDetails: React.FC<{
   /** Admin: open the client's cabinet in a support session */
   onImpersonate?: (user: ApiUser) => void;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
+  onDeleteUser?: (userId: number) => Promise<void>;
   onPatchUser?: (userId: number, patch: Partial<ApiUser>) => void;
   isAdmin: boolean;
   onOpenStatementModal?: (userId: number, userName: string) => void;
@@ -1968,6 +1974,7 @@ const UserDetails: React.FC<{
   onChangePassword,
   onImpersonate,
   onUpdateUserStatus,
+  onDeleteUser,
   onPatchUser,
   isAdmin,
   onOpenStatementModal,
@@ -2126,6 +2133,22 @@ const UserDetails: React.FC<{
             ? `Withdrawals unblocked for ${shortName} — the change applies immediately.`
             : `Withdrawals blocked for ${shortName} — the create-request button for this client is denied by the server as of now.`,
         );
+      },
+    },
+    {
+      icon: Trash2,
+      label: 'Delete account forever',
+      danger: true,
+      onClick: async () => {
+        if (!account) return onNotify('This client does not have a platform account.');
+        if (!isAdmin) return onNotify('Only an administrator can delete accounts.');
+        if (!confirm(`Delete ${shortName} forever? Users, leads, trades, notes and messages will be removed.`)) return;
+        try {
+          await onDeleteUser?.(account.id);
+          onBack();
+        } catch (err) {
+          onNotify(err instanceof Error ? err.message : 'Could not delete the account');
+        }
       },
     },
     {

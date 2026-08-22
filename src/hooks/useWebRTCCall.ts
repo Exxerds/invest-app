@@ -214,8 +214,14 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
 
     try {
       const { iceServers } = await apiIceServers();
-      const pc = new RTCPeerConnection({ iceServers });
+      const pc = new RTCPeerConnection({
+        iceServers,
+        iceCandidatePoolSize: 8,
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle',
+      });
       pcRef.current = pc;
+      let iceRestarted = false;
 
       /**
        * The microphone is NOT mandatory. Laptops without a built-in mic (or
@@ -298,6 +304,19 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
           }
           setPhase('active');
         } else if (pc.connectionState === 'failed') {
+          if (!iceRestarted && initiator) {
+            iceRestarted = true;
+            void (async () => {
+              try {
+                const offer = await pc.createOffer({ iceRestart: true });
+                await pc.setLocalDescription(offer);
+                await apiPostSignal(callId, 'offer', JSON.stringify(offer), role, channel);
+              } catch {
+                /* next failed event will hang up */
+              }
+            })();
+            return;
+          }
           setError('Connection failed — both sides could not reach each other. ' +
             'Try again, or connect over a different network.');
           void hangUp();
@@ -311,7 +330,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
                 setError('The connection was lost.');
                 void hangUp();
               }
-            }, 15000);
+            }, 45000);
           }
         }
       };
@@ -396,7 +415,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
         } catch {
           /* transient network errors are fine, we poll again */
         }
-      }, 1200);
+      }, 700);
     } catch (err) {
       cleanup();
       setPhase('failed');
@@ -408,7 +427,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
         void apiCallStatus(callId, 'ended').catch(() => undefined);
       }
     }
-  }, [callId, role, initiator, cleanup, hangUp, flushIceQueue]);
+  }, [callId, role, initiator, channel, cleanup, hangUp, flushIceQueue]);
 
   const toggleMute = useCallback(() => {
     const track = localRef.current?.getAudioTracks()[0];
@@ -420,23 +439,12 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     setMuted(!track.enabled);
   }, []);
 
-  /**
-   * Renegotiate the connection (a fresh offer with the current track set).
-   * Both starting and STOPPING a screen share go through this — without
-   * the re-offer on stop the other side keeps a frozen screen forever.
-   */
   const renegotiate = useCallback(async (pc: RTCPeerConnection) => {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     await apiPostSignal(callId!, 'offer', JSON.stringify(offer), role, channel);
   }, [callId, role, channel]);
 
-  /**
-   * Stop sharing. Kept as its own stable callback (refs only, no state) so
-   * the track's "ended" event can call it without a stale closure —
-   * re-invoking the toggle from onended with an old `sharingScreen` state
-   * is what used to re-open the OS screen picker by itself.
-   */
   const stopScreenShare = useCallback(async () => {
     if (!sharingRef.current) return;
     sharingRef.current = false;
@@ -469,7 +477,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   const stopShareRef = useRef(stopScreenShare);
   stopShareRef.current = stopScreenShare;
 
-  /** Share the screen over the same connection (PDF p.4). */
   const toggleScreenShare = useCallback(async () => {
     if (sharingScreen || sharingRef.current) {
       void stopShareRef.current();
@@ -491,7 +498,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
       const [track] = screen.getVideoTracks();
       pc.addTrack(track, screen);
       sharingRef.current = true;
-      // The user can also stop from the OS picker's "Stop sharing" button
       track.onended = () => { void stopShareRef.current(); };
 
       negotiatingRef.current = true;
@@ -508,11 +514,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     }
   }, [sharingScreen, callId, renegotiate]);
 
-  /**
-   * Record BOTH sides of the conversation: our own mic track plus the
-   * remote audio track, merged into one stream. (Recording the local
-   * stream alone produced files with only our own voice.)
-   */
   const toggleRecording = useCallback(async () => {
     if (recording) {
       recorderRef.current?.stop();
@@ -565,4 +566,4 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     remoteAudioRef, remoteVideoRef,
     connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
   };
-}
+} 

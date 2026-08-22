@@ -12,7 +12,7 @@ import { LoginModal } from './components/modals/LoginModal';
 import { ForgotPasswordModal } from './components/modals/ForgotPasswordModal';
 import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
-import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser, apiSetUserBalance } from './api';
+import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser, apiSetUserBalance, apiAdminDeleteUser } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
 import { 
   apiStartCall, apiWhisper, apiCallInbox, apiCallStatus, apiNotes, apiAddNote, 
@@ -962,6 +962,14 @@ export default function App() {
     showToast(`✔ User status updated: ${status}`);
   };
 
+  const handleDeleteUser = async (userId: number) => {
+    const res = await apiAdminDeleteUser(userId);
+    setUsers(prev => prev.filter(u => u.id !== userId));
+    setInvestors(prev => prev.filter(inv => String(inv.id) !== String(userId) && inv.id !== `acc-${userId}`));
+    await reloadLeads();
+    showToast(`✔ ${res.message}`);
+  };
+
   const handlePatchUser = (userId: number, patch: Partial<ApiUser>) => {
     setUsers(prev => prev.map(u => (u.id === userId ? { ...u, ...patch } : u)));
     setInvestors(prev => prev.map(inv => {
@@ -1329,6 +1337,7 @@ export default function App() {
             currentUserRole={currentUser?.role || 'MANAGER'}
             onChangeUserPassword={handleChangeUserPassword}
             onUpdateUserStatus={handleUpdateUserStatus}
+            onDeleteUser={handleDeleteUser}
             onPatchUser={handlePatchUser}
             settings={settings}
             onToggleSetting={handleToggleCrmSetting}

@@ -184,6 +184,12 @@ export const apiResetUserPortfolio = (userId: number) =>
     headers: { Authorization: `Bearer ${getToken()}` },
   });
 
+export const apiAdminDeleteUser = (userId: number) =>
+  request<{ ok: true; message: string }>(`/admin/users/${userId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+
 // ---------- KYC documents ----------
 
 export interface ApiKycDoc {
