@@ -135,19 +135,17 @@ export function letterLayout(title, contentHtml) {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F2E9;padding:32px 12px;">
     <tr><td align="center">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e0d2;border-radius:14px;overflow:hidden;">
-        <tr><td style="background:#1C412C;padding:22px 28px;">
-          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td style="vertical-align:middle;padding-right:18px;">
-              <img src="${SITE_URL.replace(/\/$/, '')}/email-crest.png?v=5" width="240" height="240" alt="Oak Haven Yield" style="display:block;width:240px;height:240px;max-width:240px;border:0;border-radius:120px;background:#F5F2E9;">
-            </td>
-            <td style="vertical-align:middle;">
-              <div style="line-height:1.1;">
-                <span style="color:#F5F2E9;font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:bold;">Oak Haven</span>
-                <span style="color:#B08B48;font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:bold;font-style:italic;"> Yield</span>
-              </div>
-              <div style="color:#cfd8d2;font-size:11px;letter-spacing:2px;margin-top:2px;font-family:Arial,Helvetica,sans-serif;">Investment Advisory</div>
-            </td>
-          </tr></table>
+        <tr><td style="background:#1C412C;padding:28px 24px 24px;" align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" align="center" width="112" height="112" style="width:112px;height:112px;background:#F5F2E9;border-radius:56px;">
+            <tr><td align="center" valign="middle" width="112" height="112" style="width:112px;height:112px;overflow:hidden;border-radius:56px;line-height:0;font-size:0;">
+              <img src="${SITE_URL.replace(/\/$/, '')}/email-crest.png?v=7" width="168" height="168" alt="Oak Haven Yield" style="display:block;width:168px;height:168px;margin:-28px 0 0 -28px;border:0;">
+            </td></tr>
+          </table>
+          <div style="line-height:1.15;margin-top:14px;">
+            <span style="color:#F5F2E9;font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:bold;">Oak Haven</span>
+            <span style="color:#B08B48;font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:bold;font-style:italic;"> Yield</span>
+          </div>
+          <div style="color:#cfd8d2;font-size:11px;letter-spacing:2px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">Investment Advisory</div>
         </td></tr>
         <tr><td style="height:3px;background:#B08B48;"></td></tr>
         <tr><td style="padding:28px;font-family:Arial,Helvetica,sans-serif;">
