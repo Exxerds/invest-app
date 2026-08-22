@@ -137,8 +137,8 @@ export function letterLayout(title, contentHtml) {
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e0d2;border-radius:14px;overflow:hidden;">
         <tr><td style="background:#1C412C;padding:22px 28px;">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td style="vertical-align:middle;padding-right:16px;">
-              <img src="cid:${CREST_CID}" width="96" height="96" alt="Oak Haven Yield" style="display:block;width:96px;height:96px;border:0;border-radius:48px;background:#F5F2E9;">
+            <td style="vertical-align:middle;padding-right:18px;">
+              <img src="${SITE_URL.replace(/\/$/, '')}/email-crest.png?v=5" width="240" height="240" alt="Oak Haven Yield" style="display:block;width:240px;height:240px;max-width:240px;border:0;border-radius:120px;background:#F5F2E9;">
             </td>
             <td style="vertical-align:middle;">
               <div style="line-height:1.1;">
