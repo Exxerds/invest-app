@@ -46,7 +46,7 @@ export const OakWordmark: React.FC<{ className?: string; tone?: 'dark' | 'light'
   return (
     <span className={`inline-flex flex-col leading-none ${className}`}>
       <span
-        className="font-serif font-bold tracking-[0.06em] text-[22px]"
+        className="font-serif font-bold tracking-[0.06em] text-[15px]"
         style={{ color: top }}
       >
         OAK HAVEN

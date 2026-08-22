@@ -210,9 +210,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
       </div>
 
       <header className="sticky top-0 z-50 bg-[#F5F2E9]/95 backdrop-blur border-b border-[#1C412C]/12">
-        <div className="max-w-6xl mx-auto px-5 min-h-[168px] py-3 flex items-center gap-6">
+        <div className="max-w-6xl mx-auto px-5 h-[72px] flex items-center gap-8">
           <a href="#top" className="flex items-center shrink-0">
-            <OakLogo size={150} />
+            <OakLogo size={48} />
           </a>
 
           <nav className="hidden lg:flex items-center gap-7 text-[14px] font-medium text-[#213532]">

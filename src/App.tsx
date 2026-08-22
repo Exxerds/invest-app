@@ -1354,7 +1354,7 @@ export default function App() {
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
             <div className="max-w-sm">
               <div className="flex items-center gap-2.5">
-                <img src="/brand-crest.png" alt="Oak Haven Yield" className="w-24 h-24 object-contain" />
+                <img src="/brand-crest.png" alt="Oak Haven Yield" className="w-11 h-11 object-contain" />
                 <span className="font-serif font-bold text-lg text-white tracking-wide">OAK HAVEN <span className="text-[#B08B48] italic">YIELD</span></span>
               </div>
               <p className="text-xs leading-relaxed mt-3">

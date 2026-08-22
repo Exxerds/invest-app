@@ -595,8 +595,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         ${navOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0 lg:static lg:z-auto lg:sticky lg:top-0 lg:h-screen lg:overflow-visible`}>
         <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/10">
-          <div className="w-[88px] h-[88px] rounded-2xl bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0 overflow-hidden">
-            <OakCrest size={80} />
+          <div className="w-11 h-11 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0 overflow-hidden">
+            <OakCrest size={36} />
           </div>
           <div className="leading-tight">
             <OakWordmark tone="light" />

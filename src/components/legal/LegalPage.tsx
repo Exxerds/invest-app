@@ -16,9 +16,9 @@ export const LegalPage: React.FC<{ slug?: string; onBack: () => void; onOpen: (s
   return (
     <div className="min-h-screen bg-[#F5F2E9] text-[#213532]">
       <header className="sticky top-0 z-40 bg-[#F5F2E9]/95 backdrop-blur border-b border-[#1C412C]/12">
-        <div className="max-w-4xl mx-auto px-5 min-h-[120px] py-3 flex items-center justify-between gap-4">
+        <div className="max-w-4xl mx-auto px-5 h-[72px] flex items-center justify-between gap-4">
           <button onClick={onBack} className="flex items-center shrink-0 cursor-pointer">
-            <OakLogo size={110} />
+            <OakLogo size={48} />
           </button>
           <button
             onClick={onBack}
