@@ -98,12 +98,14 @@ export function letterLayout(title, contentHtml) {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F2E9;padding:32px 12px;">
     <tr><td align="center">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e0d2;border-radius:14px;overflow:hidden;">
-        <tr><td style="background:#1C412C;padding:20px 28px;">
+        <tr><td style="background:#1C412C;padding:22px 28px;">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td style="vertical-align:middle;padding-right:14px;">
-              <div style="width:56px;height:56px;border-radius:28px;background:#F5F2E9;text-align:center;line-height:56px;">
-                <img src="${logoUrl}" width="44" height="44" alt="Oak Haven Yield" style="display:inline-block;width:44px;height:44px;object-fit:contain;vertical-align:middle;border:0;">
-              </div>
+            <td style="vertical-align:middle;padding-right:16px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" width="80" height="80" style="width:80px;height:80px;background:#F5F2E9;border-radius:40px;">
+                <tr><td align="center" valign="middle" style="width:80px;height:80px;overflow:hidden;border-radius:40px;">
+                  <img src="${logoUrl}" width="80" height="80" alt="Oak Haven Yield" style="display:block;width:80px;height:80px;object-fit:cover;border:0;border-radius:40px;">
+                </td></tr>
+              </table>
             </td>
             <td style="vertical-align:middle;">
               <div style="line-height:1.1;">
