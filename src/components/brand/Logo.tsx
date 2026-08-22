@@ -24,14 +24,19 @@ export const BRAND = {
 export const CREST_SRC = '/brand-crest.png';
 
 export const OakCrest: React.FC<{ size?: number; className?: string }> = ({ size = 56, className = '' }) => (
-  <img
-    src={CREST_SRC}
-    alt="Oak Haven Yield"
-    width={size}
-    height={size}
-    className={`object-contain shrink-0 ${className}`}
+  <span
+    className={`inline-flex items-center justify-center overflow-hidden shrink-0 ${className}`}
     style={{ width: size, height: size }}
-  />
+  >
+    <img
+      src={CREST_SRC}
+      alt="Oak Haven Yield"
+      width={size}
+      height={size}
+      className="object-contain"
+      style={{ width: size * 1.45, height: size * 1.45, maxWidth: 'none' }}
+    />
+  </span>
 );
 
 /**
