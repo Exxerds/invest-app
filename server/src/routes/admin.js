@@ -217,7 +217,21 @@ router.patch('/users/:id', auth('STAFF'), async (req, res) => {
     details: JSON.stringify(fields),
   }).catch(() => undefined);
 
-  res.json({ ok: true, message: 'User updated' });
+  const updated = await store.byId('users', id);
+  res.json({
+    ok: true,
+    message: 'User updated',
+    user: {
+      id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      role: updated.role,
+      status: updated.status,
+      assignedManagerId: updated.assignedManagerId || null,
+      assignedManagerName: updated.assignedManagerName || '',
+      defaultLeverage: Number(updated.defaultLeverage) || 10,
+    },
+  });
 });
 
 /* ------------------------------------------------------------

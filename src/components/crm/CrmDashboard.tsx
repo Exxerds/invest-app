@@ -56,6 +56,7 @@ import {
   Activity,
   Download,
   Circle,
+  IdCard,
 } from 'lucide-react';
 import { CrmTradesManager } from './CrmTradesManager';
 import type { AdminTrade } from './CrmTradesManager';
@@ -80,6 +81,7 @@ type CrmTab =
   | 'support'
   | 'calls'
   | 'analytics'
+  | 'client-cards'
   | 'settings';
 
 interface CrmDashboardProps {
@@ -113,6 +115,7 @@ interface CrmDashboardProps {
   currentUserId?: number;
   onChangeUserPassword: (userId: number, newPassword: string) => Promise<void>;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
+  onPatchUser?: (userId: number, patch: Partial<ApiUser>) => void;
   settings: CrmSettings;
   onToggleSetting: (key: keyof CrmSettings) => void;
   onNotify: (message: string) => void;
@@ -157,6 +160,7 @@ const ADMIN_ONLY_TABS: CrmTab[] = ['settings', 'banks'];
  */
 const MAIN_NAV: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'client-cards', label: 'Client cards', icon: IdCard },
   { id: 'trading', label: 'Trading', icon: TrendingUp },
   { id: 'leads', label: 'Leads', icon: Kanban },
   {
@@ -180,6 +184,7 @@ const MAIN_NAV: NavItem[] = [
 
 const TAB_TITLES: Record<CrmTab, { title: string; sub: string }> = {
   dashboard: { title: 'Dashboard', sub: 'Welcome to the Oak Haven Yield admin panel' },
+  'client-cards': { title: 'Client cards', sub: 'Work the book — status, last comment and last seen' },
   trading: { title: 'Trading', sub: 'Full control over client positions and balances' },
   users: { title: 'All users', sub: 'Platform accounts, roles and access' },
   'user-details': { title: 'User details', sub: 'Detailed information about the user' },
@@ -221,6 +226,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   currentUserId: _currentUserId,
   onChangeUserPassword,
   onUpdateUserStatus,
+  onPatchUser,
   settings,
   onToggleSetting,
   onNotify,
@@ -835,22 +841,24 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 <h1 className="text-2xl font-extrabold text-[#1C412C] font-serif tracking-tight">{header.title}</h1>
                 <p className="text-[12px] text-[#213532]/70 mt-0.5">{header.sub}</p>
               </div>
-              {isAdmin && (
               <div className="flex flex-wrap items-center gap-2">
-                <Btn variant="gold" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
-                  Create client
-                </Btn>
-                <Btn variant="ghost" icon={Upload} onClick={() => setIsImportLeadsOpen(true)}>
-                  Import leads
-                </Btn>
-                <Btn variant="ghost" icon={Plus} onClick={onOpenNewLeadModal}>
-                  Add lead
-                </Btn>
+                {isAdmin && (
+                  <>
+                    <Btn variant="gold" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
+                      Create client
+                    </Btn>
+                    <Btn variant="ghost" icon={Upload} onClick={() => setIsImportLeadsOpen(true)}>
+                      Import leads
+                    </Btn>
+                    <Btn variant="ghost" icon={Plus} onClick={onOpenNewLeadModal}>
+                      Add lead
+                    </Btn>
+                  </>
+                )}
                 <Btn variant="ghost" icon={Plus} onClick={onOpenNewProjectModal}>
                   New asset
                 </Btn>
               </div>
-              )}
             </div>
           )}
 
@@ -924,62 +932,64 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 ))}
               </div>
 
-              {/* Users quick list */}
-              <Card title="Detailed user info" subtitle="Last comment and client status persist in the database">
-                <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {allClients.slice(0, 8).map(inv => {
-                    const crmStatus = lookupClientStatus(clientStatuses, inv.id);
-                    const lastNote = notes
-                      .filter(n => bareClientId(n.clientId) === bareClientId(inv.id))
-                      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-                    const seen = formatLastSeen(inv.lastSeen);
-                    return (
-                    <div key={inv.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl p-4 shadow-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <Avatar name={inv.name} size={42} />
-                          <div className="min-w-0">
-                            <div className="font-bold text-[#1C412C] text-[14px] truncate">{inv.name}</div>
-                            <div className={`text-[11px] font-bold ${seen.online ? 'text-emerald-600' : 'text-[#213532]/55'}`}>{seen.label}</div>
-                            <div className="text-[11px] text-[#213532]/70 truncate">{inv.email}</div>
-                            <div className="text-[11px] text-[#213532]/60 font-mono">{phonesHidden ? maskPhone(inv.phone) : inv.phone}</div>
-                          </div>
-                        </div>
-                        <Badge tone={statusTone(crmStatus)}>{crmStatus}</Badge>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 mt-4">
-                        <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
-                          <div className="text-[10px] text-[#213532]/60 font-medium">Balance</div>
-                          <div className="text-[13px] font-extrabold text-[#1C412C]">${inv.balance.toLocaleString('en-US')}</div>
-                        </div>
-                        <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
-                          <div className="text-[10px] text-[#213532]/60 font-medium">Invested</div>
-                          <div className="text-[13px] font-extrabold text-[#1C412C]">${inv.invested.toLocaleString('en-US')}</div>
-                        </div>
-                        <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
-                          <div className="text-[10px] text-[#213532]/60 font-medium">Last comment</div>
-                          <div className="text-[12px] font-semibold text-[#1C412C] truncate" title={lastNote?.text || ''}>
-                            {lastNote ? lastNote.text : '—'}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2 mt-4">
-                        <Btn size="sm" variant="gold" onClick={() => openUser(inv.id)}>
-                          Manage
-                        </Btn>
-                        <Btn size="sm" variant="ghost" icon={PhoneCall} onClick={() => setActiveTab('calls')}>
-                          Call
-                        </Btn>
-                        <Btn size="sm" variant="ghost" icon={MessageSquare} onClick={() => setActiveTab('support')}>
-                          Message
-                        </Btn>
-                      </div>
-                    </div>
-                    );
-                  })}
+              <Card className="p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[14px] font-bold text-[#1C412C]">Client cards</div>
+                    <p className="text-[12px] text-[#213532]/70 mt-0.5">Open the working book from the left menu to manage a large client list.</p>
+                  </div>
+                  <Btn variant="gold" onClick={() => setActiveTab('client-cards')}>Open client cards</Btn>
                 </div>
               </Card>
             </div>
+          )}
+
+          {activeTab === 'client-cards' && (
+            <Card title={`Client cards (${allClients.length})`} subtitle="Last comment and client status persist in the database">
+              <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {allClients.map(inv => {
+                  const crmStatus = lookupClientStatus(clientStatuses, inv.id);
+                  const lastNote = notes
+                    .filter(n => bareClientId(n.clientId) === bareClientId(inv.id))
+                    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+                  const seen = formatLastSeen(inv.lastSeen);
+                  return (
+                  <div key={inv.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar name={inv.name} size={42} />
+                        <div className="min-w-0">
+                          <div className="font-bold text-[#1C412C] text-[14px] truncate">{inv.name}</div>
+                          <div className={`text-[11px] font-bold ${seen.online ? 'text-emerald-600' : 'text-[#213532]/55'}`}>{seen.label}</div>
+                          <div className="text-[11px] text-[#213532]/70 truncate">{inv.email}</div>
+                        </div>
+                      </div>
+                      <Badge tone={statusTone(crmStatus)}>{crmStatus}</Badge>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-4">
+                      <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
+                        <div className="text-[10px] text-[#213532]/60 font-medium">Balance</div>
+                        <div className="text-[13px] font-extrabold text-[#1C412C]">${inv.balance.toLocaleString('en-US')}</div>
+                      </div>
+                      <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
+                        <div className="text-[10px] text-[#213532]/60 font-medium">Invested</div>
+                        <div className="text-[13px] font-extrabold text-[#1C412C]">${inv.invested.toLocaleString('en-US')}</div>
+                      </div>
+                      <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
+                        <div className="text-[10px] text-[#213532]/60 font-medium">Last comment</div>
+                        <div className="text-[12px] font-semibold text-[#1C412C] truncate">{lastNote ? lastNote.text : '—'}</div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      <Btn size="sm" variant="gold" onClick={() => openUser(inv.id)}>Manage</Btn>
+                      <Btn size="sm" variant="ghost" icon={PhoneCall} onClick={() => setActiveTab('calls')}>Call</Btn>
+                      <Btn size="sm" variant="ghost" icon={MessageSquare} onClick={() => setActiveTab('support')}>Message</Btn>
+                    </div>
+                  </div>
+                  );
+                })}
+              </div>
+            </Card>
           )}
 
           {/* ===================== TRADING ===================== */}
@@ -1168,6 +1178,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               onChangePassword={openPwdModal}
               onImpersonate={onImpersonateUser}
               onUpdateUserStatus={onUpdateUserStatus}
+              onPatchUser={onPatchUser}
               isAdmin={isAdmin}
               onOpenStatementModal={(id, name) => setStatementModalUser({ id, name })}
             />
@@ -1356,10 +1367,19 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                           <div key={lead.id} className="bg-white border border-[#E4DECB] rounded-xl p-3 shadow-xs hover:border-[#B08B48]/50 transition-colors">
                             <div className="font-semibold text-[#1C412C] text-[13px]">{lead.name}</div>
                             {(() => {
-                              const match = users.find(u =>
-                                (u.email && lead.phone && u.phone && String(u.phone).replace(/\D/g,'') === String(lead.phone).replace(/\D/g,'')) ||
-                                (u.email && (lead as any).email && u.email.toLowerCase() === String((lead as any).email).toLowerCase())
-                              );
+                              const leadEmail = String(lead.email || '').trim().toLowerCase();
+                              const leadPhone = String(lead.phone || '').replace(/\D/g, '');
+                              const leadName = String(lead.name || '').trim().toLowerCase();
+                              const match = users.find(u => {
+                                if (u.role && u.role !== 'CLIENT') return false;
+                                const uEmail = String(u.email || '').trim().toLowerCase();
+                                const uPhone = String(u.phone || '').replace(/\D/g, '');
+                                const uName = String(u.name || '').trim().toLowerCase();
+                                if (leadEmail && uEmail && leadEmail === uEmail) return true;
+                                if (leadPhone.length >= 6 && uPhone && uPhone === leadPhone) return true;
+                                if (leadName && uName && leadName === uName) return true;
+                                return false;
+                              });
                               const seen = formatLastSeen(match?.lastSeen);
                               return <div className={`text-[10px] font-bold ${seen.online ? 'text-emerald-600' : 'text-[#213532]/50'}`}>{seen.label}</div>;
                             })()}
@@ -1829,6 +1849,7 @@ const UserDetails: React.FC<{
   /** Admin: open the client's cabinet in a support session */
   onImpersonate?: (user: ApiUser) => void;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
+  onPatchUser?: (userId: number, patch: Partial<ApiUser>) => void;
   isAdmin: boolean;
   onOpenStatementModal?: (userId: number, userName: string) => void;
   /** real payout block, saved on the server: { '<userId>': true } */
@@ -1856,6 +1877,7 @@ const UserDetails: React.FC<{
   onChangePassword,
   onImpersonate,
   onUpdateUserStatus,
+  onPatchUser,
   isAdmin,
   onOpenStatementModal,
   withdrawBlocks,
@@ -1870,7 +1892,7 @@ const UserDetails: React.FC<{
   const plainClientId = String(account?.id ?? user.id).replace(/\D/g, '');
   const withdrawBlocked = Boolean(withdrawBlocks[plainClientId]);
   const [statusBusy, setStatusBusy] = useState(false);
-  const [, setManager] = useState(user.manager);
+  const [assignedId, setAssignedId] = useState(String(account?.assignedManagerId || user.assignedManagerId || ''));
   const [balanceInput, setBalanceInput] = useState(String(user.balance));
   const moreRef = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<null | 'topup' | 'bonus' | 'message'>(null);
@@ -1931,9 +1953,9 @@ const UserDetails: React.FC<{
   };
 
   useEffect(() => {
-    setManager(user.manager);
+    setAssignedId(String(account?.assignedManagerId || user.assignedManagerId || ''));
     setBalanceInput(String(user.balance));
-  }, [user]);
+  }, [user, account?.assignedManagerId]);
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -2225,15 +2247,22 @@ const UserDetails: React.FC<{
             </Field>
             <Field label="Assigned manager">
               <Select
-                value={String(account?.assignedManagerId || '')}
+                value={assignedId}
                 onChange={async e => {
                   if (!account || !isAdmin) return onNotify('Only an administrator can reassign a client.');
                   const val = e.target.value;
+                  const prev = assignedId;
+                  setAssignedId(val);
                   try {
-                    await apiAdminUpdateUser(account.id, { assignedManagerId: val ? Number(val) : null });
-                    setManager(staffUsers.find(m => String(m.id) === val)?.name || 'Unassigned');
-                    onNotify(val ? 'Manager assigned and saved.' : 'Client unassigned.');
+                    const r = await apiAdminUpdateUser(account.id, { assignedManagerId: val ? Number(val) : null });
+                    const name = r.user?.assignedManagerName || staffUsers.find(m => String(m.id) === val)?.name || (val ? 'Assigned' : 'Unassigned');
+                    onPatchUser?.(account.id, {
+                      assignedManagerId: val ? Number(val) : null,
+                      assignedManagerName: val ? name : '',
+                    });
+                    onNotify(val ? `Assigned to ${name}. Saved.` : 'Client unassigned.');
                   } catch (err) {
+                    setAssignedId(prev);
                     onNotify(err instanceof Error ? err.message : 'Could not assign manager');
                   }
                 }}
@@ -2255,6 +2284,7 @@ const UserDetails: React.FC<{
                     const lev = Math.max(1, Number(e.target.value) || 10);
                     try {
                       await apiAdminUpdateUser(account.id, { defaultLeverage: lev });
+                      onPatchUser?.(account.id, { defaultLeverage: lev });
                       onNotify(`Default leverage for this client is now ${lev}x`);
                     } catch (err) {
                       onNotify(err instanceof Error ? err.message : 'Could not save leverage');

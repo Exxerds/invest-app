@@ -164,7 +164,7 @@ export const apiAdminUpdateUser = (userId: number, data: {
   assignedManagerId?: number | null;
   defaultLeverage?: number;
 }) =>
-  request<{ ok: true; message: string }>(`/admin/users/${userId}`, {
+  request<{ ok: true; message: string; user?: ApiUser }>(`/admin/users/${userId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${getToken()}` },
     body: JSON.stringify(data),

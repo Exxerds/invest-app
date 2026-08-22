@@ -170,7 +170,26 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
     setMarginManual(!!t.margin || !!t.liquidationPrice);
   };
 
-  const clientTrades = trades.filter(t => t.investorId === selectedInvestorId);
+  const selectedBare = String(selectedInvestorId || '').replace(/^acc-/, '');
+  const clientTrades = trades.filter(t => {
+    const id = String(t.investorId || '').replace(/^acc-/, '');
+    return id === selectedBare || t.investorId === selectedInvestorId;
+  });
+  const livePnlOf = (t: AdminTrade) => {
+    const entry = Number(t.entryPrice) || 0;
+    if (t.status !== 'OPEN' || !(entry > 0)) return Number(t.pnl) || 0;
+    const units = (Number(t.amount) || 0) / entry;
+    const dir = t.type === 'SHORT' ? -1 : 1;
+    return Math.round((Number(t.currentPrice) - entry) * units * dir * 100) / 100;
+  };
+  const investedNow = clientTrades.filter(t => t.status === 'OPEN').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const totalClientPnl = clientTrades.reduce((s, t) => s + livePnlOf(t), 0);
+  const fmtOpened = (iso?: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
 
   const handleSaveBalance = () => {
     if (selectedInvestor) {
@@ -280,8 +299,8 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
             </div>
           )}
         </Card>
-        <Kpi icon={Wallet} label="Invested / in trades" value={`$${(selectedInvestor?.invested || 0).toLocaleString('en-US')}`} tone="blue" />
-        <Kpi icon={TrendingUp} label="Total client PnL" value={`+$${(selectedInvestor?.totalProfit || 0).toLocaleString('en-US')}`} tone="green" />
+        <Kpi icon={Wallet} label="Invested / in trades" value={`$${investedNow.toLocaleString('en-US')}`} tone="blue" />
+        <Kpi icon={TrendingUp} label="Total client PnL" value={`${totalClientPnl >= 0 ? '+' : ''}$${totalClientPnl.toLocaleString('en-US')}`} tone={totalClientPnl >= 0 ? 'green' : 'red'} />
       </div>
 
       {/* Positions */}
@@ -290,7 +309,11 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
         subtitle="Edit side, open time, entry / mark price, leverage and PnL — or force close"
         actions={
           canManageTrades ? (
-            <Btn variant="gold" icon={Plus} onClick={() => setShowNewTradeModal(true)}>
+            <Btn variant="gold" icon={Plus} onClick={() => {
+              setOpenedAtStr(toLocalInput());
+              setLeverageStr(String(selectedInvestor?.defaultLeverage || 10));
+              setShowNewTradeModal(true);
+            }}>
               Open trade for client
             </Btn>
           ) : (
@@ -311,6 +334,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                 <Th>Side</Th>
                 <Th>Amount</Th>
                 <Th>Entry / Leverage</Th>
+                <Th>Opened</Th>
                 <Th>PnL</Th>
                 <Th>Status</Th>
                 <Th className="text-right">Control</Th>
@@ -337,6 +361,7 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                     <div className="text-[12px] text-[#213532]">${t.entryPrice.toLocaleString('en-US')}</div>
                     <div className="text-[11px] text-[#213532]/60">Leverage {t.leverage}x</div>
                   </Td>
+                  <Td className="text-[11px] text-[#213532]/70 whitespace-nowrap">{fmtOpened(t.openedAt)}</Td>
                     <Td>
                       <span className={`font-extrabold ${livePnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                         {livePnl >= 0 ? '+' : ''}

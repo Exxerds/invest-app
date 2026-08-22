@@ -290,6 +290,10 @@ export default function App() {
         await reloadLeads();
         await reloadNotes();
         try {
+          const staffUsers = await apiAdminUsers();
+          setUsers(staffUsers.users);
+        } catch { /* ignore */ }
+        try {
           const st = await apiClientStatuses();
           setClientStatuses(st.statuses);
         } catch { /* ignore */ }
@@ -389,7 +393,19 @@ export default function App() {
         .filter(u => u.role === 'CLIENT')
         .map(u => {
           const existing = localById.get(String(u.id));
-          if (existing) return existing;
+          if (existing) {
+            return {
+              ...existing,
+              name: u.name,
+              email: u.email,
+              phone: u.phone || existing.phone,
+              balance: Number(u.balance) || existing.balance,
+              manager: u.assignedManagerName || 'Unassigned',
+              lastSeen: u.lastSeen || null,
+              assignedManagerId: u.assignedManagerId || null,
+              defaultLeverage: u.defaultLeverage || existing.defaultLeverage || 10,
+            };
+          }
           const created = u.created_at ? new Date(u.created_at) : new Date();
           const dd = String(created.getDate()).padStart(2, '0');
           const mm = String(created.getMonth() + 1).padStart(2, '0');
@@ -744,6 +760,7 @@ export default function App() {
           id: String(l.id),
           name: l.name,
           phone: l.phone,
+          email: l.email || '',
           potentialAmount: l.potentialAmount,
           stage: (l.stage || 'new') as LeadStage,
           notes: l.notes || '',
@@ -893,6 +910,20 @@ export default function App() {
     await apiAdminUpdateUser(userId, { status });
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: status as ApiUser['status'] } : u));
     showToast(`✔ User status updated: ${status}`);
+  };
+
+  const handlePatchUser = (userId: number, patch: Partial<ApiUser>) => {
+    setUsers(prev => prev.map(u => (u.id === userId ? { ...u, ...patch } : u)));
+    setInvestors(prev => prev.map(inv => {
+      if (String(inv.id) !== String(userId) && inv.id !== `acc-${userId}`) return inv;
+      return {
+        ...inv,
+        manager: patch.assignedManagerName ?? inv.manager,
+        assignedManagerId: patch.assignedManagerId !== undefined ? patch.assignedManagerId : inv.assignedManagerId,
+        defaultLeverage: patch.defaultLeverage ?? inv.defaultLeverage,
+        lastSeen: patch.lastSeen !== undefined ? patch.lastSeen : inv.lastSeen,
+      };
+    }));
   };
 
   /**
@@ -1241,6 +1272,7 @@ export default function App() {
             currentUserRole={currentUser?.role || 'MANAGER'}
             onChangeUserPassword={handleChangeUserPassword}
             onUpdateUserStatus={handleUpdateUserStatus}
+            onPatchUser={handlePatchUser}
             settings={settings}
             onToggleSetting={handleToggleCrmSetting}
             onNotify={showToast}

@@ -53,9 +53,11 @@ function who(req) {
   try { return jwt.verify(token, JWT_SECRET); } catch { return null; }
 }
 
-function adminOnly(req, res, next) {
+function staffOnly(req, res, next) {
   const u = who(req);
-  if (!u || u.role !== 'ADMIN') return res.status(403).json({ error: 'Administrator access only' });
+  if (!u || !['ADMIN', 'MANAGER'].includes(u.role)) {
+    return res.status(403).json({ error: 'Staff access only' });
+  }
   req.user = u;
   next();
 }
@@ -71,7 +73,7 @@ router.get('/', async (req, res) => {
 });
 
 /* ---------------- admin: create ---------------- */
-router.post('/', adminOnly, async (req, res) => {
+router.post('/', staffOnly, async (req, res) => {
   const b = req.body || {};
   const title = cleanStr(b.title, 160).trim();
   if (!title) return res.status(400).json({ error: 'Title is required' });
@@ -99,7 +101,7 @@ router.post('/', adminOnly, async (req, res) => {
 });
 
 /* ---------------- admin: remove ---------------- */
-router.delete('/:id', adminOnly, async (req, res) => {
+router.delete('/:id', staffOnly, async (req, res) => {
   const id = Number(req.params.id);
   const existing = await store.byId('assets', id);
   if (!existing) return res.status(404).json({ error: 'Asset not found' });
