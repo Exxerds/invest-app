@@ -100,6 +100,30 @@ router.post('/', staffOnly, async (req, res) => {
   res.json({ ok: true, asset });
 });
 
+/* ---------------- admin: update ---------------- */
+router.patch('/:id', staffOnly, async (req, res) => {
+  const id = Number(req.params.id);
+  const existing = await store.byId('assets', id);
+  if (!existing) return res.status(404).json({ error: 'Asset not found' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.title != null) patch.title = cleanStr(b.title, 160).trim() || existing.title;
+  if (b.category != null) patch.category = cleanStr(b.category, 30) || existing.category;
+  if (b.categoryLabel != null) patch.categoryLabel = cleanStr(b.categoryLabel, 60);
+  if (b.targetAmount != null) patch.targetAmount = num(b.targetAmount);
+  if (b.raisedAmount != null) patch.raisedAmount = num(b.raisedAmount);
+  if (b.apr != null) patch.apr = num(b.apr);
+  if (b.termMonths != null) patch.termMonths = num(b.termMonths);
+  if (b.minCheck != null) patch.minCheck = num(b.minCheck);
+  if (b.riskLevel != null) patch.riskLevel = ['low', 'medium', 'high'].includes(b.riskLevel) ? b.riskLevel : existing.riskLevel;
+  if (b.status != null) patch.status = cleanStr(b.status, 20) || existing.status;
+  if (b.description != null) patch.description = cleanStr(b.description, 2000);
+  if (b.imageUrl != null) patch.imageUrl = cleanStr(b.imageUrl, 2_000_000);
+  if (Array.isArray(b.tags)) patch.tags = b.tags.slice(0, 6).map(t => cleanStr(t, 40));
+  const asset = await store.update('assets', id, patch);
+  res.json({ ok: true, asset });
+});
+
 /* ---------------- admin: remove ---------------- */
 router.delete('/:id', staffOnly, async (req, res) => {
   const id = Number(req.params.id);

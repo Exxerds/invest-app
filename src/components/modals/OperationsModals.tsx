@@ -707,6 +707,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [termMonthsStr, setTermMonthsStr] = useState('12');
   const [minCheckStr, setMinCheckStr] = useState('1000');
   const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
 
   const getCategoryLabel = (cat: AssetCategory) => {
     switch (cat) {
@@ -740,7 +741,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       minCheck: parseNumber(minCheckStr, 1000),
       riskLevel: category === 'futures' ? 'high' : 'medium',
       description: description || 'Trading asset with high liquidity and institutional quotes.',
-      imageUrl: getDefaultImage(category),
+      imageUrl: imageUrl || getDefaultImage(category),
       tags: ['New asset', 'Spot/Futures', 'Binance Feed']
     });
     onClose();
@@ -847,6 +848,34 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 className="w-full px-3 py-2 bg-white border border-[#E4DECB] rounded-xl text-[#213532] focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
+              Photo
+            </label>
+            {imageUrl ? (
+              <img src={imageUrl} alt="" className="mb-2 h-28 w-full object-cover rounded-xl border border-[#E4DECB]" />
+            ) : null}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const r = new FileReader();
+                r.onload = () => setImageUrl(String(r.result || ''));
+                r.readAsDataURL(f);
+              }}
+              className="block w-full text-[12px] text-[#213532]"
+            />
+            <input
+              type="text"
+              placeholder="or paste image URL"
+              value={imageUrl.startsWith('data:') ? '' : imageUrl}
+              onChange={e => setImageUrl(e.target.value)}
+              className="mt-2 w-full px-4 py-2 bg-white border border-[#E4DECB] rounded-xl text-xs text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
+            />
           </div>
 
           <div>

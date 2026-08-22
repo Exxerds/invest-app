@@ -1282,23 +1282,34 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         value={letterClientQuery}
                         onChange={e => setLetterClientQuery(e.target.value)}
                       />
-                      <Select className="w-full" value={letterUserId} onChange={e => setLetterUserId(e.target.value)}>
-                        <option value="">Select a client…</option>
-                        {(mailAudience.clients.length
-                          ? mailAudience.clients
-                          : users.filter(u => u.role === 'CLIENT').map(u => ({ id: u.id, name: u.name, email: u.email, status: u.status }))
-                        )
-                          .filter(c => {
-                            const q = letterClientQuery.trim().toLowerCase();
+                      <div className="max-h-48 overflow-y-auto border border-[#E4DECB] rounded-xl divide-y divide-[#E4DECB] bg-white">
+                        {(() => {
+                          const pool = mailAudience.clients.length
+                            ? mailAudience.clients
+                            : users.filter(u => u.role === 'CLIENT').map(u => ({ id: u.id, name: u.name, email: u.email, status: u.status }));
+                          const q = letterClientQuery.trim().toLowerCase();
+                          const shown = pool.filter(c => {
                             if (!q) return true;
-                            return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q);
-                          })
-                          .map(c => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} — {c.email}
-                            </option>
-                          ))}
-                      </Select>
+                            return `${c.name} ${c.email}`.toLowerCase().includes(q);
+                          });
+                          if (shown.length === 0) {
+                            return <div className="px-3 py-3 text-[12px] text-[#213532]/60">No clients match «{letterClientQuery}»</div>;
+                          }
+                          return shown.map(c => (
+                            <button
+                              type="button"
+                              key={c.id}
+                              onClick={() => setLetterUserId(String(c.id))}
+                              className={`w-full text-left px-3 py-2.5 cursor-pointer ${
+                                String(letterUserId) === String(c.id) ? 'bg-[#B08B48]/15' : 'hover:bg-[#F5F2E9]'
+                              }`}
+                            >
+                              <div className="text-[13px] font-semibold text-[#1C412C]">{c.name}</div>
+                              <div className="text-[11px] text-[#213532]/60">{c.email}</div>
+                            </button>
+                          ));
+                        })()}
+                      </div>
                     </div>
                   )}
                   <div className="text-[11px] text-[#213532]/60 mt-1">
