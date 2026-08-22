@@ -1323,6 +1323,7 @@ export default function App() {
             onUpdateTrade={handleUpdateTrade}
             onCloseTrade={handleCloseTrade}
             onAddLeadComment={handleAddLeadComment}
+            onRefreshLeads={reloadLeads}
             users={users}
             currentUserName={currentUser?.name || 'Manager'}
             currentUserRole={currentUser?.role || 'MANAGER'}

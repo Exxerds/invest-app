@@ -1629,7 +1629,6 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {activeTab === 'markets' && (
             <CrmMarketsPanel
               projects={projects}
-              onCreate={onOpenNewProjectModal}
               onUpdate={onUpdateProject}
               onDelete={onDeleteProject}
             />

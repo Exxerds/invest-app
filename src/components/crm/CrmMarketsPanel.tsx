@@ -6,10 +6,9 @@ import { sanitizeDecimal, sanitizeInteger, parseNumber } from '../../utils/numbe
 
 export const CrmMarketsPanel: React.FC<{
   projects: Project[];
-  onCreate?: () => void;
   onUpdate?: (id: string, patch: Partial<Project>) => void;
   onDelete?: (id: string) => void;
-}> = ({ projects, onCreate, onUpdate, onDelete }) => {
+}> = ({ projects, onUpdate, onDelete }) => {
   const [editId, setEditId] = useState<string | null>(null);
   const editing = projects.find(p => p.id === editId) || null;
   const [draft, setDraft] = useState<Record<string, string>>({});

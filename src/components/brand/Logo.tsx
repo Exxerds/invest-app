@@ -34,7 +34,7 @@ export const OakCrest: React.FC<{ size?: number; className?: string }> = ({ size
       width={size}
       height={size}
       className="object-contain"
-      style={{ width: size * 1.45, height: size * 1.45, maxWidth: 'none' }}
+      style={{ width: size * 1.55, height: size * 1.55, maxWidth: 'none' }}
     />
   </span>
 );
