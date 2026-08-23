@@ -246,13 +246,13 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                     </div>
                     <div className="flex justify-between text-[11px] text-[#213532]/60 mt-1">
                       <span>Target: ${project.targetAmount.toLocaleString('en-US')}</span>
-                      <span>
-                        {isClosed
-                          ? 'Round closed'
-                          : project.closesAt && leftMs > 0
-                          ? `${Math.floor(leftMs / 86400000)}d ${Math.floor((leftMs % 86400000) / 3600000)}h ${Math.floor((leftMs % 3600000) / 60000)}m left`
-                          : 'Round open'}
-                      </span>
+                      {isClosed ? (
+                        <span>Round closed</span>
+                      ) : project.closesAt && leftMs > 0 ? (
+                        <span>
+                          {Math.floor(leftMs / 86400000)}d {Math.floor((leftMs % 86400000) / 3600000)}h {Math.floor((leftMs % 3600000) / 60000)}m left
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </div>
