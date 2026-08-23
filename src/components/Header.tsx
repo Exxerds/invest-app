@@ -5,8 +5,7 @@ import {
   Users, 
   Wallet, 
   LogOut,
-  Globe,
-  ChevronDown
+  Globe
 } from 'lucide-react';
 
 export type ActiveTab = 'landing' | 'investor' | 'catalog' | 'crm';
@@ -145,7 +144,6 @@ export const Header: React.FC<HeaderProps> = ({
                         {userRole === 'ADMIN' ? 'SUPER ADMIN' : userRole === 'MANAGER' ? 'MANAGER' : 'CLIENT'}
                       </div>
                     </div>
-                    <ChevronDown className="w-3.5 h-3.5 text-[#213532]/60 hidden sm:block" />
                   </div>
                   <button
                     onClick={onLogout}
