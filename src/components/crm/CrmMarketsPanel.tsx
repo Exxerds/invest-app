@@ -40,6 +40,7 @@ export const CrmMarketsPanel: React.FC<{
   const editing = projects.find(p => p.id === editId) || null;
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [pulse, setPulse] = useState({ assetId: '', amount: '', name: '', userId: '', notifyAll: false });
+  const [clientQuery, setClientQuery] = useState('');
   const [sending, setSending] = useState(false);
   const [cardTimer, setCardTimer] = useState<Record<string, { d: string; h: string; m: string }>>({});
   const [, setNowTick] = useState(0);
@@ -109,6 +110,17 @@ export const CrmMarketsPanel: React.FC<{
   };
 
   const clients = users.filter(u => u.role === 'CLIENT');
+  const q = clientQuery.trim().toLowerCase();
+  const filteredClients = (() => {
+    const list = q
+      ? clients.filter(c => `${c.name} ${c.email} ${c.phone || ''}`.toLowerCase().includes(q))
+      : clients;
+    if (pulse.userId && !list.some(c => String(c.id) === pulse.userId)) {
+      const picked = clients.find(c => String(c.id) === pulse.userId);
+      if (picked) return [picked, ...list];
+    }
+    return list;
+  })();
 
   return (
     <div className="space-y-4">
@@ -152,14 +164,25 @@ export const CrmMarketsPanel: React.FC<{
           </div>
           <div>
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Notify client</label>
-            <Select className="w-full mt-1" value={pulse.notifyAll ? 'all' : pulse.userId} onChange={e => {
+            <Input
+              className="w-full mt-1"
+              placeholder="Search by name or email…"
+              value={clientQuery}
+              onChange={e => setClientQuery(e.target.value)}
+            />
+            <Select className="w-full mt-2" value={pulse.notifyAll ? 'all' : pulse.userId} onChange={e => {
               if (e.target.value === 'all') setPulse(p => ({ ...p, notifyAll: true, userId: '' }));
               else setPulse(p => ({ ...p, notifyAll: false, userId: e.target.value }));
             }}>
               <option value="">Nobody — only bump the bar</option>
               <option value="all">All clients</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name} · {c.email}</option>)}
+              {filteredClients.map(c => <option key={c.id} value={c.id}>{c.name} · {c.email}</option>)}
             </Select>
+            {q && (
+              <div className="text-[11px] text-[#213532]/55 mt-1">
+                {filteredClients.length === 0 ? 'No clients match' : `${filteredClients.length} match${filteredClients.length === 1 ? '' : 'es'}`}
+              </div>
+            )}
           </div>
           <div className="md:col-span-2">
             <Btn variant="gold" type="submit" disabled={sending || !pulse.assetId}>Send live update</Btn>
