@@ -41,7 +41,7 @@ export const CrmMarketsPanel: React.FC<{
   const [editId, setEditId] = useState<string | null>(null);
   const editing = projects.find(p => p.id === editId) || null;
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [pulse, setPulse] = useState({ assetId: '', amount: '50000', name: '', userId: '', notifyAll: false });
+  const [pulse, setPulse] = useState({ assetId: '', amount: '', name: '', userId: '', notifyAll: false });
   const [sending, setSending] = useState(false);
   const [cardTimer, setCardTimer] = useState<Record<string, { d: string; h: string; m: string }>>({});
 
