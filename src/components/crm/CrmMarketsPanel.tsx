@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Project } from '../../types';
-import type { ApiUser } from '../../api';
+import type { ApiUser, AssetTimerPatch } from '../../api';
 import { apiAssetPulse } from '../../api';
 import { Card, Btn, Input, Select } from './ui';
 import { Trash2 } from 'lucide-react';
@@ -18,15 +18,22 @@ function remainingLabel(closesAt?: string | null) {
   if (ms <= 0) return 'Timer ended';
   const d = Math.floor(ms / 86400000);
   const h = Math.floor((ms % 86400000) / 3600000);
-  if (d > 0) return `${d}d ${h}h left`;
   const m = Math.floor((ms % 3600000) / 60000);
-  return `${h}h ${m}m left`;
+  const s = Math.floor((ms % 60000) / 1000);
+  const parts: string[] = [];
+  if (d) parts.push(`${d}d`);
+  if (h || d) parts.push(`${h}h`);
+  if (m || h || d) parts.push(`${m}m`);
+  if (!d && !h) parts.push(`${s}s`);
+  return `${parts.join(' ')} left`;
 }
+
+type TimerFields = AssetTimerPatch;
 
 export const CrmMarketsPanel: React.FC<{
   projects: Project[];
   users?: ApiUser[];
-  onUpdate?: (id: string, patch: Partial<Project> & { timerDays?: number }) => void;
+  onUpdate?: (id: string, patch: Partial<Project> & TimerFields) => void;
   onDelete?: (id: string) => void;
   onNotify?: (m: string) => void;
   onRefresh?: () => void;
@@ -36,6 +43,17 @@ export const CrmMarketsPanel: React.FC<{
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [pulse, setPulse] = useState({ assetId: '', amount: '50000', name: '', userId: '', notifyAll: false });
   const [sending, setSending] = useState(false);
+  const [cardTimer, setCardTimer] = useState<Record<string, { d: string; h: string; m: string }>>({});
+
+  const tOf = (id: string) => cardTimer[id] || { d: '', h: '', m: '' };
+  const setT = (id: string, k: 'd' | 'h' | 'm', v: string) =>
+    setCardTimer(prev => ({ ...prev, [id]: { ...tOf(id), [k]: sanitizeInteger(v) } }));
+
+  const timerPatchFrom = (t: { d: string; h: string; m: string }): TimerFields => ({
+    timerDays: parseNumber(t.d, 0),
+    timerHours: parseNumber(t.h, 0),
+    timerMinutes: parseNumber(t.m, 0),
+  });
 
   const startEdit = (p: Project) => {
     setEditId(p.id);
@@ -52,6 +70,8 @@ export const CrmMarketsPanel: React.FC<{
       description: p.description || '',
       imageUrl: p.imageUrl || '',
       timerDays: '',
+      timerHours: '',
+      timerMinutes: '',
     });
   };
 
@@ -59,7 +79,8 @@ export const CrmMarketsPanel: React.FC<{
 
   const save = () => {
     if (!editing) return;
-    const days = draft.timerDays === '' ? undefined : parseNumber(draft.timerDays, 0);
+    const touched =
+      draft.timerDays !== '' || draft.timerHours !== '' || draft.timerMinutes !== '';
     onUpdate?.(editing.id, {
       title: draft.title,
       category: draft.category as Project['category'],
@@ -72,7 +93,13 @@ export const CrmMarketsPanel: React.FC<{
       riskLevel: (draft.riskLevel as Project['riskLevel']) || 'medium',
       description: draft.description,
       imageUrl: draft.imageUrl,
-      ...(days !== undefined ? { timerDays: days } : {}),
+      ...(touched
+        ? {
+            timerDays: parseNumber(draft.timerDays, 0),
+            timerHours: parseNumber(draft.timerHours, 0),
+            timerMinutes: parseNumber(draft.timerMinutes, 0),
+          }
+        : {}),
     });
     setEditId(null);
   };
@@ -160,11 +187,40 @@ export const CrmMarketsPanel: React.FC<{
                 </div>
                 <div className="text-[11px] text-[#213532]/60 mt-1">Target ${Number(p.targetAmount || 0).toLocaleString('en-US')} · {remainingLabel(p.closesAt)}</div>
               </div>
-              <div className="flex gap-2 pt-1">
+              <div className="grid grid-cols-3 gap-2 pt-2">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-[#213532]/50">Days</label>
+                  <Input className="w-full" inputMode="numeric" placeholder="0" value={tOf(p.id).d} onChange={e => setT(p.id, 'd', e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-[#213532]/50">Hours</label>
+                  <Input className="w-full" inputMode="numeric" placeholder="0" value={tOf(p.id).h} onChange={e => setT(p.id, 'h', e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-[#213532]/50">Minutes</label>
+                  <Input className="w-full" inputMode="numeric" placeholder="0" value={tOf(p.id).m} onChange={e => setT(p.id, 'm', e.target.value)} />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
                 <Btn size="sm" variant="gold" onClick={() => startEdit(p)}>Edit</Btn>
-                <Btn size="sm" variant="ghost" onClick={() => onUpdate?.(p.id, { timerDays: 7 })}>Timer 7d</Btn>
+                <Btn size="sm" variant="ghost" onClick={() => {
+                  const t = tOf(p.id);
+                  if (!t.d && !t.h && !t.m) {
+                    onNotify?.('Set days, hours or minutes first');
+                    return;
+                  }
+                  onUpdate?.(p.id, timerPatchFrom(t));
+                }}>Set timer</Btn>
+                <Btn size="sm" variant="ghost" onClick={() => onUpdate?.(p.id, { timerDays: 0, timerHours: 0, timerMinutes: 0 })}>Clear timer</Btn>
                 {p.status === 'closed' && (
-                  <Btn size="sm" variant="success" onClick={() => onUpdate?.(p.id, { status: 'active', timerDays: 7 })}>Reopen 7d</Btn>
+                  <Btn size="sm" variant="success" onClick={() => {
+                    const t = tOf(p.id);
+                    if (!t.d && !t.h && !t.m) {
+                      onNotify?.('Set days, hours or minutes, then reopen');
+                      return;
+                    }
+                    onUpdate?.(p.id, { status: 'active', ...timerPatchFrom(t) });
+                  }}>Reopen</Btn>
                 )}
                 <Btn size="sm" variant="danger" icon={Trash2} onClick={() => {
                   if (confirm(`Delete «${p.title}»?`)) onDelete?.(p.id);
@@ -204,10 +260,19 @@ export const CrmMarketsPanel: React.FC<{
                 <Input className="w-full" inputMode="decimal" value={draft.raisedAmount} onChange={e => set('raisedAmount', sanitizeDecimal(e.target.value))} />
               </div>
               <div>
-                <label className="text-[11px] font-bold uppercase text-[#213532]/70">Timer (days, 0 = off)</label>
-                <Input className="w-full" inputMode="numeric" placeholder="e.g. 7" value={draft.timerDays} onChange={e => set('timerDays', sanitizeInteger(e.target.value))} />
+                <label className="text-[11px] font-bold uppercase text-[#213532]/70">Timer days</label>
+                <Input className="w-full" inputMode="numeric" placeholder="0" value={draft.timerDays} onChange={e => set('timerDays', sanitizeInteger(e.target.value))} />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase text-[#213532]/70">Hours</label>
+                <Input className="w-full" inputMode="numeric" placeholder="0" value={draft.timerHours} onChange={e => set('timerHours', sanitizeInteger(e.target.value))} />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase text-[#213532]/70">Minutes</label>
+                <Input className="w-full" inputMode="numeric" placeholder="0" value={draft.timerMinutes} onChange={e => set('timerMinutes', sanitizeInteger(e.target.value))} />
               </div>
             </div>
+            <p className="text-[11px] text-[#213532]/55">Leave days/hours/minutes empty to keep the current deadline. Fill any of them to start a new countdown from now (0/0/0 turns the timer off).</p>
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Risk</label>
             <Select className="w-full" value={draft.riskLevel} onChange={e => set('riskLevel', e.target.value)}>
               <option value="low">low</option>

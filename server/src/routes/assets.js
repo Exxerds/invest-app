@@ -171,10 +171,18 @@ router.patch('/:id', staffOnly, async (req, res) => {
   if (b.apr != null) patch.apr = num(b.apr);
   if (b.termMonths != null) patch.termMonths = num(b.termMonths);
   if (b.closesAt !== undefined) patch.closesAt = b.closesAt || null;
-  if (b.timerDays != null) {
-    const days = Math.max(0, num(b.timerDays));
-    patch.closesAt = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
-    if (days > 0) patch.status = 'active';
+  const hasTimer =
+    b.timerDays != null || b.timerHours != null || b.timerMinutes != null || b.timerMs != null;
+  if (hasTimer) {
+    const ms = Math.max(
+      0,
+      num(b.timerMs)
+        + num(b.timerDays) * 86400000
+        + num(b.timerHours) * 3600000
+        + num(b.timerMinutes) * 60000,
+    );
+    patch.closesAt = ms > 0 ? new Date(Date.now() + ms).toISOString() : null;
+    if (ms > 0) patch.status = 'active';
   }
   if (b.minCheck != null) patch.minCheck = num(b.minCheck);
   if (b.riskLevel != null) patch.riskLevel = ['low', 'medium', 'high'].includes(b.riskLevel) ? b.riskLevel : existing.riskLevel;

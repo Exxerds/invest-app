@@ -250,7 +250,7 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                         {isClosed
                           ? 'Round closed'
                           : project.closesAt && leftMs > 0
-                          ? `${Math.floor(leftMs / 86400000)}d ${Math.floor((leftMs % 86400000) / 3600000)}h left`
+                          ? `${Math.floor(leftMs / 86400000)}d ${Math.floor((leftMs % 86400000) / 3600000)}h ${Math.floor((leftMs % 3600000) / 60000)}m left`
                           : 'Round open'}
                       </span>
                     </div>

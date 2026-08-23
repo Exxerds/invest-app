@@ -107,7 +107,7 @@ interface CrmDashboardProps {
   onRejectRequest: (requestId: string) => void;
   projects: Project[];
   onOpenNewProjectModal: () => void;
-  onUpdateProject?: (id: string, patch: Partial<Project> & { timerDays?: number }) => void;
+  onUpdateProject?: (id: string, patch: Partial<Project> & import('../../api').AssetTimerPatch) => void;
   onDeleteProject?: (id: string) => void;
   onRefreshProjects?: () => void;
   trades: AdminTrade[];

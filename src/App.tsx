@@ -891,10 +891,10 @@ export default function App() {
     }
   };
 
-  const handleUpdateProject = async (id: string, patch: Partial<Project> & { timerDays?: number }) => {
+  const handleUpdateProject = async (id: string, patch: Partial<Project> & import('./api').AssetTimerPatch) => {
     const numId = Number(String(id).replace(/^srv-/, ''));
     try {
-      await apiUpdateAsset(numId, patch as Partial<ApiAsset> & { timerDays?: number });
+      await apiUpdateAsset(numId, patch as Partial<ApiAsset> & import('./api').AssetTimerPatch);
       await reloadAssets();
       try {
         const invRes = await apiMyInvestments();

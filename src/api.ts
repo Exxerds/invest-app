@@ -507,7 +507,14 @@ export const apiCreateAsset = (data: Partial<ApiAsset> & { title: string }) =>
     method: 'POST', headers: authHeader(), body: JSON.stringify(data),
   });
 
-export const apiUpdateAsset = (id: number | string, data: Partial<ApiAsset> & { timerDays?: number }) =>
+export type AssetTimerPatch = {
+  timerDays?: number;
+  timerHours?: number;
+  timerMinutes?: number;
+  timerMs?: number;
+};
+
+export const apiUpdateAsset = (id: number | string, data: Partial<ApiAsset> & AssetTimerPatch) =>
   request<{ ok: true; asset: ApiAsset }>(`/assets/${id}`, {
     method: 'PATCH', headers: authHeader(), body: JSON.stringify(data),
   });
