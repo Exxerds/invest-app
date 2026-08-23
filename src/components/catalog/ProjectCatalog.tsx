@@ -160,8 +160,8 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
             100,
             Math.round((project.raisedAmount / project.targetAmount) * 100)
           );
-          const isClosed = project.status === 'funded' || project.status === 'closed' || percentRaised >= 100
-            || Boolean(project.closesAt && new Date(project.closesAt).getTime() <= Date.now());
+          const timerGone = Boolean(project.closesAt && new Date(project.closesAt).getTime() <= Date.now());
+          const isClosed = project.status === 'closed' || timerGone;
           const fill = percentRaised < 33 ? 'bg-rose-500' : percentRaised < 66 ? 'bg-amber-500' : 'bg-emerald-600';
           const leftMs = project.closesAt ? new Date(project.closesAt).getTime() - Date.now() : 0;
 

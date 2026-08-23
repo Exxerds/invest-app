@@ -173,7 +173,7 @@ router.post('/investments', auth, async (req, res) => {
   if (Number.isFinite(assetId) && assetId > 0) {
     const asset = await store.byId('assets', assetId);
     if (asset) {
-      if (asset.status === 'closed' || (asset.closesAt && new Date(asset.closesAt).getTime() <= Date.now())) {
+      if (asset.status === 'closed' || asset.status === 'archived' || (asset.closesAt && new Date(asset.closesAt).getTime() <= Date.now())) {
         return res.status(400).json({ error: 'This offer is closed' });
       }
     }

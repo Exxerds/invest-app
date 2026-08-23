@@ -32,7 +32,7 @@ const DEFAULT_ASSETS = [
   { title: 'ETH/USDT — Ethereum Perpetual Futures', category: 'futures', categoryLabel: CATEGORIES.futures, targetAmount: 500000, raisedAmount: 0, apr: 32.0, termMonths: 6, minCheck: 2500, riskLevel: 'high', status: 'active', description: 'Ethereum perpetual futures with automatic Stop Loss / Take Profit control and instant PnL calculation.', imageUrl: 'https://images.unsplash.com/photo-1622630998477-20aa696ecb05?auto=format&fit=crop&w=800&q=80', tags: ['Ethereum', 'Futures 20x', 'Stop Loss / TP'] },
   { title: 'XAU/USD — Gold / Precious Metal Spot', category: 'forex', categoryLabel: CATEGORIES.forex, targetAmount: 800000, raisedAmount: 0, apr: 18.0, termMonths: 12, minCheck: 5000, riskLevel: 'low', status: 'active', description: 'Gold trading with Twelve Data quotes. Inflation-protected asset with high liquidity on global exchanges.', imageUrl: '/markets/gold.jpg', tags: ['Gold XAU', 'Twelve Data', 'Safe-haven asset'] },
   { title: 'SOL/USDT — Solana Trading Pool', category: 'crypto', categoryLabel: CATEGORIES.crypto, targetAmount: 400000, raisedAmount: 0, apr: 45.0, termMonths: 6, minCheck: 1000, riskLevel: 'high', status: 'active', description: 'High-yield strategies on Solana. Instant Market and Limit order execution in a single interface.', imageUrl: '/markets/solana.jpg', tags: ['Solana', 'High volatility', 'Market/Limit'] },
-  { title: 'EUR/USD — Forex Currency Pair', category: 'forex', categoryLabel: CATEGORIES.forex, targetAmount: 600000, raisedAmount: 0, apr: 14.2, termMonths: 12, minCheck: 2500, riskLevel: 'low', status: 'funded', description: 'Classic currency trading on the international Forex market with tight spreads and margin support.', imageUrl: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?auto=format&fit=crop&w=800&q=80', tags: ['Forex', 'EUR/USD', 'Pool closed'] },
+  { title: 'EUR/USD — Forex Currency Pair', category: 'forex', categoryLabel: CATEGORIES.forex, targetAmount: 600000, raisedAmount: 0, apr: 14.2, termMonths: 12, minCheck: 2500, riskLevel: 'low', status: 'active', description: 'Classic currency trading on the international Forex market with tight spreads and margin support.', imageUrl: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?auto=format&fit=crop&w=800&q=80', tags: ['Forex', 'EUR/USD'] },
   { title: 'AI Quant Strategy Pool (Binance Feed)', category: 'pool', categoryLabel: CATEGORIES.pool, targetAmount: 750000, raisedAmount: 0, apr: 28.4, termMonths: 12, minCheck: 5000, riskLevel: 'medium', status: 'active', description: 'Algorithmic trading pool using high-frequency arbitrage on spot and futures markets.', imageUrl: 'https://images.unsplash.com/photo-1642543492481-44e81e3914a7?auto=format&fit=crop&w=800&q=80', tags: ['AI Quant', 'Arbitrage', '24/7 Trading'] },
 ];
 
@@ -55,6 +55,11 @@ async function ensureSeed() {
       const hit = localByHint.find(h => h.re.test(blob));
       if (hit && a.imageUrl !== hit.url && (!a.imageUrl || String(a.imageUrl).startsWith('http'))) {
         await store.update('assets', a.id, { imageUrl: hit.url });
+      }
+      // Seed used to mark EUR/USD as "funded" / pool closed. Offers stay
+      // open unless staff set a timer or closed them by hand.
+      if (/EUR\/USD/i.test(String(a.title)) && (a.status === 'funded' || a.status === 'closed') && !a.closesAt) {
+        await store.update('assets', a.id, { status: 'active' });
       }
     }
   }
