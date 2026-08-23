@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { Project } from '../../types';
 import type { ApiNotification } from '../../api';
 import { 
@@ -31,6 +31,12 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [, setNowTick] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const filteredProjects = projects.filter((project) => {
     const matchesCategory = selectedCategory === 'all' || project.category === selectedCategory;
@@ -250,7 +256,10 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                         <span>Round closed</span>
                       ) : project.closesAt && leftMs > 0 ? (
                         <span>
-                          {Math.floor(leftMs / 86400000)}d {Math.floor((leftMs % 86400000) / 3600000)}h {Math.floor((leftMs % 3600000) / 60000)}m left
+                          {Math.floor(leftMs / 86400000) > 0 ? `${Math.floor(leftMs / 86400000)}d ` : ''}
+                          {Math.floor((leftMs % 86400000) / 3600000) > 0 || Math.floor(leftMs / 86400000) > 0 ? `${Math.floor((leftMs % 86400000) / 3600000)}h ` : ''}
+                          {Math.floor((leftMs % 3600000) / 60000) > 0 || leftMs >= 3600000 ? `${Math.floor((leftMs % 3600000) / 60000)}m ` : ''}
+                          {Math.floor((leftMs % 60000) / 1000)}s left
                         </span>
                       ) : null}
                     </div>

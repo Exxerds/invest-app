@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { Project } from '../../types';
 import type { ApiUser, AssetTimerPatch } from '../../api';
 import { apiAssetPulse } from '../../api';
@@ -20,12 +20,10 @@ function remainingLabel(closesAt?: string | null) {
   const h = Math.floor((ms % 86400000) / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
   const s = Math.floor((ms % 60000) / 1000);
-  const parts: string[] = [];
-  if (d) parts.push(`${d}d`);
-  if (h || d) parts.push(`${h}h`);
-  if (m || h || d) parts.push(`${m}m`);
-  if (!d && !h) parts.push(`${s}s`);
-  return `${parts.join(' ')} left`;
+  if (d > 0) return `${d}d ${h}h ${m}m ${s}s left`;
+  if (h > 0) return `${h}h ${m}m ${s}s left`;
+  if (m > 0) return `${m}m ${s}s left`;
+  return `${s}s left`;
 }
 
 type TimerFields = AssetTimerPatch;
@@ -44,6 +42,12 @@ export const CrmMarketsPanel: React.FC<{
   const [pulse, setPulse] = useState({ assetId: '', amount: '', name: '', userId: '', notifyAll: false });
   const [sending, setSending] = useState(false);
   const [cardTimer, setCardTimer] = useState<Record<string, { d: string; h: string; m: string }>>({});
+  const [, setNowTick] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const tOf = (id: string) => cardTimer[id] || { d: '', h: '', m: '' };
   const setT = (id: string, k: 'd' | 'h' | 'm', v: string) =>
@@ -144,7 +148,7 @@ export const CrmMarketsPanel: React.FC<{
           </div>
           <div>
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Display name</label>
-            <Input className="w-full mt-1" placeholder="Odyssey Jackson" value={pulse.name} onChange={e => setPulse(p => ({ ...p, name: e.target.value }))} />
+            <Input className="w-full mt-1" value={pulse.name} onChange={e => setPulse(p => ({ ...p, name: e.target.value }))} />
           </div>
           <div>
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Notify client</label>

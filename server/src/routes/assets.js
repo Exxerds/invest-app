@@ -90,7 +90,7 @@ async function expireOffers() {
         userId: c.id,
         kind: 'market_closed',
         title: 'Offer closed',
-        message: `${a.title} is no longer available. Ask your advisor if you want it reopened.`,
+        message: `${a.title} is no longer available.`,
         link: 'catalog',
       });
     }
