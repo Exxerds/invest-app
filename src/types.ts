@@ -15,6 +15,8 @@ export interface Project {
   description: string;
   imageUrl: string;
   tags: string[];
+  /** ISO time when the offer auto-closes; null = no timer */
+  closesAt?: string | null;
 }
 
 export type KycStatus = 'verified' | 'pending' | 'rejected';

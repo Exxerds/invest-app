@@ -545,7 +545,7 @@ export default function App() {
       }));
 
       showToast(`✔ Position of $${amount.toLocaleString('en-US')} opened in «${project.title}».`);
-    } catch (err) {
+    } catch {
       // Fallback
       setInvestorBalance(prev => Math.max(0, prev - amount));
       const newInv: ActiveInvestment = {
@@ -891,11 +891,15 @@ export default function App() {
     }
   };
 
-  const handleUpdateProject = async (id: string, patch: Partial<Project>) => {
+  const handleUpdateProject = async (id: string, patch: Partial<Project> & { timerDays?: number }) => {
     const numId = Number(String(id).replace(/^srv-/, ''));
     try {
-      await apiUpdateAsset(numId, patch as Partial<ApiAsset>);
+      await apiUpdateAsset(numId, patch as Partial<ApiAsset> & { timerDays?: number });
       await reloadAssets();
+      try {
+        const invRes = await apiMyInvestments();
+        setMyInvestments(invRes.investments || []);
+      } catch { /* staff may not have client investments */ }
       showToast('✔ Asset saved.');
     } catch (err) {
       showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the asset', 'info');
@@ -942,6 +946,7 @@ export default function App() {
         description: a.description,
         imageUrl: a.imageUrl,
         tags: Array.isArray(a.tags) ? a.tags : [],
+        closesAt: a.closesAt || null,
       })));
     } catch {
       /* keep the last known list on transient errors */
@@ -1251,6 +1256,7 @@ export default function App() {
           <ProjectCatalog
             projects={projects}
             canManageAssets={isStaff}
+            notifications={notifications}
             onOpenInvestModal={(proj) => setSelectedProjectForInvest(proj)}
             onSwitchToCrm={() => setActiveTab('crm')}
           />
@@ -1325,6 +1331,7 @@ export default function App() {
             onOpenNewProjectModal={() => setIsNewProjectModalOpen(true)}
             onUpdateProject={handleUpdateProject}
             onDeleteProject={handleDeleteProject}
+            onRefreshProjects={reloadAssets}
             trades={combinedTrades}
             onUpdateInvestorBalance={handleUpdateInvestorBalance}
             onCreateTrade={handleCreateTrade}

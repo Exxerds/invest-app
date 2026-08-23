@@ -107,8 +107,9 @@ interface CrmDashboardProps {
   onRejectRequest: (requestId: string) => void;
   projects: Project[];
   onOpenNewProjectModal: () => void;
-  onUpdateProject?: (id: string, patch: Partial<Project>) => void;
+  onUpdateProject?: (id: string, patch: Partial<Project> & { timerDays?: number }) => void;
   onDeleteProject?: (id: string) => void;
+  onRefreshProjects?: () => void;
   trades: AdminTrade[];
   onUpdateInvestorBalance: (investorId: string, newBalance: number) => void;
   onCreateTrade: (trade: Omit<AdminTrade, 'id' | 'status'>) => void;
@@ -160,7 +161,7 @@ type NavItem = {
 };
 
 /** Sections that only an administrator may open (platform-wide configuration) */
-const ADMIN_ONLY_TABS: CrmTab[] = ['settings', 'banks', 'markets'];
+const ADMIN_ONLY_TABS: CrmTab[] = ['settings', 'banks'];
 
 /**
  * A single flat menu. The Platform / CRM split was removed at the client's
@@ -186,7 +187,7 @@ const MAIN_NAV: NavItem[] = [
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'support', label: 'Support', icon: LifeBuoy },
   { id: 'calls', label: 'Calls', icon: PhoneCall },
-  { id: 'markets', label: 'Markets', icon: Briefcase, adminOnly: true },
+  { id: 'markets', label: 'Markets', icon: Briefcase },
   { id: 'banks', label: 'Partner banks', icon: Landmark, adminOnly: true },
   { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
 ];
@@ -226,6 +227,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onOpenNewProjectModal,
   onUpdateProject,
   onDeleteProject,
+  onRefreshProjects,
   projects,
   trades,
   onUpdateInvestorBalance,
@@ -1634,8 +1636,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {activeTab === 'markets' && (
             <CrmMarketsPanel
               projects={projects}
+              users={users}
               onUpdate={onUpdateProject}
               onDelete={onDeleteProject}
+              onNotify={onNotify}
+              onRefresh={onRefreshProjects}
             />
           )}
 

@@ -15,6 +15,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
 import { logActivity } from './workspace.js';
+import { notify } from '../notifications.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -75,12 +76,53 @@ function staffOnly(req, res, next) {
   next();
 }
 
+async function expireOffers() {
+  const now = Date.now();
+  const assets = await store.all('assets');
+  for (const a of assets) {
+    if (!a.closesAt || a.status === 'closed' || a.status === 'archived') continue;
+    if (new Date(a.closesAt).getTime() > now) continue;
+    await store.update('assets', a.id, { status: 'closed' });
+    const clients = (await store.all('users')).filter(u => u.role === 'CLIENT');
+    for (const c of clients) {
+      await notify({
+        audience: 'client',
+        userId: c.id,
+        kind: 'market_closed',
+        title: 'Offer closed',
+        message: `${a.title} is no longer available. Ask your advisor if you want it reopened.`,
+        link: 'catalog',
+      });
+    }
+  }
+}
+
+function expectedProfit(amount, apr, termMonths) {
+  const months = Math.max(1, Number(termMonths) || 12);
+  return Math.round(Number(amount || 0) * (Number(apr || 0) / 100) * (months / 12) * 100) / 100;
+}
+
+async function syncInvestmentsApr(asset, apr, termMonths) {
+  const keys = new Set([`srv-${asset.id}`, String(asset.id), asset.title]);
+  const all = await store.all('investments');
+  for (const inv of all) {
+    if (inv.status === 'closed') continue;
+    const hit = keys.has(String(inv.projectId)) || String(inv.projectTitle) === String(asset.title);
+    if (!hit) continue;
+    await store.update('investments', inv.id, {
+      apr: Number(apr),
+      accruedProfit: expectedProfit(inv.amount, apr, termMonths ?? asset.termMonths),
+    });
+  }
+}
+
 const cleanStr = (v, max = 300) => String(v ?? '').slice(0, max);
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
 /* ---------------- public list ---------------- */
 router.get('/', async (req, res) => {
   await ensureSeed();
+  await expireOffers();
   const assets = await store.all('assets');
   res.json({ assets: assets.filter(a => a.status !== 'archived') });
 });
@@ -106,6 +148,7 @@ router.post('/', staffOnly, async (req, res) => {
     description: cleanStr(b.description, 1000),
     imageUrl: cleanStr(b.imageUrl, 2000000),
     tags: Array.isArray(b.tags) ? b.tags.slice(0, 6).map(t => cleanStr(t, 40)) : [],
+    closesAt: b.closesAt || null,
     createdAt: new Date().toISOString(),
   });
 
@@ -127,6 +170,12 @@ router.patch('/:id', staffOnly, async (req, res) => {
   if (b.raisedAmount != null) patch.raisedAmount = num(b.raisedAmount);
   if (b.apr != null) patch.apr = num(b.apr);
   if (b.termMonths != null) patch.termMonths = num(b.termMonths);
+  if (b.closesAt !== undefined) patch.closesAt = b.closesAt || null;
+  if (b.timerDays != null) {
+    const days = Math.max(0, num(b.timerDays));
+    patch.closesAt = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
+    if (days > 0) patch.status = 'active';
+  }
   if (b.minCheck != null) patch.minCheck = num(b.minCheck);
   if (b.riskLevel != null) patch.riskLevel = ['low', 'medium', 'high'].includes(b.riskLevel) ? b.riskLevel : existing.riskLevel;
   if (b.status != null) patch.status = cleanStr(b.status, 20) || existing.status;
@@ -134,7 +183,34 @@ router.patch('/:id', staffOnly, async (req, res) => {
   if (b.imageUrl != null) patch.imageUrl = cleanStr(b.imageUrl, 2_000_000);
   if (Array.isArray(b.tags)) patch.tags = b.tags.slice(0, 6).map(t => cleanStr(t, 40));
   const asset = await store.update('assets', id, patch);
+  if (patch.apr != null || patch.termMonths != null) {
+    await syncInvestmentsApr(asset, asset.apr, asset.termMonths);
+  }
   res.json({ ok: true, asset });
+});
+
+router.post('/:id/pulse', staffOnly, async (req, res) => {
+  const id = Number(req.params.id);
+  const existing = await store.byId('assets', id);
+  if (!existing) return res.status(404).json({ error: 'Asset not found' });
+  const amount = Math.max(0, num(req.body?.amount));
+  if (!(amount > 0)) return res.status(400).json({ error: 'Enter an amount' });
+  const clientName = cleanStr(req.body?.clientName, 80).trim() || 'A client';
+  const userId = req.body?.userId != null ? Number(req.body.userId) : null;
+  const notifyAll = Boolean(req.body?.notifyAll);
+  const raised = Math.round((num(existing.raisedAmount) + amount) * 100) / 100;
+  const asset = await store.update('assets', id, { raisedAmount: raised });
+  const message = `${clientName} allocated $${amount.toLocaleString('en-US')} to ${existing.title}.`;
+  if (notifyAll) {
+    const clients = (await store.all('users')).filter(u => u.role === 'CLIENT');
+    for (const c of clients) {
+      await notify({ audience: 'client', userId: c.id, kind: 'market_pulse', title: 'Live market update', message, link: 'catalog' });
+    }
+  } else if (userId) {
+    await notify({ audience: 'client', userId, kind: 'market_pulse', title: 'Live market update', message, link: 'catalog' });
+  }
+  await notify({ audience: 'staff', kind: 'market_pulse', title: 'Market pulse', message, link: 'markets' });
+  res.json({ ok: true, asset, message: 'Pulse sent.' });
 });
 
 /* ---------------- admin: remove ---------------- */

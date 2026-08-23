@@ -168,6 +168,17 @@ router.post('/investments', auth, async (req, res) => {
     return res.status(400).json({ error: 'Not enough balance' });
   }
 
+  const projectId = String(b.projectId || '');
+  const assetId = Number(String(projectId).replace(/^srv-/, ''));
+  if (Number.isFinite(assetId) && assetId > 0) {
+    const asset = await store.byId('assets', assetId);
+    if (asset) {
+      if (asset.status === 'closed' || (asset.closesAt && new Date(asset.closesAt).getTime() <= Date.now())) {
+        return res.status(400).json({ error: 'This offer is closed' });
+      }
+    }
+  }
+
   // Debit user balance
   const nextBalance = Math.max(0, Math.round((balance - amount) * 100) / 100);
   await store.update('users', userId, { balance: nextBalance });
@@ -189,6 +200,15 @@ router.post('/investments', auth, async (req, res) => {
     status: 'active',
     createdAt: new Date().toISOString(),
   });
+
+  if (Number.isFinite(assetId) && assetId > 0) {
+    const asset = await store.byId('assets', assetId);
+    if (asset) {
+      await store.update('assets', assetId, {
+        raisedAmount: Math.round((Number(asset.raisedAmount || 0) + amount) * 100) / 100,
+      });
+    }
+  }
 
   res.json({ ok: true, investment, balance: nextBalance });
 });

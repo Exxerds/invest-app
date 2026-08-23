@@ -1,17 +1,41 @@
 import React, { useState } from 'react';
 import type { Project } from '../../types';
+import type { ApiUser } from '../../api';
+import { apiAssetPulse } from '../../api';
 import { Card, Btn, Input, Select } from './ui';
 import { Trash2 } from 'lucide-react';
 import { sanitizeDecimal, sanitizeInteger, parseNumber } from '../../utils/number';
 
+function fillTone(pct: number) {
+  if (pct < 33) return { bar: 'bg-rose-500', label: 'text-rose-700' };
+  if (pct < 66) return { bar: 'bg-amber-500', label: 'text-amber-800' };
+  return { bar: 'bg-emerald-600', label: 'text-emerald-700' };
+}
+
+function remainingLabel(closesAt?: string | null) {
+  if (!closesAt) return 'No timer';
+  const ms = new Date(closesAt).getTime() - Date.now();
+  if (ms <= 0) return 'Timer ended';
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  if (d > 0) return `${d}d ${h}h left`;
+  const m = Math.floor((ms % 3600000) / 60000);
+  return `${h}h ${m}m left`;
+}
+
 export const CrmMarketsPanel: React.FC<{
   projects: Project[];
-  onUpdate?: (id: string, patch: Partial<Project>) => void;
+  users?: ApiUser[];
+  onUpdate?: (id: string, patch: Partial<Project> & { timerDays?: number }) => void;
   onDelete?: (id: string) => void;
-}> = ({ projects, onUpdate, onDelete }) => {
+  onNotify?: (m: string) => void;
+  onRefresh?: () => void;
+}> = ({ projects, users = [], onUpdate, onDelete, onNotify, onRefresh }) => {
   const [editId, setEditId] = useState<string | null>(null);
   const editing = projects.find(p => p.id === editId) || null;
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [pulse, setPulse] = useState({ assetId: '', amount: '50000', name: '', userId: '', notifyAll: false });
+  const [sending, setSending] = useState(false);
 
   const startEdit = (p: Project) => {
     setEditId(p.id);
@@ -23,9 +47,11 @@ export const CrmMarketsPanel: React.FC<{
       termMonths: String(p.termMonths ?? ''),
       minCheck: String(p.minCheck ?? ''),
       targetAmount: String(p.targetAmount ?? ''),
+      raisedAmount: String(p.raisedAmount ?? ''),
       riskLevel: p.riskLevel || 'medium',
       description: p.description || '',
       imageUrl: p.imageUrl || '',
+      timerDays: '',
     });
   };
 
@@ -33,6 +59,7 @@ export const CrmMarketsPanel: React.FC<{
 
   const save = () => {
     if (!editing) return;
+    const days = draft.timerDays === '' ? undefined : parseNumber(draft.timerDays, 0);
     onUpdate?.(editing.id, {
       title: draft.title,
       category: draft.category as Project['category'],
@@ -41,43 +68,112 @@ export const CrmMarketsPanel: React.FC<{
       termMonths: parseNumber(draft.termMonths, 0),
       minCheck: parseNumber(draft.minCheck, 0),
       targetAmount: parseNumber(draft.targetAmount, 0),
+      raisedAmount: parseNumber(draft.raisedAmount, 0),
       riskLevel: (draft.riskLevel as Project['riskLevel']) || 'medium',
       description: draft.description,
       imageUrl: draft.imageUrl,
+      ...(days !== undefined ? { timerDays: days } : {}),
     });
     setEditId(null);
   };
 
+  const clients = users.filter(u => u.role === 'CLIENT');
+
   return (
     <div className="space-y-4">
+      <Card title="Live pulse" subtitle="Show a deposit on an offer and notify the client you are sitting with">
+        <form
+          className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3"
+          onSubmit={async e => {
+            e.preventDefault();
+            if (sending || !pulse.assetId) return;
+            setSending(true);
+            try {
+              const r = await apiAssetPulse(pulse.assetId.replace(/^srv-/, ''), {
+                amount: parseNumber(pulse.amount, 0),
+                clientName: pulse.name || clients.find(c => String(c.id) === pulse.userId)?.name,
+                userId: pulse.notifyAll ? undefined : (pulse.userId ? Number(pulse.userId) : undefined),
+                notifyAll: pulse.notifyAll,
+              });
+              onNotify?.(r.message);
+              onRefresh?.();
+            } catch (err) {
+              onNotify?.(err instanceof Error ? err.message : 'Could not send the pulse');
+            } finally {
+              setSending(false);
+            }
+          }}
+        >
+          <div>
+            <label className="text-[11px] font-bold uppercase text-[#213532]/70">Offer</label>
+            <Select className="w-full mt-1" value={pulse.assetId} onChange={e => setPulse(p => ({ ...p, assetId: e.target.value }))}>
+              <option value="">Select offer…</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+            </Select>
+          </div>
+          <div>
+            <label className="text-[11px] font-bold uppercase text-[#213532]/70">Amount $</label>
+            <Input className="w-full mt-1" inputMode="decimal" value={pulse.amount} onChange={e => setPulse(p => ({ ...p, amount: sanitizeDecimal(e.target.value) }))} />
+          </div>
+          <div>
+            <label className="text-[11px] font-bold uppercase text-[#213532]/70">Display name</label>
+            <Input className="w-full mt-1" placeholder="Odyssey Jackson" value={pulse.name} onChange={e => setPulse(p => ({ ...p, name: e.target.value }))} />
+          </div>
+          <div>
+            <label className="text-[11px] font-bold uppercase text-[#213532]/70">Notify client</label>
+            <Select className="w-full mt-1" value={pulse.notifyAll ? 'all' : pulse.userId} onChange={e => {
+              if (e.target.value === 'all') setPulse(p => ({ ...p, notifyAll: true, userId: '' }));
+              else setPulse(p => ({ ...p, notifyAll: false, userId: e.target.value }));
+            }}>
+              <option value="">Nobody — only bump the bar</option>
+              <option value="all">All clients</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name} · {c.email}</option>)}
+            </Select>
+          </div>
+          <div className="md:col-span-2">
+            <Btn variant="gold" type="submit" disabled={sending || !pulse.assetId}>Send live update</Btn>
+          </div>
+        </form>
+      </Card>
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {projects.map(p => (
+        {projects.map(p => {
+          const pct = p.targetAmount > 0 ? Math.min(100, Math.round((Number(p.raisedAmount) / Number(p.targetAmount)) * 100)) : 0;
+          const tone = fillTone(pct);
+          return (
           <Card key={p.id} className="overflow-hidden">
             <div className="h-36 bg-[#F5F2E9] flex items-center justify-center text-[12px] text-[#213532]/40">
               {p.imageUrl ? (
-                <img
-                  src={p.imageUrl}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                />
-              ) : (
-                'No photo'
-              )}
+                <img src={p.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+              ) : 'No photo'}
             </div>
             <div className="p-4 space-y-2">
               <div className="font-bold text-[#1C412C]">{p.title}</div>
-              <div className="text-[12px] text-[#213532]/70">{p.categoryLabel} · {p.apr}% APR · {p.termMonths} mo · min ${Number(p.minCheck || 0).toLocaleString('en-US')} · {p.riskLevel} risk</div>
-              <p className="text-[12px] text-[#213532]/70 line-clamp-2">{p.description}</p>
+              <div className="text-[12px] text-[#213532]/70">{p.categoryLabel} · {p.apr}% APR · {p.termMonths} mo · {p.status}</div>
+              <div className="pt-1">
+                <div className="flex justify-between text-[11px] font-semibold mb-1">
+                  <span className={tone.label}>Raised ${Number(p.raisedAmount || 0).toLocaleString('en-US')}</span>
+                  <span>{pct}%</span>
+                </div>
+                <div className="h-2 bg-[#EFEAD9] rounded-full overflow-hidden">
+                  <div className={`h-full ${tone.bar}`} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="text-[11px] text-[#213532]/60 mt-1">Target ${Number(p.targetAmount || 0).toLocaleString('en-US')} · {remainingLabel(p.closesAt)}</div>
+              </div>
               <div className="flex gap-2 pt-1">
                 <Btn size="sm" variant="gold" onClick={() => startEdit(p)}>Edit</Btn>
+                <Btn size="sm" variant="ghost" onClick={() => onUpdate?.(p.id, { timerDays: 7 })}>Timer 7d</Btn>
+                {p.status === 'closed' && (
+                  <Btn size="sm" variant="success" onClick={() => onUpdate?.(p.id, { status: 'active', timerDays: 7 })}>Reopen 7d</Btn>
+                )}
                 <Btn size="sm" variant="danger" icon={Trash2} onClick={() => {
                   if (confirm(`Delete «${p.title}»?`)) onDelete?.(p.id);
                 }}>Delete</Btn>
               </div>
             </div>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       {editing && (
@@ -103,6 +199,14 @@ export const CrmMarketsPanel: React.FC<{
                 <label className="text-[11px] font-bold uppercase text-[#213532]/70">Target $</label>
                 <Input className="w-full" inputMode="decimal" value={draft.targetAmount} onChange={e => set('targetAmount', sanitizeDecimal(e.target.value))} />
               </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase text-[#213532]/70">Raised $</label>
+                <Input className="w-full" inputMode="decimal" value={draft.raisedAmount} onChange={e => set('raisedAmount', sanitizeDecimal(e.target.value))} />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase text-[#213532]/70">Timer (days, 0 = off)</label>
+                <Input className="w-full" inputMode="numeric" placeholder="e.g. 7" value={draft.timerDays} onChange={e => set('timerDays', sanitizeInteger(e.target.value))} />
+              </div>
             </div>
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Risk</label>
             <Select className="w-full" value={draft.riskLevel} onChange={e => set('riskLevel', e.target.value)}>
@@ -117,24 +221,15 @@ export const CrmMarketsPanel: React.FC<{
               <img src={draft.imageUrl} alt="" className="h-28 w-full object-cover rounded-xl border border-[#E4DECB]" />
             ) : null}
             <Input className="w-full" placeholder="https://… or upload a file" value={draft.imageUrl.startsWith('data:') ? '' : draft.imageUrl} onChange={e => set('imageUrl', e.target.value)} />
-            <input
-              type="file"
-              accept="image/*"
-              onChange={e => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                const r = new FileReader();
-                r.onload = () => set('imageUrl', String(r.result || ''));
-                r.readAsDataURL(f);
-              }}
-            />
+            <input type="file" accept="image/*" onChange={e => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              const r = new FileReader();
+              r.onload = () => set('imageUrl', String(r.result || ''));
+              r.readAsDataURL(f);
+            }} />
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Description</label>
-            <textarea
-              rows={3}
-              className="w-full px-3 py-2 border border-[#E4DECB] rounded-xl text-[13px]"
-              value={draft.description}
-              onChange={e => set('description', e.target.value)}
-            />
+            <textarea rows={3} className="w-full px-3 py-2 border border-[#E4DECB] rounded-xl text-[13px]" value={draft.description} onChange={e => set('description', e.target.value)} />
             <div className="flex justify-end gap-2 pt-2">
               <Btn variant="ghost" onClick={() => setEditId(null)}>Cancel</Btn>
               <Btn variant="gold" onClick={save}>Save</Btn>

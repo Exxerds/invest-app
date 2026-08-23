@@ -496,6 +496,7 @@ export interface ApiAsset {
   imageUrl: string;
   tags: string[];
   createdAt?: string;
+  closesAt?: string | null;
 }
 
 export const apiAssets = () =>
@@ -506,13 +507,23 @@ export const apiCreateAsset = (data: Partial<ApiAsset> & { title: string }) =>
     method: 'POST', headers: authHeader(), body: JSON.stringify(data),
   });
 
-export const apiUpdateAsset = (id: number | string, data: Partial<ApiAsset>) =>
+export const apiUpdateAsset = (id: number | string, data: Partial<ApiAsset> & { timerDays?: number }) =>
   request<{ ok: true; asset: ApiAsset }>(`/assets/${id}`, {
     method: 'PATCH', headers: authHeader(), body: JSON.stringify(data),
   });
 
 export const apiDeleteAsset = (id: number | string) =>
   request<{ ok: true }>(`/assets/${id}`, { method: 'DELETE', headers: authHeader() });
+
+export const apiAssetPulse = (id: number | string, data: {
+  amount: number;
+  clientName?: string;
+  userId?: number;
+  notifyAll?: boolean;
+}) =>
+  request<{ ok: true; asset: ApiAsset; message: string }>(`/assets/${id}/pulse`, {
+    method: 'POST', headers: authHeader(), body: JSON.stringify(data),
+  });
 
 // ---------- deposit wallets ----------
 

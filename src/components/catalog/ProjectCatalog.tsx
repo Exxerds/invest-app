@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { Project } from '../../types';
+import type { ApiNotification } from '../../api';
 import { 
   Search, 
   ShieldAlert, 
@@ -16,6 +17,7 @@ interface ProjectCatalogProps {
   /** staff only: shows the "+ Create a new asset in the CRM panel" shortcut.
    *  Clients must never see a back-office entry point. */
   canManageAssets?: boolean;
+  notifications?: ApiNotification[];
   onOpenInvestModal: (project: Project) => void;
   onSwitchToCrm: () => void;
 }
@@ -23,6 +25,7 @@ interface ProjectCatalogProps {
 export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
   projects,
   canManageAssets = false,
+  notifications = [],
   onOpenInvestModal,
   onSwitchToCrm
 }) => {
@@ -94,6 +97,18 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
         )}
       </div>
 
+      {notifications.length > 0 && (
+        <div className="bg-white border border-[#E4DECB] rounded-2xl p-4 space-y-2">
+          <div className="text-[12px] font-bold uppercase tracking-wide text-[#213532]/60">Live market updates</div>
+          {notifications.slice(0, 6).map(n => (
+            <div key={n.id} className="text-[13px] text-[#1C412C] border-t border-[#E4DECB] pt-2 first:border-0 first:pt-0">
+              <span className="font-semibold">{n.title}.</span> {n.message}
+              <span className="block text-[11px] text-[#213532]/50 mt-0.5">{new Date(n.createdAt).toLocaleString('en-US')}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Filter and search bar */}
       <div className="bg-white p-4 rounded-2xl border border-[#E4DECB] shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         {/* Category tabs */}
@@ -139,7 +154,10 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
             100,
             Math.round((project.raisedAmount / project.targetAmount) * 100)
           );
-          const isClosed = project.status === 'funded' || percentRaised >= 100;
+          const isClosed = project.status === 'funded' || project.status === 'closed' || percentRaised >= 100
+            || Boolean(project.closesAt && new Date(project.closesAt).getTime() <= Date.now());
+          const fill = percentRaised < 33 ? 'bg-rose-500' : percentRaised < 66 ? 'bg-amber-500' : 'bg-emerald-600';
+          const leftMs = project.closesAt ? new Date(project.closesAt).getTime() - Date.now() : 0;
 
           return (
             <div
@@ -221,14 +239,20 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
                     <div className="w-full bg-[#EFEAD9] h-2 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${
-                          isClosed ? 'bg-[#213532]/40' : 'bg-[#B08B48]'
+                          isClosed ? 'bg-[#213532]/40' : fill
                         }`}
                         style={{ width: `${percentRaised}%` }}
                       ></div>
                     </div>
                     <div className="flex justify-between text-[11px] text-[#213532]/60 mt-1">
                       <span>Target: ${project.targetAmount.toLocaleString('en-US')}</span>
-                      <span>{isClosed ? 'Round closed' : 'Round open'}</span>
+                      <span>
+                        {isClosed
+                          ? 'Round closed'
+                          : project.closesAt && leftMs > 0
+                          ? `${Math.floor(leftMs / 86400000)}d ${Math.floor((leftMs % 86400000) / 3600000)}h left`
+                          : 'Round open'}
+                      </span>
                     </div>
                   </div>
                 </div>
