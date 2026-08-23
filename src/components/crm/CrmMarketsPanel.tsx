@@ -242,11 +242,10 @@ export const CrmMarketsPanel: React.FC<{
                 {p.status === 'closed' && (
                   <Btn size="sm" variant="success" onClick={() => {
                     const t = tOf(p.id);
-                    if (!t.d && !t.h && !t.m) {
-                      onNotify?.('Set days, hours or minutes, then reopen');
-                      return;
-                    }
-                    onUpdate?.(p.id, { status: 'active', ...timerPatchFrom(t) });
+                    const hasTime = Boolean(t.d || t.h || t.m);
+                    onUpdate?.(p.id, hasTime
+                      ? { status: 'active', ...timerPatchFrom(t) }
+                      : { status: 'active', timerDays: 0, timerHours: 0, timerMinutes: 0 });
                   }}>Reopen</Btn>
                 )}
                 <Btn size="sm" variant="danger" icon={Trash2} onClick={() => {

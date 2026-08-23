@@ -192,6 +192,9 @@ router.patch('/:id', staffOnly, async (req, res) => {
   if (b.minCheck != null) patch.minCheck = num(b.minCheck);
   if (b.riskLevel != null) patch.riskLevel = ['low', 'medium', 'high'].includes(b.riskLevel) ? b.riskLevel : existing.riskLevel;
   if (b.status != null) patch.status = cleanStr(b.status, 20) || existing.status;
+  if (patch.status === 'active' && !hasTimer && existing.closesAt && new Date(existing.closesAt).getTime() <= Date.now()) {
+    patch.closesAt = null;
+  }
   if (b.description != null) patch.description = cleanStr(b.description, 2000);
   if (b.imageUrl != null) patch.imageUrl = cleanStr(b.imageUrl, 2_000_000);
   if (Array.isArray(b.tags)) patch.tags = b.tags.slice(0, 6).map(t => cleanStr(t, 40));
