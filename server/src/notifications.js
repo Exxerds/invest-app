@@ -87,6 +87,7 @@ export async function fireDueAppointments() {
 }
 
 /** Notifications a given user is allowed to see, newest first */
+export async function listFor(user) {
   const isStaff = user.role === 'ADMIN' || user.role === 'MANAGER';
   const rows = await store.allWhere('notifications', (n) =>
     isStaff ? n.audience === 'staff' : n.audience === 'client' && n.userId === user.id,
