@@ -429,6 +429,8 @@ router.put('/withdraw-blocks', auth, staffOnly, async (req, res) => {
 /* ---------------- staff calendar (admin + manager) ---------------- */
 
 router.get('/appointments', auth, staffOnly, async (req, res) => {
+  const { fireDueAppointments } = await import('../notifications.js');
+  await fireDueAppointments().catch(() => undefined);
   const all = await store.all('appointments');
   res.json({
     appointments: all.sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt))),

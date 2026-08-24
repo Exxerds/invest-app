@@ -51,6 +51,29 @@ export async function notify({ audience, userId, kind, title, message, link }) {
 }
 
 /** Notifications a given user is allowed to see, newest first */
+/** Bell staff when a calendar reminder is due (10 min before → 2 min after). */
+export async function fireDueAppointments() {
+  const now = Date.now();
+  const items = await store.all('appointments');
+  for (const a of items) {
+    if (a.notifiedAt) continue;
+    const t = new Date(a.startsAt).getTime();
+    if (!Number.isFinite(t)) continue;
+    if (t > now + 10 * 60000 || t < now - 2 * 60000) continue;
+    const when = new Date(a.startsAt).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    await notify({
+      audience: 'staff',
+      kind: 'calendar',
+      title: 'Scheduled reminder',
+      message: `${a.clientName} — ${a.title || 'appointment'} at ${when}${a.notes ? `. ${a.notes}` : ''}`,
+      link: 'calendar',
+    });
+    await store.update('appointments', a.id, { notifiedAt: new Date().toISOString() });
+  }
+}
+
 export async function listFor(user) {
   const isStaff = user.role === 'ADMIN' || user.role === 'MANAGER';
   const rows = await store.allWhere('notifications', (n) =>

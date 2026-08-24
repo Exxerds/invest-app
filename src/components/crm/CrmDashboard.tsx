@@ -540,7 +540,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
         if (n.userId) openUser(String(n.userId));
         else setActiveTab('users');
         break;
+      case 'calendar':
+        setActiveTab('calendar');
+        break;
       default:
+        if (n.kind === 'calendar') setActiveTab('calendar');
         break;
     }
   };

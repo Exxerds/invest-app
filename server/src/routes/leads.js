@@ -147,6 +147,17 @@ router.get('/', auth, async (req, res) => {
     leads.push(lead);
     known.add(em);
   }
+  if (req.user.role !== 'ADMIN') {
+    const mine = String(req.user.name || '').toLowerCase();
+    const myId = Number(req.user.id);
+    leads = leads.filter(l => {
+      const mgr = String(l.manager || '').toLowerCase();
+      if (mgr && (mgr === mine || mgr.includes(mine) || mine.includes(mgr))) return true;
+      const client = clients.find(u => emailOf(u.email) && emailOf(u.email) === emailOf(l.email));
+      if (client && Number(client.assignedManagerId) === myId) return true;
+      return false;
+    });
+  }
   res.json({ leads: leads.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
 });
 
