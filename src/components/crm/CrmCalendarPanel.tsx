@@ -74,7 +74,7 @@ export const CrmCalendarPanel: React.FC<{
     <div className="space-y-4">
       <Card title="New reminder" subtitle="Pick a client and a time — click their name later to open the profile">
         <form
-          className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3"
+          className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3"
           onSubmit={async e => {
             e.preventDefault();
             if (!clientId || !when || saving) return;
@@ -98,7 +98,14 @@ export const CrmCalendarPanel: React.FC<{
           <div>
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Find client</label>
             <Input className="w-full mt-1" placeholder="Name or email…" value={query} onChange={e => setQuery(e.target.value)} />
-            <Select className="w-full mt-2" value={clientId} onChange={e => setClientId(e.target.value)}>
+          </div>
+          <div>
+            <label className="text-[11px] font-bold uppercase text-[#213532]/70">Date & time</label>
+            <Input className="w-full mt-1" type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-[11px] font-bold uppercase text-[#213532]/70">Client</label>
+            <Select className="w-full mt-1" value={clientId} onChange={e => setClientId(e.target.value)}>
               <option value="">Select client…</option>
               {filteredClients.map(c => (
                 <option key={c.id} value={c.id}>{c.name} · {c.email}</option>
@@ -106,9 +113,7 @@ export const CrmCalendarPanel: React.FC<{
             </Select>
           </div>
           <div>
-            <label className="text-[11px] font-bold uppercase text-[#213532]/70">Date & time</label>
-            <Input className="w-full mt-1" type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} />
-            <label className="text-[11px] font-bold uppercase text-[#213532]/70 mt-2 block">Note</label>
+            <label className="text-[11px] font-bold uppercase text-[#213532]/70">Note</label>
             <Input className="w-full mt-1" placeholder="Call, KYC, deposit…" value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
           <div className="md:col-span-2">
