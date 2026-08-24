@@ -249,6 +249,7 @@ async function start() {
     if (process.env.SEED_DEMO !== 'off') await seedUsers();
 
     console.log(`🗄  Storage backend: ${describeBackend()}`);
+    console.log(`[calls] ICE relay: ${process.env.TURN_URL && process.env.TURN_USER ? 'TURN configured' : 'STUN only — configure TURN for calls across strict NATs'}`);
 
     // '::' accepts both IPv6 (::1) and IPv4 (127.0.0.1) on all platforms
     const server = app.listen(PORT, '::', () => {
