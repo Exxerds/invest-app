@@ -534,7 +534,10 @@ export const CrmCalendarPanel: React.FC<{
                         const appointment = segment.appointment;
                         const selected = selectedEventId === appointment.id;
                         const dimmed = selectedEventId !== null && !selected;
-                        const top = ((segment.start.getTime() - slotDate(dayKey, CALENDAR_START_HOUR).getTime()) / 3_600_000) * HOUR_HEIGHT;
+                        // The event is rendered inside its starting hour row,
+                        // so the vertical offset must be measured from that row,
+                        // not from 08:00. Otherwise a 09:30 event appears at 10:30.
+                        const top = ((segment.start.getTime() - slotDate(dayKey, h).getTime()) / 3_600_000) * HOUR_HEIGHT;
                         const height = Math.max(40, ((segment.end.getTime() - segment.start.getTime()) / 3_600_000) * HOUR_HEIGHT);
                         const width = 100 / segment.totalColumns;
                         const color = EVENT_PALETTE[(appointment.id - 1) % EVENT_PALETTE.length];
