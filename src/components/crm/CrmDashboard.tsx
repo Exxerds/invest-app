@@ -889,9 +889,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     </Btn>
                   </>
                 )}
+                {activeTab === 'markets' && (
                 <Btn variant="ghost" icon={Plus} onClick={onOpenNewProjectModal}>
                   New asset
                 </Btn>
+                )}
               </div>
             </div>
           )}
