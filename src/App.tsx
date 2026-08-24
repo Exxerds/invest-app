@@ -60,8 +60,19 @@ function legalSlugFromPath(path: string): LegalSlug | null {
   return m ? (m[1] as LegalSlug) : null;
 }
 
+function initialTab(): ActiveTab {
+  if (typeof window === 'undefined') return 'landing';
+  if (window.location.pathname === '/confirm-email') return 'investor';
+  if (getToken()) {
+    const saved = localStorage.getItem(TAB_KEY) as ActiveTab | null;
+    if (saved && saved !== 'landing') return saved;
+    return 'investor';
+  }
+  return 'landing';
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('landing');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   const [legalSlug, setLegalSlug] = useState<LegalSlug | null>(() => legalSlugFromPath(window.location.pathname));
 
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
@@ -1215,7 +1226,7 @@ export default function App() {
           <LegalPage slug={legalSlug} onBack={closeLegal} onOpen={openLegal} />
         )}
 
-        {activeTab === 'landing' && !legalSlug && (
+        {activeTab === 'landing' && !legalSlug && !getToken() && (
           <LandingPage
             onOpenLoginModal={() => setIsLoginModalOpen(true)}
             onOpenRegisterModal={() => setIsRegisterModalOpen(true)}

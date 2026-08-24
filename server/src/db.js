@@ -59,7 +59,7 @@ async function getPool() {
  * so both backends behave the same and no migration is needed when the
  * shape of a record changes.
  */
-const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactions', 'leads', 'settings', 'notes', 'messages', 'activity', 'calls', 'signals', 'pushSubs', 'investments', 'assets'];
+const TABLES = ['users', 'tokens', 'kyc', 'notifications', 'trades', 'transactions', 'leads', 'settings', 'notes', 'messages', 'activity', 'calls', 'signals', 'pushSubs', 'investments', 'assets', 'appointments'];
 
 async function ensureSchema() {
   if (g.__ohySchema) return g.__ohySchema;

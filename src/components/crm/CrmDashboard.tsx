@@ -59,6 +59,7 @@ import {
   IdCard,
   Briefcase,
   Trash2,
+  Calendar,
 } from 'lucide-react';
 import { CrmTradesManager } from './CrmTradesManager';
 import type { AdminTrade } from './CrmTradesManager';
@@ -68,6 +69,7 @@ import { ImportLeadsModal } from '../modals/ImportLeadsModal';
 import { CreateClientModal } from '../modals/CreateClientModal';
 import { StatementModal } from '../modals/StatementModal';
 import { CrmMarketsPanel } from './CrmMarketsPanel';
+import { CrmCalendarPanel } from './CrmCalendarPanel';
 import { Upload, Menu } from 'lucide-react';
 
 type CrmTab =
@@ -86,6 +88,7 @@ type CrmTab =
   | 'analytics'
   | 'client-cards'
   | 'markets'
+  | 'calendar'
   | 'settings';
 
 interface CrmDashboardProps {
@@ -187,6 +190,7 @@ const MAIN_NAV: NavItem[] = [
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'support', label: 'Support', icon: LifeBuoy },
   { id: 'calls', label: 'Calls', icon: PhoneCall },
+  { id: 'calendar', label: 'Calendar', icon: Calendar },
   { id: 'markets', label: 'Markets', icon: Briefcase },
   { id: 'banks', label: 'Partner banks', icon: Landmark, adminOnly: true },
   { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
@@ -209,6 +213,7 @@ const TAB_TITLES: Record<CrmTab, { title: string; sub: string }> = {
   analytics: { title: 'Analytics', sub: 'Base quality, managers and trading stats' },
   settings: { title: 'Settings', sub: 'Global platform and CRM rules' },
   markets: { title: 'Markets', sub: 'Create, edit and remove tradable assets' },
+  calendar: { title: 'Calendar', sub: 'Reminders and call times — click a client to open their card' },
 };
 
 export const CrmDashboard: React.FC<CrmDashboardProps> = ({
@@ -606,8 +611,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
             cabinet. The crest is green, so it must sit on the cream disc
             to stay visible against the dark-green sidebar. */}
         <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/10">
-          <div className="w-14 h-14 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0 overflow-hidden">
-            <OakCrest size={56} />
+          <div className="w-16 h-16 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0 overflow-hidden">
+            <OakCrest size={64} />
           </div>
             <div className="leading-tight">
               <OakWordmark tone="light" />
@@ -807,6 +812,13 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               className="w-9 h-9 rounded-full bg-[#1C412C]/[.06] border border-[#E4DECB] flex items-center justify-center text-[#213532]/70 hover:text-[#1C412C] hover:bg-[#1C412C]/[.12] cursor-pointer"
             >
               <Phone className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setActiveTab('calendar')}
+              title="Calendar"
+              className="w-9 h-9 rounded-full bg-[#1C412C]/[.06] border border-[#E4DECB] flex items-center justify-center text-[#213532]/70 hover:text-[#1C412C] hover:bg-[#1C412C]/[.12] cursor-pointer"
+            >
+              <Calendar className="w-4 h-4" />
             </button>
 
             {/* Profile menu */}
@@ -1632,6 +1644,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
 
           {/* ===================== ANALYTICS ===================== */}
           {activeTab === 'analytics' && <AnalyticsPanel onNotify={onNotify} />}
+
+          {activeTab === 'calendar' && (
+            <CrmCalendarPanel
+              users={users}
+              onNotify={onNotify}
+              onOpenClient={(userId) => openUser(String(userId))}
+            />
+          )}
 
           {activeTab === 'markets' && (
             <CrmMarketsPanel

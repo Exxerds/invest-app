@@ -988,3 +988,40 @@ export const apiSupportRead = (clientId: number) =>
 
 export const apiSupportPresence = () =>
   request<{ ok: true }>('/support/presence', { method: 'POST', headers: authHeader() });
+
+// ---------- staff calendar ----------
+
+export interface ApiAppointment {
+  id: number;
+  clientId: number;
+  clientName: string;
+  clientEmail?: string;
+  title: string;
+  notes?: string;
+  startsAt: string;
+  endsAt: string;
+  createdById?: number;
+  createdByName?: string;
+}
+
+export const apiAppointments = () =>
+  request<{ appointments: ApiAppointment[] }>('/workspace/appointments', { headers: authHeader() });
+
+export const apiCreateAppointment = (data: {
+  clientId: number;
+  startsAt: string;
+  endsAt?: string;
+  title?: string;
+  notes?: string;
+}) =>
+  request<{ ok: true; appointment: ApiAppointment }>('/workspace/appointments', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify(data),
+  });
+
+export const apiDeleteAppointment = (id: number) =>
+  request<{ ok: true }>(`/workspace/appointments/${id}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  });

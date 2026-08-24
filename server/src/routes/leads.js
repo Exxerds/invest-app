@@ -124,9 +124,28 @@ router.post('/public', async (req, res) => {
 
 router.get('/', auth, async (req, res) => {
   let leads = await store.all('leads');
-  if (req.user.role !== 'ADMIN') {
-    const mine = String(req.user.name || '').toLowerCase();
-    leads = leads.filter(l => String(l.manager || '').toLowerCase() === mine);
+  const users = await store.all('users');
+  const clients = users.filter(u => u.role === 'CLIENT');
+  const emailOf = (v) => String(v || '').trim().toLowerCase();
+  const known = new Set(leads.map(l => emailOf(l.email)).filter(Boolean));
+  for (const u of clients) {
+    const em = emailOf(u.email);
+    if (!em || known.has(em)) continue;
+    const lead = await store.insert('leads', {
+      name: u.name,
+      phone: u.phone || '',
+      email: u.email,
+      potentialAmount: Number(u.balance) || 0,
+      stage: 'active',
+      notes: 'Synced from registered client',
+      manager: u.assignedManagerName || '',
+      comments: [],
+      source: 'client-sync',
+      createdBy: 'system',
+      createdAt: u.created_at || new Date().toISOString(),
+    });
+    leads.push(lead);
+    known.add(em);
   }
   res.json({ leads: leads.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
 });
