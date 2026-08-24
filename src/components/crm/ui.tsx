@@ -31,8 +31,8 @@ export const Card: React.FC<{
     className={`bg-white border border-[#E4DECB] rounded-2xl shadow-sm ${className}`}
   >
     {(title || actions) && (
-      <div className="px-5 py-4 border-b border-[#E4DECB] flex items-center justify-between gap-3">
-        <div>
+      <div className="px-5 py-4 border-b border-[#E4DECB] flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           {title && <h3 className="text-[15px] font-semibold text-[#1C412C]">{title}</h3>}
           {subtitle && <p className="text-[11px] text-[#213532]/70 mt-0.5">{subtitle}</p>}
         </div>

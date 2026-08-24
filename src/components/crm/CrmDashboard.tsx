@@ -716,8 +716,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
       {/* ==================== MAIN ==================== */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Topbar */}
-        <header className="h-16 shrink-0 border-b border-[#E4DECB] bg-white/90 backdrop-blur sticky top-0 z-30 flex items-center justify-between px-5 shadow-sm">
-          <div className="flex items-center gap-2 text-[11px] text-[#213532]/70">
+        <header className="h-16 shrink-0 border-b border-[#E4DECB] bg-white/90 backdrop-blur sticky top-0 z-30 flex items-center justify-between gap-2 px-3 sm:px-5 shadow-sm">
+          <div className="min-w-0 flex-1 flex items-center gap-2 text-[11px] text-[#213532]/70">
             {/* burger — opens the drawer on phones */}
             <button
               onClick={() => setNavOpen(true)}
@@ -728,14 +728,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('dashboard')}
-              className="hover:text-[#1C412C] font-medium cursor-pointer"
+              className="hover:text-[#1C412C] font-medium cursor-pointer max-[400px]:hidden"
             >
               Home
             </button>
-            <ChevronRight className="w-3 h-3" />
+            <ChevronRight className="w-3 h-3 max-[400px]:hidden" />
             <span className="px-2 py-1 rounded-lg bg-[#1C412C]/[.06] text-[#1C412C] font-semibold">{header.title}</span>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2.5">
             {/* Notifications */}
             <div className="relative" ref={bellRef}>
               <button
@@ -744,14 +744,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               >
                 <Bell className="w-4 h-4" />
                 {(unreadCount > 0 || pendingRequestsCount > 0) && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[#B08B48] text-[9px] font-extrabold text-white flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#B08B48] text-[9px] leading-none font-extrabold text-white flex items-center justify-center whitespace-nowrap ring-2 ring-white z-10">
                     {unreadCount || pendingRequestsCount}
                   </span>
                 )}
               </button>
               {bellOpen && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-[#E4DECB] rounded-xl shadow-2xl py-2 z-50">
-                  <div className="px-4 py-2 flex items-center justify-between border-b border-[#E4DECB]">
+                <div className="crm-notification-popover absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-white border border-[#E4DECB] rounded-xl shadow-2xl py-2 z-50">
+                  <div className="px-4 py-2 flex items-center justify-between gap-2 border-b border-[#E4DECB]">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#213532]/60">
                       Notifications
                     </span>
@@ -765,7 +765,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     )}
                   </div>
 
-                  <div className="max-h-80 overflow-y-auto divide-y divide-[#E4DECB]/60">
+                  <div className="crm-notification-list max-h-80 overflow-y-auto divide-y divide-[#E4DECB]/60">
                     {/* live events from the server */}
                     {notifications.map(n => (
                       <button
@@ -775,14 +775,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                           handleNotificationNav(n);
                           setBellOpen(false);
                         }}
-                        className={`w-full flex items-start gap-2.5 px-4 py-2.5 text-left cursor-pointer hover:bg-[#F2EEDF] ${
+                        className={`w-full grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-2.5 px-4 py-2.5 text-left cursor-pointer hover:bg-[#F2EEDF] ${
                           n.read ? 'opacity-60' : ''
                         }`}
                       >
                         <FileText className="w-4 h-4 text-[#B08B48] shrink-0 mt-0.5" />
                         <span className="min-w-0">
-                          <span className="block text-[12.5px] text-[#1C412C] font-semibold">{n.title}</span>
-                          <span className="block text-[11px] text-[#213532]/70">{n.message}</span>
+                          <span className="block min-w-0 break-words text-[12.5px] text-[#1C412C] font-semibold">{n.title}</span>
+                          <span className="block min-w-0 break-words text-[11px] text-[#213532]/70">{n.message}</span>
                           <span className="block text-[10px] text-[#213532]/50 mt-0.5">
                             {new Date(n.createdAt).toLocaleString('en-US')}
                           </span>
@@ -799,10 +799,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                       <button
                         key={n.t}
                         onClick={() => { setActiveTab(n.tab); setBellOpen(false); }}
-                        className="w-full flex items-start gap-2.5 px-4 py-2.5 text-left text-[12.5px] text-[#213532] hover:bg-[#F2EEDF] cursor-pointer"
+                        className="w-full grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-2.5 px-4 py-2.5 text-left text-[12.5px] text-[#213532] hover:bg-[#F2EEDF] cursor-pointer"
                       >
                         <n.icon className="w-4 h-4 text-[#213532]/50 shrink-0 mt-0.5" />
-                        {n.t}
+                        <span className="min-w-0 break-words">{n.t}</span>
                       </button>
                     ))}
                   </div>

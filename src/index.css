@@ -74,3 +74,21 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* CRM notification panel: keep the menu inside a phone viewport instead of
+   letting the desktop-width popover hang off the left edge. */
+@media (max-width: 640px) {
+  .crm-notification-popover {
+    position: fixed;
+    top: 4.25rem;
+    right: 0.75rem;
+    left: 0.75rem;
+    width: auto;
+    max-width: none;
+    margin-top: 0;
+  }
+
+  .crm-notification-list {
+    max-height: calc(100dvh - 9rem);
+  }
+}
