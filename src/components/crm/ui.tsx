@@ -142,9 +142,13 @@ export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = (
   const options = useMemo<StyledSelectOption[]>(() => React.Children.toArray(children)
     .flatMap(child => {
       if (!React.isValidElement<React.OptionHTMLAttributes<HTMLOptionElement>>(child) || child.type !== 'option') return [];
+      const label = child.props.children;
+      const value = child.props.value == null
+        ? typeof label === 'string' || typeof label === 'number' ? String(label) : ''
+        : String(child.props.value);
       return [{
-        value: String(child.props.value ?? ''),
-        label: child.props.children,
+        value,
+        label,
         disabled: Boolean(child.props.disabled),
       }];
     }), [children]);
