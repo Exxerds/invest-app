@@ -50,31 +50,43 @@ export async function notify({ audience, userId, kind, title, message, link }) {
   return record;
 }
 
-/** Notifications a given user is allowed to see, newest first */
-/** Bell staff when a calendar reminder is due (10 min before → 2 min after). */
+/** Remind staff 1 day, 3 hours and 10 minutes before a calendar slot. */
 export async function fireDueAppointments() {
   const now = Date.now();
+  const stages = [
+    { key: '1d', ms: 24 * 3600000, label: 'in 1 day' },
+    { key: '3h', ms: 3 * 3600000, label: 'in 3 hours' },
+    { key: '10m', ms: 10 * 60000, label: 'in 10 minutes' },
+  ];
   const items = await store.all('appointments');
   for (const a of items) {
-    if (a.notifiedAt) continue;
     const t = new Date(a.startsAt).getTime();
     if (!Number.isFinite(t)) continue;
-    if (t > now + 10 * 60000 || t < now - 2 * 60000) continue;
+    if (t < now - 2 * 60000) continue;
+    const done = { ...(a.notifiedStages || {}) };
+    if (a.notifiedAt && !done['10m']) done['10m'] = true;
     const when = new Date(a.startsAt).toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
-    await notify({
-      audience: 'staff',
-      kind: 'calendar',
-      title: 'Scheduled reminder',
-      message: `${a.clientName} — ${a.title || 'appointment'} at ${when}${a.notes ? `. ${a.notes}` : ''}`,
-      link: 'calendar',
-    });
-    await store.update('appointments', a.id, { notifiedAt: new Date().toISOString() });
+    let changed = false;
+    for (const s of stages) {
+      if (done[s.key]) continue;
+      if (t - now > s.ms) continue;
+      await notify({
+        audience: 'staff',
+        kind: 'calendar',
+        title: `Calendar reminder — ${s.label}`,
+        message: `${a.clientName} — ${a.title || 'appointment'} at ${when}${a.notes ? `. ${a.notes}` : ''}`,
+        link: 'calendar',
+      });
+      done[s.key] = true;
+      changed = true;
+    }
+    if (changed) await store.update('appointments', a.id, { notifiedStages: done });
   }
 }
 
-export async function listFor(user) {
+/** Notifications a given user is allowed to see, newest first */
   const isStaff = user.role === 'ADMIN' || user.role === 'MANAGER';
   const rows = await store.allWhere('notifications', (n) =>
     isStaff ? n.audience === 'staff' : n.audience === 'client' && n.userId === user.id,
