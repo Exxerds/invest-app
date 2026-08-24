@@ -102,7 +102,7 @@ export const Field: React.FC<{ label: string; children: React.ReactNode; classNa
 }) => (
   <div className={`flex items-center justify-between gap-4 py-3.5 border-b border-[#E4DECB] last:border-0 ${className}`}>
     <span className="text-[13px] text-[#213532]/70 shrink-0">{label}</span>
-    <div className="text-[13px] text-[#213532] font-medium text-right min-w-0 truncate">{children}</div>
+    <div className="text-[13px] text-[#213532] font-medium text-right min-w-0">{children}</div>
   </div>
 );
 
