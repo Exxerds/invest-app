@@ -31,6 +31,12 @@ export interface AdminTrade {
 interface CrmTradesManagerProps {
   investors: Investor[];
   trades: AdminTrade[];
+  /** deep link: parent tells us WHICH client to open with (e.g. from a
+   *  client card, user details, or a staff notification) */
+  focusInvestorId?: string | null;
+  /** CRM rule: when the "manual closing" setting is off, only the
+   *  administrator may open / edit / close client positions. */
+  canManageTrades?: boolean;
   onUpdateInvestorBalance: (investorId: string, newBalance: number) => void;
   onCreateTrade: (trade: Omit<AdminTrade, 'id' | 'status'>) => void;
   onUpdateTrade: (tradeId: string, patch: Partial<AdminTrade>) => void;
@@ -62,6 +68,8 @@ const Modal: React.FC<{ title: string; subtitle?: string; onClose: () => void; c
 export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
   investors,
   trades,
+  focusInvestorId,
+  canManageTrades = true,
   onUpdateInvestorBalance,
   onCreateTrade,
   onUpdateTrade,
@@ -72,6 +80,19 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
 
   const [balanceInputStr, setBalanceInputStr] = useState<string>(String(selectedInvestor?.balance || 0));
   const [isEditingBalance, setIsEditingBalance] = useState(false);
+
+  // Deep link: parent asked to open the Trading tab with a SPECIFIC client
+  // (from a client card / user details / staff notification). Honour it
+  // instead of silently landing on the first client in the list.
+  useEffect(() => {
+    if (!focusInvestorId) return;
+    const target = investors.find(i => i.id === focusInvestorId);
+    if (target) {
+      setSelectedInvestorId(target.id);
+      setBalanceInputStr(String(target.balance ?? 0));
+      setIsEditingBalance(false);
+    }
+  }, [focusInvestorId, investors]);
 
   /**
    * The client list arrives from the server after mount (and can change
@@ -92,8 +113,9 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
   const [type, setType] = useState<'LONG' | 'SHORT' | 'SPOT'>('LONG');
   const [amountStr, setAmountStr] = useState('15000');
   const [entryPriceStr, setEntryPriceStr] = useState('62400');
-  const [leverageStr, setLeverageStr] = useState('10');
-  const [pnlStr, setPnlStr] = useState('1450');
+  const [leverageStr, setLeverageStr] = useState(String(selectedInvestor?.defaultLeverage || 10));
+  const [pnlStr, setPnlStr] = useState('0');
+  const [openedAtStr, setOpenedAtStr] = useState('');
 
   const [editingTrade, setEditingTrade] = useState<AdminTrade | null>(null);
   // Full trade editor (PDF p.10 "Full control over the position")
@@ -148,13 +170,45 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
     setMarginManual(!!t.margin || !!t.liquidationPrice);
   };
 
-  const clientTrades = trades.filter(t => t.investorId === selectedInvestorId);
+  const selectedBare = String(selectedInvestorId || '').replace(/^acc-/, '');
+  const clientTrades = trades.filter(t => {
+    const id = String(t.investorId || '').replace(/^acc-/, '');
+    return id === selectedBare || t.investorId === selectedInvestorId;
+  });
+  const livePnlOf = (t: AdminTrade) => {
+    const entry = Number(t.entryPrice) || 0;
+    if (t.status !== 'OPEN' || !(entry > 0)) return Number(t.pnl) || 0;
+    const units = (Number(t.amount) || 0) / entry;
+    const dir = t.type === 'SHORT' ? -1 : 1;
+    return Math.round((Number(t.currentPrice) - entry) * units * dir * 100) / 100;
+  };
+  const investedNow = clientTrades.filter(t => t.status === 'OPEN').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const totalClientPnl = clientTrades.reduce((s, t) => s + livePnlOf(t), 0);
+  const fmtOpened = (iso?: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
 
   const handleSaveBalance = () => {
     if (selectedInvestor) {
       onUpdateInvestorBalance(selectedInvestor.id, parseNumber(balanceInputStr, 0));
       setIsEditingBalance(false);
     }
+  };
+
+  const computePnl = (entry: number, current: number, amount: number, side: string) => {
+    if (!(entry > 0)) return 0;
+    const units = amount / entry;
+    const dir = side === 'SHORT' ? -1 : 1;
+    return Math.round((current - entry) * units * dir * 100) / 100;
+  };
+  const currentFromPnl = (entry: number, pnl: number, amount: number, side: string) => {
+    if (!(entry > 0) || !(amount > 0)) return entry;
+    const units = amount / entry;
+    const dir = side === 'SHORT' ? -1 : 1;
+    return Math.round((entry + pnl / (units * dir)) * 1000000) / 1000000;
   };
 
   const handleCreateTradeSubmit = (e: React.FormEvent) => {
@@ -166,9 +220,10 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
       type,
       amount: parseNumber(amountStr, 0),
       entryPrice: entry,
-      currentPrice: entry * 1.05,
-      leverage: parseNumber(leverageStr, 1),
+      currentPrice: entry,
+      leverage: parseNumber(leverageStr, selectedInvestor?.defaultLeverage || 1),
       pnl: parseNumber(pnlStr, 0),
+      openedAt: openedAtStr ? new Date(openedAtStr).toISOString() : new Date().toISOString(),
     });
     setShowNewTradeModal(false);
   };
@@ -244,8 +299,8 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
             </div>
           )}
         </Card>
-        <Kpi icon={Wallet} label="Invested / in trades" value={`$${(selectedInvestor?.invested || 0).toLocaleString('en-US')}`} tone="blue" />
-        <Kpi icon={TrendingUp} label="Total client PnL" value={`+$${(selectedInvestor?.totalProfit || 0).toLocaleString('en-US')}`} tone="green" />
+        <Kpi icon={Wallet} label="Invested / in trades" value={`$${investedNow.toLocaleString('en-US')}`} tone="blue" />
+        <Kpi icon={TrendingUp} label="Total client PnL" value={`${totalClientPnl >= 0 ? '+' : ''}$${totalClientPnl.toLocaleString('en-US')}`} tone={totalClientPnl >= 0 ? 'green' : 'red'} />
       </div>
 
       {/* Positions */}
@@ -253,9 +308,22 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
         title={`Positions — ${selectedInvestor?.name}`}
         subtitle="Edit side, open time, entry / mark price, leverage and PnL — or force close"
         actions={
-          <Btn variant="gold" icon={Plus} onClick={() => setShowNewTradeModal(true)}>
-            Open trade for client
-          </Btn>
+          canManageTrades ? (
+            <Btn variant="gold" icon={Plus} onClick={() => {
+              setOpenedAtStr(toLocalInput());
+              setLeverageStr(String(selectedInvestor?.defaultLeverage || 10));
+              setShowNewTradeModal(true);
+            }}>
+              Open trade for client
+            </Btn>
+          ) : (
+            <span
+              title="Only the administrator can manage client positions — the setting «Allow manual position closing by clients» is off"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#213532]/[.06] border border-[#E4DECB] text-[11px] font-semibold text-[#213532]/60 cursor-not-allowed"
+            >
+              🔒 Admin only
+            </span>
+          )
         }
       >
         <div className="overflow-x-auto">
@@ -266,13 +334,23 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                 <Th>Side</Th>
                 <Th>Amount</Th>
                 <Th>Entry / Leverage</Th>
+                <Th>Opened</Th>
                 <Th>PnL</Th>
                 <Th>Status</Th>
                 <Th className="text-right">Control</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E4DECB]">
-              {clientTrades.map(t => (
+              {clientTrades.map(t => {
+                // Open positions tick live — recompute PnL from the mark
+                const livePnl = (() => {
+                  const entry = Number(t.entryPrice) || 0;
+                  if (t.status !== 'OPEN' || !(entry > 0)) return Number(t.pnl) || 0;
+                  const units = (Number(t.amount) || 0) / entry;
+                  const dir = t.type === 'SHORT' ? -1 : 1;
+                  return Math.round((Number(t.currentPrice) - entry) * units * dir * 100) / 100;
+                })();
+                return (
                 <tr key={t.id} className="hover:bg-[#F2EEDF]/50 transition-colors">
                   <Td className="font-semibold text-[#1C412C]">{t.asset}</Td>
                   <Td>
@@ -283,31 +361,42 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                     <div className="text-[12px] text-[#213532]">${t.entryPrice.toLocaleString('en-US')}</div>
                     <div className="text-[11px] text-[#213532]/60">Leverage {t.leverage}x</div>
                   </Td>
-                  <Td>
-                    <span className={`font-extrabold ${t.pnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {t.pnl >= 0 ? '+' : ''}
-                      {t.pnl.toLocaleString('en-US')} $
-                    </span>
-                  </Td>
+                  <Td className="text-[11px] text-[#213532]/70 whitespace-nowrap">{fmtOpened(t.openedAt)}</Td>
+                    <Td>
+                      <span className={`font-extrabold ${livePnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {livePnl >= 0 ? '+' : ''}
+                        {livePnl.toLocaleString('en-US')} $
+                      </span>
+                    </Td>
                   <Td>
                     <Badge tone={t.status === 'OPEN' ? 'gold' : 'gray'}>{t.status}</Badge>
                   </Td>
                   <Td className="text-right">
                     {t.status === 'OPEN' ? (
-                      <div className="flex items-center justify-end gap-2">
-                        <Btn size="sm" variant="ghost" icon={Edit3} onClick={() => openEditor(t)}>
-                          Edit trade
-                        </Btn>
-                        <Btn size="sm" variant="danger" onClick={() => onCloseTrade(t.id)}>
-                          Close
-                        </Btn>
-                      </div>
+                      canManageTrades ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <Btn size="sm" variant="ghost" icon={Edit3} onClick={() => openEditor(t)}>
+                            Edit trade
+                          </Btn>
+                          <Btn size="sm" variant="danger" onClick={() => onCloseTrade(t.id)}>
+                            Close
+                          </Btn>
+                        </div>
+                      ) : (
+                        <span
+                          title="Only the administrator can manage positions while the setting is off"
+                          className="inline-flex items-center px-2.5 py-1 rounded-lg bg-[#213532]/[.06] text-[11px] font-semibold text-[#213532]/55 cursor-not-allowed"
+                        >
+                          🔒 Admin only
+                        </span>
+                      )
                     ) : (
                       <span className="text-[11px] text-[#213532]/60">Completed</span>
                     )}
                   </Td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           {clientTrades.length === 0 && (
@@ -392,7 +481,13 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                   type="text"
                   inputMode="decimal"
                   value={editForm.entryPrice}
-                  onChange={e => setEditForm(f => ({ ...f, entryPrice: sanitizeDecimal(e.target.value) }))}
+                  onChange={e => setEditForm(f => {
+                    const entryPrice = sanitizeDecimal(e.target.value);
+                    const entry = parseNumber(entryPrice, 0);
+                    const current = parseNumber(f.currentPrice, 0);
+                    const amount = parseNumber(f.amount, 0);
+                    return { ...f, entryPrice, pnl: String(computePnl(entry, current, amount, f.type)) };
+                  })}
                   className="w-full"
                 />
               </div>
@@ -402,7 +497,13 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                   type="text"
                   inputMode="decimal"
                   value={editForm.currentPrice}
-                  onChange={e => setEditForm(f => ({ ...f, currentPrice: sanitizeDecimal(e.target.value) }))}
+                  onChange={e => setEditForm(f => {
+                    const currentPrice = sanitizeDecimal(e.target.value);
+                    const current = parseNumber(currentPrice, 0);
+                    const entry = parseNumber(f.entryPrice, 0);
+                    const amount = parseNumber(f.amount, 0);
+                    return { ...f, currentPrice, pnl: String(computePnl(entry, current, amount, f.type)) };
+                  })}
                   className="w-full"
                 />
               </div>
@@ -415,7 +516,13 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
                 type="text"
                 inputMode="decimal"
                 value={editForm.pnl}
-                onChange={e => setEditForm(f => ({ ...f, pnl: e.target.value.replace(/[^0-9.-]/g, '').replace(/^0+(?=\d)/, '') }))}
+                onChange={e => setEditForm(f => {
+                  const pnl = e.target.value.replace(/[^0-9.-]/g, '').replace(/^0+(?=\d)/, '');
+                  const entry = parseNumber(f.entryPrice, 0);
+                  const amount = parseNumber(f.amount, 0);
+                  const currentPrice = String(currentFromPnl(entry, parseNumber(pnl, 0), amount, f.type));
+                  return { ...f, pnl, currentPrice };
+                })}
                 className={`w-full text-lg font-extrabold ${
                   editNumPnl >= 0 ? 'text-emerald-700' : 'text-rose-700'
                 }`}
@@ -556,6 +663,20 @@ export const CrmTradesManager: React.FC<CrmTradesManagerProps> = ({
               <div>
                 <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Leverage (x)</label>
                 <Input type="text" inputMode="numeric" placeholder="Leverage" value={leverageStr} onChange={e => setLeverageStr(sanitizeInteger(e.target.value))} className="w-full" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase text-[#213532]/70 mb-1.5">Opening time</label>
+              <div className="flex gap-2">
+                <Input
+                  type="datetime-local"
+                  value={openedAtStr}
+                  onChange={e => setOpenedAtStr(e.target.value)}
+                  className="flex-1"
+                />
+                <Btn type="button" variant="ghost" onClick={() => setOpenedAtStr(toLocalInput())}>
+                  Now
+                </Btn>
               </div>
             </div>
             <div>

@@ -69,6 +69,12 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!(amount > 0)) return;
+    // Without a wallet address there is nowhere to send the money —
+    // filing a request would produce work without payment details.
+    if (isCrypto && !address) {
+      setError('No wallet address is attached to your account yet. Contact support — they will assign one, then you can deposit.');
+      return;
+    }
     setSending(true);
     setError(null);
     try {
@@ -213,13 +219,16 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                   </div>
                 ) : (
                   <div className="px-3 py-2.5 bg-amber-500/10 border border-amber-500/25 rounded-xl text-[12px] text-amber-800">
-                    No {cryptoType} address configured yet. Please contact your advisor for payment details.
+                    <strong>No {cryptoType} address configured yet.</strong> Please contact support — they will
+                    attach a payment address to your account. Until then deposits are unavailable.
                   </div>
                 )}
-                <p className="text-[11px] text-[#213532]/60 mt-1.5">
-                  Send exactly ${amount ? amount.toLocaleString('en-US') : '0'} worth of {cryptoType} to this
-                  address, then submit the request below.
-                </p>
+                {address && (
+                  <p className="text-[11px] text-[#213532]/60 mt-1.5">
+                    Send exactly ${amount ? amount.toLocaleString('en-US') : '0'} worth of {cryptoType} to this
+                    address, then submit the request below.
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -248,11 +257,12 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={sending}
-              className="px-5 py-2 rounded-xl bg-[#1C412C] hover:bg-[#245238] disabled:opacity-60 text-[#F5F2E9] text-sm font-bold shadow-sm cursor-pointer flex items-center gap-2"
+              disabled={sending || (isCrypto && !address)}
+              title={isCrypto && !address ? 'No wallet address attached — contact support first' : undefined}
+              className="px-5 py-2 rounded-xl bg-[#1C412C] hover:bg-[#245238] disabled:opacity-50 disabled:cursor-not-allowed text-[#F5F2E9] text-sm font-bold shadow-sm cursor-pointer flex items-center gap-2"
             >
               {sending && <Loader2 className="w-4 h-4 animate-spin" />}
-              {sending ? 'Submitting...' : 'Submit request'}
+              {sending ? 'Submitting...' : isCrypto && !address ? 'Address required' : 'Submit request'}
             </button>
           </div>
         </form>
@@ -697,6 +707,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [termMonthsStr, setTermMonthsStr] = useState('12');
   const [minCheckStr, setMinCheckStr] = useState('1000');
   const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
 
   const getCategoryLabel = (cat: AssetCategory) => {
     switch (cat) {
@@ -709,10 +720,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   const getDefaultImage = (cat: AssetCategory) => {
     switch (cat) {
-      case 'crypto': return 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80';
-      case 'forex': return 'https://images.unsplash.com/photo-1610375461246-83df859d849d?auto=format&fit=crop&w=800&q=80';
-      case 'futures': return 'https://images.unsplash.com/photo-1622630998477-20aa696ecb05?auto=format&fit=crop&w=800&q=80';
-      case 'pool': return 'https://images.unsplash.com/photo-1642543492481-44e81e3914a7?auto=format&fit=crop&w=800&q=80';
+      case 'crypto': return '/markets/bitcoin.jpg';
+      case 'forex': return '/markets/gold.jpg';
+      case 'futures': return '/markets/solana.jpg';
+      case 'pool': return '/markets/solana.jpg';
     }
   };
 
@@ -730,7 +741,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       minCheck: parseNumber(minCheckStr, 1000),
       riskLevel: category === 'futures' ? 'high' : 'medium',
       description: description || 'Trading asset with high liquidity and institutional quotes.',
-      imageUrl: getDefaultImage(category),
+      imageUrl: imageUrl || getDefaultImage(category),
       tags: ['New asset', 'Spot/Futures', 'Binance Feed']
     });
     onClose();
@@ -837,6 +848,34 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 className="w-full px-3 py-2 bg-white border border-[#E4DECB] rounded-xl text-[#213532] focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
+              Photo
+            </label>
+            {imageUrl ? (
+              <img src={imageUrl} alt="" className="mb-2 h-28 w-full object-cover rounded-xl border border-[#E4DECB]" />
+            ) : null}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const r = new FileReader();
+                r.onload = () => setImageUrl(String(r.result || ''));
+                r.readAsDataURL(f);
+              }}
+              className="block w-full text-[12px] text-[#213532]"
+            />
+            <input
+              type="text"
+              placeholder="or paste image URL"
+              value={imageUrl.startsWith('data:') ? '' : imageUrl}
+              onChange={e => setImageUrl(e.target.value)}
+              className="mt-2 w-full px-4 py-2 bg-white border border-[#E4DECB] rounded-xl text-xs text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
+            />
           </div>
 
           <div>
