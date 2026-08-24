@@ -14,7 +14,7 @@ import {
 
 interface ProjectCatalogProps {
   projects: Project[];
-  /** staff only: shows the "+ Create a new asset in the CRM panel" shortcut.
+  /** staff only: shows the "+ Create a new asset in the admin panel" shortcut.
    *  Clients must never see a back-office entry point. */
   canManageAssets?: boolean;
   notifications?: ApiNotification[];
