@@ -6,7 +6,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
-import { listFor } from '../notifications.js';
+import { listFor, fireDueAppointments } from '../notifications.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -26,6 +26,9 @@ async function auth(req, res, next) {
 }
 
 router.get('/', auth, async (req, res) => {
+  if (req.user.role === 'ADMIN' || req.user.role === 'MANAGER') {
+    await fireDueAppointments().catch(() => undefined);
+  }
   const items = await listFor(req.user);
   res.json({
     notifications: items.slice(0, 50),

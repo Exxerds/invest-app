@@ -8,7 +8,8 @@
 //    oak-line   #E4DECB
 //    card       #FFFFFF
 // ============================================================
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown } from 'lucide-react';
 
 export const CRM = {
   page: '#F5F2E9',
@@ -31,8 +32,8 @@ export const Card: React.FC<{
     className={`bg-white border border-[#E4DECB] rounded-2xl shadow-sm ${className}`}
   >
     {(title || actions) && (
-      <div className="px-5 py-4 border-b border-[#E4DECB] flex items-center justify-between gap-3">
-        <div>
+      <div className="px-5 py-4 border-b border-[#E4DECB] flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           {title && <h3 className="text-[15px] font-semibold text-[#1C412C]">{title}</h3>}
           {subtitle && <p className="text-[11px] text-[#213532]/70 mt-0.5">{subtitle}</p>}
         </div>
@@ -112,14 +113,123 @@ export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ c
   />
 );
 
-export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = ({ className = '', children, ...rest }) => (
-  <select
-    className={`px-3 py-2 bg-white border border-[#E4DECB] rounded-xl text-[13px] text-[#213532] focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20 cursor-pointer ${className}`}
-    {...rest}
-  >
-    {children}
-  </select>
-);
+type StyledSelectOption = {
+  value: string;
+  label: React.ReactNode;
+  disabled?: boolean;
+};
+
+/**
+ * Branded select used throughout the platform. A native <select> opens the
+ * browser/OS menu on mobile; this keeps the same options but renders the open
+ * list inside the site, with the Oak Haven colours and spacing.
+ */
+export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = ({
+  className = '',
+  children,
+  value,
+  defaultValue,
+  onChange,
+  disabled = false,
+  name,
+  id,
+  title,
+  required,
+  'aria-label': ariaLabel,
+}) => {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const options = useMemo<StyledSelectOption[]>(() => React.Children.toArray(children)
+    .flatMap(child => {
+      if (!React.isValidElement<React.OptionHTMLAttributes<HTMLOptionElement>>(child) || child.type !== 'option') return [];
+      return [{
+        value: String(child.props.value ?? ''),
+        label: child.props.children,
+        disabled: Boolean(child.props.disabled),
+      }];
+    }), [children]);
+  const controlledValue = value == null ? undefined : String(value);
+  const initialValue = controlledValue ?? (defaultValue == null ? String(options[0]?.value ?? '') : String(defaultValue));
+  const [selectedValue, setSelectedValue] = useState(initialValue);
+
+  useEffect(() => {
+    if (controlledValue !== undefined) setSelectedValue(controlledValue);
+  }, [controlledValue]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent | TouchEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('touchstart', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('touchstart', close);
+    };
+  }, [open]);
+
+  const selected = options.find(option => option.value === selectedValue) || options[0];
+  const choose = (option: StyledSelectOption) => {
+    if (option.disabled) return;
+    setSelectedValue(option.value);
+    setOpen(false);
+    if (onChange) {
+      onChange({
+        target: { value: option.value },
+        currentTarget: { value: option.value },
+      } as React.ChangeEvent<HTMLSelectElement>);
+    }
+  };
+
+  return (
+    <div ref={rootRef} className="relative inline-block w-full text-left align-middle">
+      {name && <input type="hidden" name={name} value={selectedValue} required={required} readOnly />}
+      <button
+        id={id}
+        type="button"
+        title={title}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`relative flex w-full items-center justify-between gap-2 px-3 py-2 pr-9 bg-white border border-[#E4DECB] rounded-xl text-[13px] text-[#213532] text-left focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+        onClick={() => setOpen(current => !current)}
+      >
+        <span className="min-w-0 truncate">{selected?.label ?? 'Select…'}</span>
+        <ChevronDown className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#213532]/55 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && !disabled && (
+        <div
+          role="listbox"
+          aria-label={ariaLabel || title || 'Select an option'}
+          className="absolute left-0 right-0 top-full z-[80] mt-1 max-h-64 overflow-y-auto rounded-xl border border-[#E4DECB] bg-white p-1 shadow-2xl"
+        >
+          {options.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === selectedValue}
+              disabled={option.disabled}
+              className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-colors ${
+                option.disabled
+                  ? 'cursor-not-allowed text-[#213532]/35'
+                  : option.value === selectedValue
+                  ? 'bg-[#1C412C]/[.08] font-semibold text-[#1C412C]'
+                  : 'text-[#213532] hover:bg-[#F2EEDF]'
+              }`}
+              onClick={() => choose(option)}
+            >
+              <span className="min-w-0 break-words">{option.label}</span>
+              {option.value === selectedValue && <Check className="h-4 w-4 shrink-0 text-[#B08B48]" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const Kpi: React.FC<{
   label: string;

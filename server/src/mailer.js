@@ -11,6 +11,7 @@ import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 dotenv.config();
@@ -54,15 +55,26 @@ export function publicUrl(req) {
  * Send an e-mail.
  * Without SMTP configured it stores the HTML in server/mails/ and logs it.
  */
+/**
+ * Send an e-mail. WITHOUT SMTP the letter is NOT delivered — it is logged
+ * and (on normal hosts) saved to server/mails/. Returns TRUE only when the
+ * letter actually went out through the mail provider.
+ */
 export async function sendMail({ to, subject, html }) {
   if (transporter) {
-    await transporter.sendMail({ from: FROM_EMAIL, to, subject, html });
+    await transporter.sendMail({
+      from: FROM_EMAIL,
+      to,
+      subject,
+      html,
+    });
     console.log(`[mail] "${subject}" sent to ${to}`);
-    return;
+    return true;
   }
 
   // ---- No SMTP configured ----
-  // Log the letter so the link is always recoverable.
+  console.warn(`[mail] ⚠ SMTP is NOT configured — the letter for ${to} ("${subject}") was NOT delivered!`);
+  console.warn('[mail] Fix: fill SMTP_HOST/SMTP_USER/SMTP_PASS in server/.env and restart the service.');
   console.log(`\n[mail] Letter for ${to}: "${subject}"`);
   const links = [...html.matchAll(/https?:\/\/[^\s"<]+/g)].map(m => m[0]);
   links.forEach(l => console.log(`[mail] LINK ${l}`));
@@ -81,29 +93,27 @@ export async function sendMail({ to, subject, html }) {
     }
   }
   console.log('');
+  return false; // not delivered — no SMTP transporter
 }
 
 /** Branded HTML e-mail layout (Oak Haven Yield: cream / forest green / warm gold) */
 export function letterLayout(title, contentHtml) {
-  const logoUrl = `${SITE_URL.replace(/\/$/, '')}/logo.svg`;
   return `<!DOCTYPE html>
 <html lang="en"><body style="margin:0;padding:0;background:#F5F2E9;font-family:Georgia,'Times New Roman',serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F2E9;padding:32px 12px;">
     <tr><td align="center">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e0d2;border-radius:14px;overflow:hidden;">
-        <tr><td style="background:#1C412C;padding:20px 28px;">
-          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td style="vertical-align:middle;padding-right:12px;">
-              <img src="${logoUrl}" width="34" height="41" alt="Oak Haven Yield" style="display:block;vertical-align:middle">
-            </td>
-            <td style="vertical-align:middle;">
-              <div style="line-height:1.1;">
-                <span style="color:#F5F2E9;font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:bold;">Oak Haven</span>
-                <span style="color:#B08B48;font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:bold;font-style:italic;"> Yield</span>
-              </div>
-              <div style="color:#cfd8d2;font-size:11px;letter-spacing:2px;margin-top:2px;font-family:Arial,Helvetica,sans-serif;">Investment Advisory</div>
-            </td>
-          </tr></table>
+        <tr><td style="background:#1C412C;padding:28px 24px 24px;" align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" align="center" width="112" height="112" style="width:112px;height:112px;background:#F5F2E9;border-radius:56px;">
+            <tr><td align="center" valign="middle" width="112" height="112" style="width:112px;height:112px;overflow:hidden;border-radius:56px;line-height:0;font-size:0;">
+              <img src="${SITE_URL.replace(/\/$/, '')}/email-crest.png?v=10" width="112" height="112" alt="Oak Haven Yield" style="display:block;width:112px;height:112px;margin:0 auto;border:0;border-radius:56px;">
+            </td></tr>
+          </table>
+          <div style="line-height:1.15;margin-top:14px;">
+            <span style="color:#F5F2E9;font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:bold;">Oak Haven</span>
+            <span style="color:#B08B48;font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:bold;font-style:italic;"> Yield</span>
+          </div>
+          <div style="color:#cfd8d2;font-size:11px;letter-spacing:2px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">Investment Advisory</div>
         </td></tr>
         <tr><td style="height:3px;background:#B08B48;"></td></tr>
         <tr><td style="padding:28px;font-family:Arial,Helvetica,sans-serif;">

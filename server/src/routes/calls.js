@@ -109,11 +109,32 @@ router.get('/ice-servers', auth, async (req, res) => {
 
   // A TURN relay is needed behind strict corporate NATs
   if (process.env.TURN_URL && process.env.TURN_USER) {
-    servers.push({
-      urls: process.env.TURN_URL,
+    const cred = {
       username: process.env.TURN_USER,
       credential: process.env.TURN_PASS || '',
-    });
+    };
+    const raw = String(process.env.TURN_URL).split(',').map(s => s.trim()).filter(Boolean);
+    const urls = [];
+    for (const u of raw) {
+      urls.push(u);
+      if (!u.includes('transport=')) {
+        urls.push(`${u}?transport=udp`);
+        urls.push(`${u}?transport=tcp`);
+      }
+    }
+    servers.push({ urls, ...cred });
+    // Fallback lane for networks that strangle plain UDP:
+    // TURN-over-TLS on 5349 looks like regular HTTPS traffic.
+    if (process.env.TURN_TLS_HOST) {
+      const host = process.env.TURN_TLS_HOST;
+      servers.push({
+        urls: [
+          `turns:${host}:5349?transport=tcp`,
+          `turn:${host}:5349?transport=tcp`,
+        ],
+        ...cred,
+      });
+    }
   }
 
   res.json({ iceServers: servers });

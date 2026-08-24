@@ -210,9 +210,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
       </div>
 
       <header className="sticky top-0 z-50 bg-[#F5F2E9]/95 backdrop-blur border-b border-[#1C412C]/12">
-        <div className="max-w-6xl mx-auto px-5 h-[68px] flex items-center gap-8">
+        <div className="max-w-6xl mx-auto px-5 h-[72px] flex items-center gap-8">
           <a href="#top" className="flex items-center shrink-0">
-            <OakLogo size={40} />
+            <OakLogo size={64} />
           </a>
 
           <nav className="hidden lg:flex items-center gap-7 text-[14px] font-medium text-[#213532]">
@@ -870,47 +870,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
         </div>
       </Section>
 
-      {/* ==================== DOCUMENTATION ==================== */}
-      <Section id="docs" className="bg-white border-y border-[#1C412C]/10">
-        <div className="grid lg:grid-cols-2 gap-10">
-          <div>
-            <Eyebrow>Documentation</Eyebrow>
-            <H2>Legal information</H2>
-            <p className="text-[#213532]/75 mt-3 text-[14px]">
-              All the documents governing the relationship between the client and the company.
-            </p>
-            <div className="mt-6 grid sm:grid-cols-2 gap-3">
-              {['Client Agreement', 'Privacy Policy', 'AML & KYC Policy', 'Risk Disclosure', 'Terms & Conditions', 'Payment Policy'].map(d => (
-                <a
-                  key={d}
-                  href="#docs"
-                  className="flex items-center gap-2.5 bg-white border border-[#1C412C]/12 shadow-sm rounded-xl px-4 py-3 text-[13px] text-[#213532] hover:border-[#B08B48]/45 hover:text-[#1C412C] transition-colors"
-                >
-                  <FileText className="w-4 h-4 text-[#B08B48] shrink-0" />
-                  {d}
-                </a>
-              ))}
-            </div>
-          </div>
-          <div className="bg-white border border-rose-500/25 rounded-2xl p-6">
-            <div className="flex items-center gap-2 text-rose-600 font-bold text-[14px]">
-              <ShieldCheck className="w-4.5 h-4.5" /> Risk warning
-            </div>
-            <p className="text-[13px] text-[#213532]/75 mt-3 leading-relaxed">
-              Trading leveraged products such as CFDs and futures involves a high level of risk and may not be suitable
-              for all investors. You could sustain a loss of some or all of your invested capital; therefore, you should
-              not speculate with capital that you cannot afford to lose. Past performance is not indicative of future
-              results. Please ensure you fully understand the risks involved and seek independent advice if necessary.
-            </p>
-          </div>
-        </div>
-      </Section>
-
-      {/* ==================== NEWS (temporarily hidden) ====================
-           Removed at the client's request pending approval.
-           To bring it back, restore this section from git history
-           (commit "hide news block, fix register arrow, TradingView redirects").
-      ==================================================================== */}
+      {/* ==================== NEWS (temporarily hidden) ==================== */}
 
       {/* ==================== FAQ ==================== */}
       <Section id="faq" className="bg-white border-y border-[#1C412C]/10">
@@ -946,6 +906,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               </div>
             );
           })}
+        </div>
+      </Section>
+
+      {/* ==================== LEGAL (below FAQ, from Master Agreement) ==================== */}
+      <Section id="docs" className="bg-[#F5F2E9] border-y border-[#1C412C]/10">
+        <div className="text-center max-w-2xl mx-auto mb-8">
+          <Eyebrow>Documentation</Eyebrow>
+          <H2>Legal information</H2>
+          <p className="text-[#213532]/75 mt-3 text-[14px]">
+            Extracts from the Oak Haven Yield Master Agreement. Click a document to open its full text.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { slug: 'client', t: 'Client Agreement' },
+            { slug: 'aml', t: 'AML & KYC Policy' },
+            { slug: 'terms', t: 'Terms & Conditions' },
+            { slug: 'risk', t: 'Risk Disclosure' },
+          ].map(d => (
+            <a
+              key={d.slug}
+              href={`/legal/${d.slug}`}
+              className="flex items-center gap-2.5 bg-white border border-[#1C412C]/12 shadow-sm rounded-xl px-4 py-3 text-[13px] text-[#213532] hover:border-[#B08B48]/45 hover:text-[#1C412C] transition-colors"
+            >
+              <FileText className="w-4 h-4 text-[#B08B48] shrink-0" />
+              {d.t}
+            </a>
+          ))}
         </div>
       </Section>
 

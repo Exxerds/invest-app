@@ -5,10 +5,12 @@
 import bcrypt from 'bcryptjs';
 import * as store from './db.js';
 
+// Only staff bootstrap accounts. The demo CLIENT with a pre-filled balance
+// was removed on purpose: a fresh platform must not display play money —
+// every balance now starts at 0 until the back office credits real funds.
 const SEED_USERS = [
   { name: 'Admin', email: 'admin@trade.io', password: 'admin123', role: 'ADMIN', status: 'active', balance: 0 },
-  { name: 'Laura Bennett', email: 'manager@trade.io', password: 'manager123', role: 'MANAGER', status: 'active', balance: 0 },
-  { name: 'Michael Carter', email: 'client@trade.io', password: 'client123', role: 'CLIENT', status: 'active', balance: 26500 }
+  { name: 'Laura Bennett', email: 'manager@trade.io', password: 'manager123', role: 'MANAGER', status: 'active', balance: 0 }
 ];
 
 export async function seedUsers() {
@@ -26,12 +28,9 @@ export async function seedUsers() {
         created_at: new Date().toISOString()
       });
       console.log(`[seed] Created demo user: ${u.email} (${u.role})`);
-    } else if (u.role === 'CLIENT' && (!exists.balance || Number(exists.balance) <= 0)) {
-      await store.update('users', exists.id, { balance: u.balance });
     }
   }
-  console.log('[seed] Demo users ready:');
+  console.log('[seed] Staff bootstrap accounts ready:');
   console.log('[seed]   ADMIN   → admin@trade.io / admin123');
   console.log('[seed]   MANAGER → manager@trade.io / manager123');
-  console.log('[seed]   CLIENT  → client@trade.io / client123');
 }
