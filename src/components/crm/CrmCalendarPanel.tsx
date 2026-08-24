@@ -487,7 +487,7 @@ export const CrmCalendarPanel: React.FC<{
         }
       >
         <div className="px-5 pt-4 text-[11px] text-[#213532]/60">
-          Click a time or drag across the 15-minute lines to prepare a reminder. The day view runs from 08:00 to 00:00. Click an existing reminder to select it.
+          Click a time or drag across the 15-minute lines to prepare a reminder. Click an existing reminder to select it.
         </div>
         <div className="max-w-full overflow-x-auto overscroll-x-contain px-5 pb-5 pt-3">
           <div ref={calendarRef} className="min-w-[860px] grid grid-cols-8 border-t border-[#E4DECB] select-none">
