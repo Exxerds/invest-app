@@ -68,11 +68,11 @@ function orderedSelection(start: Date, current: Date) {
   };
 }
 
-const HOURS = Array.from({ length: 13 }, (_, i) => i + 8);
+const HOURS = Array.from({ length: 16 }, (_, i) => i + 8);
 const QUARTERS = [0, 15, 30, 45] as const;
 const HOUR_HEIGHT = 80;
 const CALENDAR_START_HOUR = 8;
-const CALENDAR_END_HOUR = 21;
+const CALENDAR_END_HOUR = 24;
 const EVENT_PALETTE = [
   { background: '#1C412C', border: '#B08B48' },
   { background: '#23536A', border: '#6EC4D9' },
@@ -84,14 +84,6 @@ const EVENT_PALETTE = [
 
 type Selection = { start: Date; end: Date };
 type DragState = { start: Date; current: Date };
-type EventDragState = {
-  id: number;
-  mode: 'move' | 'resize';
-  originalStart: Date;
-  originalEnd: Date;
-  anchor: Date;
-};
-type DragPreview = { id: number; start: Date; end: Date };
 type EventSegment = {
   appointment: ApiAppointment;
   start: Date;
@@ -181,13 +173,7 @@ export const CrmCalendarPanel: React.FC<{
   const [editEnd, setEditEnd] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [editSaving, setEditSaving] = useState(false);
-  const [draggingEventId, setDraggingEventId] = useState<number | null>(null);
-  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const dragRef = useRef<DragState | null>(null);
-  const eventDragRef = useRef<EventDragState | null>(null);
-  const dragPreviewRef = useRef<DragPreview | null>(null);
-  const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
-  const moveFrameRef = useRef<number | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
 
@@ -218,16 +204,11 @@ export const CrmCalendarPanel: React.FC<{
     [items, now],
   );
 
-  const calendarItems = useMemo(() => visibleItems.map(a => {
-    if (!dragPreview || dragPreview.id !== a.id) return a;
-    return { ...a, startsAt: dragPreview.start.toISOString(), endsAt: dragPreview.end.toISOString() };
-  }), [visibleItems, dragPreview]);
-
   const segmentsByDay = useMemo(() => {
     const map = new Map<string, EventSegment[]>();
-    days.forEach(day => map.set(ymd(day), eventSegmentsForDay(day, calendarItems)));
+    days.forEach(day => map.set(ymd(day), eventSegmentsForDay(day, visibleItems)));
     return map;
-  }, [days, calendarItems]);
+  }, [days, visibleItems]);
 
   const filteredClients = query.trim()
     ? clients.filter(c => `${c.name} ${c.email}`.toLowerCase().includes(query.trim().toLowerCase()))
@@ -268,89 +249,6 @@ export const CrmCalendarPanel: React.FC<{
       window.removeEventListener('pointercancel', finishDrag);
     };
   }, [dragging]);
-
-  // Moving/resizing an existing reminder uses the same quarter-hour hit
-  // testing, but updates React at most once per animation frame. This keeps
-  // the card smooth while the pointer is moving quickly.
-  useEffect(() => {
-    if (draggingEventId === null) return;
-
-    const renderPreview = () => {
-      moveFrameRef.current = null;
-      const active = eventDragRef.current;
-      const point = pointerRef.current;
-      if (!active || !point) return;
-      const current = slotFromPoint(point, calendarRef.current);
-      if (!current) return;
-
-      let preview: DragPreview;
-      if (active.mode === 'resize') {
-        const end = current > active.originalStart ? current : addMinutes(active.originalStart, 15);
-        preview = { id: active.id, start: active.originalStart, end };
-      } else {
-        const delta = Math.round((current.getTime() - active.anchor.getTime()) / 900_000) * 15;
-        preview = {
-          id: active.id,
-          start: addMinutes(active.originalStart, delta),
-          end: addMinutes(active.originalEnd, delta),
-        };
-      }
-
-      const previous = dragPreviewRef.current;
-      if (!previous || previous.start.getTime() !== preview.start.getTime() || previous.end.getTime() !== preview.end.getTime()) {
-        dragPreviewRef.current = preview;
-        setDragPreview(preview);
-      }
-    };
-
-    const schedulePreview = (event: PointerEvent) => {
-      pointerRef.current = { clientX: event.clientX, clientY: event.clientY };
-      event.preventDefault();
-      if (moveFrameRef.current === null) moveFrameRef.current = window.requestAnimationFrame(renderPreview);
-    };
-
-    const finishEventDrag = async (event: PointerEvent) => {
-      pointerRef.current = { clientX: event.clientX, clientY: event.clientY };
-      if (moveFrameRef.current !== null) {
-        window.cancelAnimationFrame(moveFrameRef.current);
-        moveFrameRef.current = null;
-        renderPreview();
-      }
-
-      const active = eventDragRef.current;
-      const preview = dragPreviewRef.current;
-      const changed = active && preview && preview.id === active.id
-        && (preview.start.getTime() !== active.originalStart.getTime() || preview.end.getTime() !== active.originalEnd.getTime());
-      if (active && preview && changed) {
-        try {
-          await apiUpdateAppointment(active.id, {
-            startsAt: preview.start.toISOString(),
-            endsAt: preview.end.toISOString(),
-          });
-          await load();
-          onNotify(active.mode === 'resize' ? 'Reminder duration updated.' : 'Reminder time updated.');
-        } catch (err) {
-          onNotify(err instanceof Error ? err.message : 'Could not update reminder');
-        }
-      }
-      eventDragRef.current = null;
-      dragPreviewRef.current = null;
-      pointerRef.current = null;
-      setDragPreview(null);
-      setDraggingEventId(null);
-    };
-
-    window.addEventListener('pointermove', schedulePreview, { passive: false });
-    window.addEventListener('pointerup', finishEventDrag);
-    window.addEventListener('pointercancel', finishEventDrag);
-    return () => {
-      if (moveFrameRef.current !== null) window.cancelAnimationFrame(moveFrameRef.current);
-      moveFrameRef.current = null;
-      window.removeEventListener('pointermove', schedulePreview);
-      window.removeEventListener('pointerup', finishEventDrag);
-      window.removeEventListener('pointercancel', finishEventDrag);
-    };
-  }, [draggingEventId]);
 
   const isSelected = (day: Date, hour: number, minute: number) => {
     if (!selection) return false;
@@ -401,44 +299,6 @@ export const CrmCalendarPanel: React.FC<{
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Could not delete');
     }
-  };
-
-  const startEventMove = (event: React.PointerEvent<HTMLDivElement>, appointment: ApiAppointment) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    if ((event.target as HTMLElement).closest('button, [data-calendar-resize]')) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const anchor = slotFromPoint(event, calendarRef.current) || new Date(appointment.startsAt);
-    eventDragRef.current = {
-      id: appointment.id,
-      mode: 'move',
-      originalStart: new Date(appointment.startsAt),
-      originalEnd: new Date(appointment.endsAt),
-      anchor,
-    };
-    dragPreviewRef.current = null;
-    pointerRef.current = { clientX: event.clientX, clientY: event.clientY };
-    setDragPreview(null);
-    setSelectedEventId(appointment.id);
-    setDraggingEventId(appointment.id);
-  };
-
-  const startEventResize = (event: React.PointerEvent<HTMLDivElement>, appointment: ApiAppointment) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    eventDragRef.current = {
-      id: appointment.id,
-      mode: 'resize',
-      originalStart: new Date(appointment.startsAt),
-      originalEnd: new Date(appointment.endsAt),
-      anchor: new Date(appointment.endsAt),
-    };
-    dragPreviewRef.current = null;
-    pointerRef.current = { clientX: event.clientX, clientY: event.clientY };
-    setDragPreview(null);
-    setSelectedEventId(appointment.id);
-    setDraggingEventId(appointment.id);
   };
 
   return (
@@ -627,7 +487,7 @@ export const CrmCalendarPanel: React.FC<{
         }
       >
         <div className="px-5 pt-4 text-[11px] text-[#213532]/60">
-          Click a time or drag across the 15-minute lines to prepare a reminder. Click an existing reminder to select it; drag it to move it.
+          Click a time or drag across the 15-minute lines to prepare a reminder. The day view runs from 08:00 to 00:00. Click an existing reminder to select it.
         </div>
         <div className="max-w-full overflow-x-auto overscroll-x-contain px-5 pb-5 pt-3">
           <div ref={calendarRef} className="min-w-[860px] grid grid-cols-8 border-t border-[#E4DECB] select-none">
@@ -683,9 +543,9 @@ export const CrmCalendarPanel: React.FC<{
                             key={`${appointment.id}-${dayKey}`}
                             data-calendar-event
                             data-calendar-event-id={appointment.id}
-                            className={`absolute z-20 overflow-hidden rounded-lg bg-[#1C412C] px-2 py-1.5 text-[11px] text-[#F5F2E9] shadow-sm transition-opacity ${
-                              draggingEventId === appointment.id ? 'pointer-events-none cursor-grabbing opacity-80' : 'pointer-events-auto cursor-grab'
-                            } ${selected ? 'z-40 ring-2 ring-[#B08B48] ring-offset-1' : dimmed ? 'opacity-35' : ''}`}
+                            className={`absolute z-20 pointer-events-auto overflow-hidden rounded-lg px-2 py-1.5 text-[11px] text-[#F5F2E9] shadow-sm transition-opacity cursor-pointer ${
+                              selected ? 'z-40 ring-2 ring-[#B08B48] ring-offset-1' : dimmed ? 'opacity-35' : ''
+                            }`}
                             style={{
                               top: `${top}px`,
                               height: `${height}px`,
@@ -695,7 +555,7 @@ export const CrmCalendarPanel: React.FC<{
                               backgroundColor: color.background,
                               border: `1px solid ${color.border}`,
                             }}
-                            onPointerDown={event => startEventMove(event, appointment)}
+                            onClick={() => setSelectedEventId(appointment.id)}
                           >
                             <div className="flex items-start justify-between gap-1">
                               <button
@@ -731,13 +591,6 @@ export const CrmCalendarPanel: React.FC<{
                             </div>
                             <div className="opacity-80">{hmLocal(appointment.startsAt)} · {appointment.title}</div>
                             {appointment.notes && <div className="opacity-70 break-words">{appointment.notes}</div>}
-                            <div
-                              data-calendar-resize
-                              className="pointer-events-auto absolute bottom-0 left-2 right-2 h-2 cursor-ns-resize rounded-full bg-[#F5F2E9]/25 hover:bg-[#F5F2E9]/60"
-                              onPointerDown={event => startEventResize(event, appointment)}
-                              title="Drag to change duration"
-                              aria-label="Drag to change duration"
-                            />
                           </div>
                         );
                       })}
