@@ -39,16 +39,6 @@ function toLocalInput(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function pointerSlotDate(event: { clientY: number }, cell: HTMLElement, dayKey: string, hour: number) {
-  const rect = cell.getBoundingClientRect();
-  const ratio = Math.max(0, Math.min(0.999, (event.clientY - rect.top) / Math.max(rect.height, 1)));
-  const quarter = Math.round(ratio * 4);
-  const date = slotDate(dayKey, hour);
-  if (quarter === 4) date.setHours(date.getHours() + 1);
-  else date.setMinutes(quarter * 15);
-  return date;
-}
-
 function hmLocal(iso: string) {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -63,22 +53,25 @@ function orderedSelection(start: Date, current: Date) {
   const last = start.getTime() <= current.getTime() ? current : start;
   return {
     start: new Date(first),
-    // A click gets a useful 30-minute duration. A real drag ends exactly at
+    // A click gets one 15-minute slot. A real drag ends exactly at
     // the quarter-hour under the pointer, like Google Calendar.
-    end: addMinutes(last, first.getTime() === last.getTime() ? 30 : 0),
+    end: addMinutes(last, first.getTime() === last.getTime() ? 15 : 0),
   };
 }
 
 function selectionLabel(selection: { start: Date; end: Date }) {
-  const date = selection.start.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
+  const formatDate = (date: Date) => date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
   });
-  return `${date}, ${hmDate(selection.start)} – ${hmDate(selection.end)}`;
+  const start = `${formatDate(selection.start)} ${hmDate(selection.start)}`;
+  const end = `${formatDate(selection.end)} ${hmDate(selection.end)}`;
+  return start === end ? start : `${start} – ${end}`;
 }
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8);
+const QUARTERS = [0, 15, 30, 45] as const;
 
 type Selection = { start: Date; end: Date };
 type DragState = { start: Date; current: Date };
@@ -94,10 +87,10 @@ export const CrmCalendarPanel: React.FC<{
   const [query, setQuery] = useState('');
   const [clientId, setClientId] = useState('');
   const [when, setWhen] = useState('');
+  const [endsWhen, setEndsWhen] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [durationMinutes, setDurationMinutes] = useState(30);
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<DragState | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -130,10 +123,12 @@ export const CrmCalendarPanel: React.FC<{
 
       const dayKey = target.dataset.day;
       const hour = Number(target.dataset.hour);
-      if (!dayKey || Number.isNaN(hour)) return;
+      const minute = Number(target.dataset.minute);
+      if (!dayKey || Number.isNaN(hour) || Number.isNaN(minute)) return;
 
       event.preventDefault();
-      const current = pointerSlotDate(event, target, dayKey, hour);
+      const current = slotDate(dayKey, hour);
+      current.setMinutes(minute);
       dragRef.current.current = current;
       setSelection(orderedSelection(dragRef.current.start, current));
     };
@@ -145,7 +140,7 @@ export const CrmCalendarPanel: React.FC<{
       const next = orderedSelection(active.start, active.current);
       setSelection(next);
       setWhen(toLocalInput(next.start));
-      setDurationMinutes(Math.max(30, Math.round((next.end.getTime() - next.start.getTime()) / 60_000)));
+      setEndsWhen(toLocalInput(next.end));
       dragRef.current = null;
       setDragging(false);
 
@@ -175,24 +170,27 @@ export const CrmCalendarPanel: React.FC<{
     return items.filter(a => ymd(new Date(a.startsAt)) === key);
   };
 
-  const isSelected = (day: Date, hour: number) => {
+  const isSelected = (day: Date, hour: number, minute: number) => {
     if (!selection) return false;
-    const cellStart = slotDate(ymd(day), hour);
-    const cellEnd = addMinutes(cellStart, 60);
-    return selection.start < cellEnd && selection.end > cellStart;
+    const slotStart = slotDate(ymd(day), hour);
+    slotStart.setMinutes(minute);
+    const slotEnd = addMinutes(slotStart, 15);
+    return selection.start < slotEnd && selection.end > slotStart;
   };
 
-  const handleCellPointerDown = (event: React.PointerEvent<HTMLDivElement>, day: Date, hour: number) => {
+  const handleCellPointerDown = (event: React.PointerEvent<HTMLDivElement>, day: Date, hour: number, minute: number) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     const target = event.target as HTMLElement;
     if (target.closest('button, [data-calendar-event]')) return;
 
     event.preventDefault();
-    const start = pointerSlotDate(event, event.currentTarget, ymd(day), hour);
+    const start = slotDate(ymd(day), hour);
+    start.setMinutes(minute);
     dragRef.current = { start, current: start };
-    setSelection(orderedSelection(start, start));
-    setWhen(toLocalInput(start));
-    setDurationMinutes(30);
+    const next = orderedSelection(start, start);
+    setSelection(next);
+    setWhen(toLocalInput(next.start));
+    setEndsWhen(toLocalInput(next.end));
     setDragging(true);
   };
 
@@ -204,20 +202,25 @@ export const CrmCalendarPanel: React.FC<{
           className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3"
           onSubmit={async e => {
             e.preventDefault();
-            if (!clientId || !when || saving) return;
+            if (!clientId || !when || !endsWhen || saving) return;
             setSaving(true);
             try {
               const start = new Date(when);
+              const end = new Date(endsWhen);
+              if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+                onNotify('The end time must be after the start time.');
+                return;
+              }
               await apiCreateAppointment({
                 clientId: Number(clientId),
                 startsAt: start.toISOString(),
-                endsAt: addMinutes(start, durationMinutes).toISOString(),
+                endsAt: end.toISOString(),
                 notes,
               });
               setNotes('');
               setWhen('');
+              setEndsWhen('');
               setSelection(null);
-              setDurationMinutes(30);
               await load();
               onNotify('Reminder saved.');
             } catch (err) {
@@ -237,7 +240,7 @@ export const CrmCalendarPanel: React.FC<{
               <button
                 type="button"
                 className="shrink-0 p-1 text-[#213532]/50 hover:text-[#1C412C] cursor-pointer"
-                onClick={() => { setSelection(null); setWhen(''); }}
+                onClick={() => { setSelection(null); setWhen(''); setEndsWhen(''); }}
                 aria-label="Clear selected time"
               >
                 <X className="w-4 h-4" />
@@ -248,14 +251,35 @@ export const CrmCalendarPanel: React.FC<{
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Find client</label>
             <Input className="w-full mt-1" placeholder="Name or email…" value={query} onChange={e => setQuery(e.target.value)} />
           </div>
-          <div>
+          <div className="md:col-span-2">
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Date & time</label>
-            <Input
-              className="w-full mt-1"
-              type="datetime-local"
-              value={when}
-              onChange={e => { setWhen(e.target.value); setSelection(null); }}
-            />
+            <div className="mt-1 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 max-[480px]:grid-cols-1">
+              <div className="min-w-0">
+                <span className="hidden max-[480px]:block mb-1 text-[10px] font-semibold uppercase text-[#213532]/55">From</span>
+                <Input
+                  className="w-full"
+                  type="datetime-local"
+                  value={when}
+                  onChange={e => {
+                    setWhen(e.target.value);
+                    setSelection(null);
+                  }}
+                />
+              </div>
+              <span className="text-[12px] font-semibold text-[#213532]/40 max-[480px]:hidden">–</span>
+              <div className="min-w-0">
+                <span className="hidden max-[480px]:block mb-1 text-[10px] font-semibold uppercase text-[#213532]/55">To</span>
+                <Input
+                  className="w-full"
+                  type="datetime-local"
+                  value={endsWhen}
+                  onChange={e => {
+                    setEndsWhen(e.target.value);
+                    setSelection(null);
+                  }}
+                />
+              </div>
+            </div>
           </div>
           <div>
             <label className="text-[11px] font-bold uppercase text-[#213532]/70">Client</label>
@@ -271,7 +295,7 @@ export const CrmCalendarPanel: React.FC<{
             <Input className="w-full mt-1" placeholder="Call, KYC, deposit…" value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
           <div className="md:col-span-2 flex flex-wrap items-center gap-3">
-            <Btn variant="gold" type="submit" disabled={saving || !clientId || !when}>Save reminder</Btn>
+            <Btn variant="gold" type="submit" disabled={saving || !clientId || !when || !endsWhen}>Save reminder</Btn>
             <span className="text-[11px] text-[#213532]/55">Tip: drag across the week below to choose the time.</span>
           </div>
         </form>
@@ -313,43 +337,67 @@ export const CrmCalendarPanel: React.FC<{
                   return (
                     <div
                       key={`${dayKey}-${h}`}
-                      data-calendar-cell
-                      data-day={dayKey}
-                      data-hour={h}
-                      className={`min-h-[56px] border-t border-l border-[#E4DECB] p-1 space-y-1 cursor-crosshair transition-colors ${
-                        isSelected(d, h) ? 'bg-[#B08B48]/20 ring-1 ring-inset ring-[#B08B48]/45' : 'hover:bg-[#B08B48]/[.07]'
-                      }`}
-                      style={{ touchAction: 'none' }}
-                      onPointerDown={event => handleCellPointerDown(event, d, h)}
-                      aria-label={`Select ${d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at ${String(h).padStart(2, '0')}:00`}
+                      className="relative min-h-[80px] border-t border-l border-[#E4DECB] overflow-visible"
                     >
-                      {slot.map(a => (
-                        <div key={a.id} data-calendar-event className="rounded-lg bg-[#1C412C] text-[#F5F2E9] px-2 py-1.5 text-[11px]">
-                          <button
-                            type="button"
-                            className="font-bold hover:underline text-left cursor-pointer break-words"
-                            onClick={() => onOpenClient(a.clientId)}
-                          >
-                            {a.clientName}
-                          </button>
-                          <div className="opacity-80">{hmLocal(a.startsAt)} · {a.title}</div>
-                          {a.notes && <div className="opacity-70 break-words">{a.notes}</div>}
-                          <button
-                            type="button"
-                            className="mt-1 inline-flex items-center gap-1 text-[#F5F2E9]/70 hover:text-rose-300 cursor-pointer"
-                            onClick={async () => {
-                              try {
-                                await apiDeleteAppointment(a.id);
-                                await load();
-                              } catch (err) {
-                                onNotify(err instanceof Error ? err.message : 'Could not delete');
-                              }
-                            }}
-                          >
-                            <Trash2 className="w-3 h-3" /> Remove
-                          </button>
-                        </div>
+                      {QUARTERS.map(minute => (
+                        <div
+                          key={`${dayKey}-${h}-${minute}`}
+                          data-calendar-cell
+                          data-day={dayKey}
+                          data-hour={h}
+                          data-minute={minute}
+                          className={`h-5 px-1 cursor-crosshair transition-colors border-t border-[#E4DECB]/70 ${
+                            isSelected(d, h, minute)
+                              ? 'bg-[#B08B48]/25 ring-1 ring-inset ring-[#B08B48]/45'
+                              : 'hover:bg-[#B08B48]/[.07]'
+                          }`}
+                          style={{ touchAction: 'none' }}
+                          onPointerDown={event => handleCellPointerDown(event, d, h, minute)}
+                          aria-label={`Select ${d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at ${String(h).padStart(2, '0')}:${String(minute).padStart(2, '0')}`}
+                        />
                       ))}
+
+                      {slot.map(a => {
+                        const startsAt = new Date(a.startsAt);
+                        const endsAt = new Date(a.endsAt);
+                        const duration = Number.isNaN(endsAt.getTime())
+                          ? 30
+                          : Math.max(15, (endsAt.getTime() - startsAt.getTime()) / 60_000);
+                        const top = (startsAt.getMinutes() / 60) * 80;
+                        const height = Math.max(32, (duration / 60) * 80);
+                        return (
+                          <div
+                            key={a.id}
+                            data-calendar-event
+                            className="pointer-events-none absolute left-1 right-1 z-20 overflow-hidden rounded-lg bg-[#1C412C] px-2 py-1.5 text-[11px] text-[#F5F2E9] shadow-sm"
+                            style={{ top: `${top}px`, height: `${height}px`, minHeight: '28px' }}
+                          >
+                            <button
+                              type="button"
+                              className="pointer-events-auto font-bold hover:underline text-left cursor-pointer break-words"
+                              onClick={() => onOpenClient(a.clientId)}
+                            >
+                              {a.clientName}
+                            </button>
+                            <div className="opacity-80">{hmLocal(a.startsAt)} · {a.title}</div>
+                            {a.notes && <div className="opacity-70 break-words">{a.notes}</div>}
+                            <button
+                              type="button"
+                              className="pointer-events-auto mt-1 inline-flex items-center gap-1 text-[#F5F2E9]/70 hover:text-rose-300 cursor-pointer"
+                              onClick={async () => {
+                                try {
+                                  await apiDeleteAppointment(a.id);
+                                  await load();
+                                } catch (err) {
+                                  onNotify(err instanceof Error ? err.message : 'Could not delete');
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-3 h-3" /> Remove
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
