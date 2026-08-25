@@ -38,6 +38,22 @@ interface Options {
   onEnded?: () => void;
 }
 
+function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 10000): Promise<void> {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise(resolve => {
+    const finish = () => {
+      window.clearTimeout(timer);
+      pc.removeEventListener('icegatheringstatechange', onStateChange);
+      resolve();
+    };
+    const onStateChange = () => {
+      if (pc.iceGatheringState === 'complete') finish();
+    };
+    const timer = window.setTimeout(finish, timeoutMs);
+    pc.addEventListener('icegatheringstatechange', onStateChange);
+  });
+}
+
 export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnded }: Options) {
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [muted, setMuted] = useState(false);
@@ -294,12 +310,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
         }
       };
 
-      pc.onicecandidate = (e) => {
-        if (e.candidate && callId) {
-          apiPostSignal(callId, 'ice', JSON.stringify(e.candidate), role, channel).catch(() => undefined);
-        }
-      };
-
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'connected') {
           if (disconnectTimerRef.current) {
@@ -314,7 +324,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
               try {
                 const offer = await pc.createOffer({ iceRestart: true });
                 await pc.setLocalDescription(offer);
-                await apiPostSignal(callId, 'offer', JSON.stringify(offer), role, channel);
+                await waitForIceGathering(pc);
+                await apiPostSignal(callId, 'offer', JSON.stringify(pc.localDescription), role, channel);
               } catch {
                 /* next failed event will hang up */
               }
@@ -342,7 +353,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
       if (initiator) {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        await apiPostSignal(callId, 'offer', JSON.stringify(offer), role, channel);
+        await waitForIceGathering(pc);
+        await apiPostSignal(callId, 'offer', JSON.stringify(pc.localDescription), role, channel);
 
         /**
          * The callee may not have opened the page yet, and a missed offer
@@ -388,7 +400,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
                 await flushIceQueue();
                 const answer = await pcRef.current.createAnswer();
                 await pcRef.current.setLocalDescription(answer);
-                await apiPostSignal(callId, 'answer', JSON.stringify(answer), role, channel);
+                await waitForIceGathering(pcRef.current);
+                await apiPostSignal(callId, 'answer', JSON.stringify(pcRef.current.localDescription), role, channel);
                 if (role === 'client') await apiCallStatus(callId, 'active');
               } finally {
                 negotiatingRef.current = false;
@@ -446,7 +459,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   const renegotiate = useCallback(async (pc: RTCPeerConnection) => {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await apiPostSignal(callId!, 'offer', JSON.stringify(offer), role, channel);
+    await waitForIceGathering(pc);
+    await apiPostSignal(callId!, 'offer', JSON.stringify(pc.localDescription), role, channel);
   }, [callId, role, channel]);
 
   const stopScreenShare = useCallback(async () => {
