@@ -2,6 +2,7 @@
 //  API client — frontend talks to the server via /api
 //  (Vite proxies /api → http://localhost:4000)
 // ============================================================
+import type { CrmSettings } from './types';
 
 export interface ApiUser {
   id: number;
@@ -13,6 +14,10 @@ export interface ApiUser {
   role: 'CLIENT' | 'MANAGER' | 'ADMIN';
   status: 'pending' | 'active' | 'blocked';
   created_at?: string;
+  lastSeen?: number | null;
+  assignedManagerId?: number | null;
+  assignedManagerName?: string;
+  defaultLeverage?: number;
 }
 
 export const TOKEN_KEY = 'tn_token';
@@ -24,6 +29,19 @@ export function getToken(): string | null {
 export function setToken(token: string | null) {
   if (token) localStorage.setItem(TOKEN_KEY, token);
   else localStorage.removeItem(TOKEN_KEY);
+}
+
+/** Thrown for non-OK API responses; carries HTTP status and the server
+ *  `code` field (e.g. ALREADY_CONFIRMED / EXPIRED) so the UI can branch. */
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -54,7 +72,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error || `Server error (${res.status})`);
+    const d = data as { error?: string; code?: string };
+    throw new ApiError(d.error || `Server error (${res.status})`, res.status, d.code);
   }
   return data as T;
 }
@@ -79,14 +98,19 @@ export const apiConfirmEmail = (token: string) =>
     body: JSON.stringify({ token }),
   });
 
+export interface ClientPolicy {
+  /** true → the client may close own positions; false → staff closes for them */
+  manualClosing: boolean;
+}
+
 export const apiLogin = (email: string, password: string) =>
-  request<{ ok: true; token: string; user: ApiUser }>('/auth/login', {
+  request<{ ok: true; token: string; user: ApiUser; policy: ClientPolicy }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
 
 export const apiMe = () =>
-  request<{ user: ApiUser }>('/auth/me', {
+  request<{ user: ApiUser; policy: ClientPolicy }>('/auth/me', {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
 
@@ -134,8 +158,13 @@ export const apiAdminChangePassword = (userId: number, newPassword: string) =>
   });
 
 /** Admin updates user status (active/blocked/pending) or role */
-export const apiAdminUpdateUser = (userId: number, data: { status?: string; role?: string }) =>
-  request<{ ok: true; message: string }>(`/admin/users/${userId}`, {
+export const apiAdminUpdateUser = (userId: number, data: {
+  status?: string;
+  role?: string;
+  assignedManagerId?: number | null;
+  defaultLeverage?: number;
+}) =>
+  request<{ ok: true; message: string; user?: ApiUser }>(`/admin/users/${userId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${getToken()}` },
     body: JSON.stringify(data),
@@ -152,6 +181,12 @@ export const apiSetUserBalance = (userId: number, balance: number) =>
 export const apiResetUserPortfolio = (userId: number) =>
   request<{ ok: true; deletedTrades: number; deletedInvestments: number }>(`/admin/users/${userId}/reset-portfolio`, {
     method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+
+export const apiAdminDeleteUser = (userId: number) =>
+  request<{ ok: true; message: string }>(`/admin/users/${userId}`, {
+    method: 'DELETE',
     headers: { Authorization: `Bearer ${getToken()}` },
   });
 
@@ -416,7 +451,7 @@ export interface ApiLead {
 export const apiLeads = () =>
   request<{ leads: ApiLead[] }>('/leads', { headers: authHeader() });
 
-export const apiCreateLead = (data: Partial<ApiLead>) =>
+export const apiCreateLead = (data: Partial<ApiLead> & { force?: boolean }) =>
   request<{ ok: true; lead: ApiLead }>('/leads', {
     method: 'POST',
     headers: authHeader(),
@@ -441,6 +476,60 @@ export const apiSubmitPublicLead = (data: { name: string; email: string; phone?:
   request<{ ok: true; id: number }>('/leads/public', {
     method: 'POST',
     body: JSON.stringify(data),
+  });
+
+// ---------- tradable assets (Market catalog) ----------
+
+export interface ApiAsset {
+  id: number;
+  title: string;
+  category: string;
+  categoryLabel: string;
+  targetAmount: number;
+  raisedAmount: number;
+  apr: number;
+  termMonths: number;
+  minCheck: number;
+  riskLevel: 'low' | 'medium' | 'high';
+  status: string;
+  description: string;
+  imageUrl: string;
+  tags: string[];
+  createdAt?: string;
+  closesAt?: string | null;
+}
+
+export const apiAssets = () =>
+  request<{ assets: ApiAsset[] }>('/assets');
+
+export const apiCreateAsset = (data: Partial<ApiAsset> & { title: string }) =>
+  request<{ ok: true; asset: ApiAsset }>('/assets', {
+    method: 'POST', headers: authHeader(), body: JSON.stringify(data),
+  });
+
+export type AssetTimerPatch = {
+  timerDays?: number;
+  timerHours?: number;
+  timerMinutes?: number;
+  timerMs?: number;
+};
+
+export const apiUpdateAsset = (id: number | string, data: Partial<ApiAsset> & AssetTimerPatch) =>
+  request<{ ok: true; asset: ApiAsset }>(`/assets/${id}`, {
+    method: 'PATCH', headers: authHeader(), body: JSON.stringify(data),
+  });
+
+export const apiDeleteAsset = (id: number | string) =>
+  request<{ ok: true }>(`/assets/${id}`, { method: 'DELETE', headers: authHeader() });
+
+export const apiAssetPulse = (id: number | string, data: {
+  amount: number;
+  clientName?: string;
+  userId?: number;
+  notifyAll?: boolean;
+}) =>
+  request<{ ok: true; asset: ApiAsset; message: string }>(`/assets/${id}/pulse`, {
+    method: 'POST', headers: authHeader(), body: JSON.stringify(data),
   });
 
 // ---------- deposit wallets ----------
@@ -483,17 +572,22 @@ export const apiQuote = (symbol: string) =>
 // ---------- mass mailing ("Happy letter") ----------
 
 export const apiMailAudience = () =>
-  request<{ all: number; active: number; noDeposit: number }>('/mailing/audience', {
+  request<{
+    all: number;
+    active: number;
+    noDeposit: number;
+    clients: { id: number; name: string; email: string; status: string }[];
+  }>('/mailing/audience', {
     headers: authHeader(),
   });
 
-export const apiSendMailing = (subject: string, body: string, audience: string) =>
+export const apiSendMailing = (subject: string, body: string, audience: string, userId?: number) =>
   request<{ ok: true; sent: number; failed: number; total: number; message: string }>(
     '/mailing/send',
     {
       method: 'POST',
       headers: authHeader(),
-      body: JSON.stringify({ subject, body, audience }),
+      body: JSON.stringify({ subject, body, audience, userId }),
     },
   );
 
@@ -569,13 +663,31 @@ export const apiSendMessage = (text: string, clientId?: number) =>
   });
 
 export const apiCrmSettings = () =>
-  request<{ settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
+  request<{ settings: CrmSettings }>('/workspace/crm-settings', {
     headers: authHeader(),
   });
 
-export const apiSaveCrmSettings = (hidePhonesFromAgents: boolean) =>
-  request<{ ok: true; settings: { hidePhonesFromAgents: boolean } }>('/workspace/crm-settings', {
-    method: 'PUT', headers: authHeader(), body: JSON.stringify({ hidePhonesFromAgents }),
+export const apiSaveCrmSettings = (settings: CrmSettings) =>
+  request<{ ok: true; settings: CrmSettings }>('/workspace/crm-settings', {
+    method: 'PUT', headers: authHeader(), body: JSON.stringify(settings),
+  });
+
+// ---------- audit log ("View user logs") ----------
+
+export interface ApiActivityEntry {
+  id: number;
+  actorId: number | null;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  target: string;
+  details: string;
+  createdAt: string;
+}
+
+export const apiUserActivity = (userId: number) =>
+  request<{ entries: ApiActivityEntry[] }>(`/admin/users/${userId}/activity`, {
+    headers: authHeader(),
   });
 
 export const apiClientStatuses = () =>
@@ -584,6 +696,15 @@ export const apiClientStatuses = () =>
 export const apiSetClientStatus = (clientId: string, status: string) =>
   request<{ ok: true; statuses: Record<string, string> }>('/workspace/client-status', {
     method: 'PUT', headers: authHeader(), body: JSON.stringify({ clientId, status }),
+  });
+
+// real withdrawal block switch (server-enforced)
+export const apiWithdrawBlocks = () =>
+  request<{ blocks: Record<string, boolean> }>('/workspace/withdraw-blocks', { headers: authHeader() });
+
+export const apiSetWithdrawBlock = (clientId: string, blocked: boolean) =>
+  request<{ ok: true; blocks: Record<string, boolean> }>('/workspace/withdraw-blocks', {
+    method: 'PUT', headers: authHeader(), body: JSON.stringify({ clientId, blocked }),
   });
 
 export const apiActivity = (target?: string) =>
@@ -680,7 +801,7 @@ export interface ApiSignal {
 }
 
 export const apiIceServers = () =>
-  request<{ iceServers: RTCIceServer[] }>('/calls/ice-servers', { headers: authHeader() });
+  request<{ iceServers: RTCIceServer[]; turnConfigured?: boolean }>('/calls/ice-servers', { headers: authHeader() });
 
 export const apiStartCall = (clientId: number, callerName: string) =>
   request<{ ok: true; call: ApiCall }>('/calls', {
@@ -824,6 +945,7 @@ export interface ApiSupportConversation {
   name: string;
   email: string;
   online: boolean;
+  lastSeen?: number | null;
   unreadForStaff: number;
   lastMessageAt: string | null;
   lastPreview: string;
@@ -866,3 +988,52 @@ export const apiSupportRead = (clientId: number) =>
 
 export const apiSupportPresence = () =>
   request<{ ok: true }>('/support/presence', { method: 'POST', headers: authHeader() });
+
+// ---------- staff calendar ----------
+
+export interface ApiAppointment {
+  id: number;
+  clientId: number;
+  clientName: string;
+  clientEmail?: string;
+  title: string;
+  notes?: string;
+  startsAt: string;
+  endsAt: string;
+  createdById?: number;
+  createdByName?: string;
+}
+
+export const apiAppointments = () =>
+  request<{ appointments: ApiAppointment[] }>('/workspace/appointments', { headers: authHeader() });
+
+export const apiCreateAppointment = (data: {
+  clientId: number;
+  startsAt: string;
+  endsAt?: string;
+  title?: string;
+  notes?: string;
+}) =>
+  request<{ ok: true; appointment: ApiAppointment }>('/workspace/appointments', {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify(data),
+  });
+
+export const apiUpdateAppointment = (id: number, data: {
+  startsAt?: string;
+  endsAt?: string;
+  title?: string;
+  notes?: string;
+}) =>
+  request<{ ok: true; appointment: ApiAppointment }>(`/workspace/appointments/${id}`, {
+    method: 'PATCH',
+    headers: authHeader(),
+    body: JSON.stringify(data),
+  });
+
+export const apiDeleteAppointment = (id: number) =>
+  request<{ ok: true }>(`/workspace/appointments/${id}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  });

@@ -168,6 +168,17 @@ router.post('/investments', auth, async (req, res) => {
     return res.status(400).json({ error: 'Not enough balance' });
   }
 
+  const projectId = String(b.projectId || '');
+  const assetId = Number(String(projectId).replace(/^srv-/, ''));
+  if (Number.isFinite(assetId) && assetId > 0) {
+    const asset = await store.byId('assets', assetId);
+    if (asset) {
+      if (asset.status === 'closed' || asset.status === 'archived' || (asset.closesAt && new Date(asset.closesAt).getTime() <= Date.now())) {
+        return res.status(400).json({ error: 'This offer is closed' });
+      }
+    }
+  }
+
   // Debit user balance
   const nextBalance = Math.max(0, Math.round((balance - amount) * 100) / 100);
   await store.update('users', userId, { balance: nextBalance });
@@ -189,6 +200,15 @@ router.post('/investments', auth, async (req, res) => {
     status: 'active',
     createdAt: new Date().toISOString(),
   });
+
+  if (Number.isFinite(assetId) && assetId > 0) {
+    const asset = await store.byId('assets', assetId);
+    if (asset) {
+      await store.update('assets', assetId, {
+        raisedAmount: Math.round((Number(asset.raisedAmount || 0) + amount) * 100) / 100,
+      });
+    }
+  }
 
   res.json({ ok: true, investment, balance: nextBalance });
 });
@@ -227,7 +247,7 @@ router.get('/notes', auth, staffOnly, async (req, res) => {
 
 router.post('/notes', auth, staffOnly, async (req, res) => {
   const text = clean(req.body?.text).trim();
-  const clientId = clean(req.body?.clientId, 60);
+  const clientId = String(clean(req.body?.clientId, 60)).replace(/^acc-/, '').replace(/\D/g, '') || clean(req.body?.clientId, 60);
   if (!text) return res.status(400).json({ error: 'Note cannot be empty' });
   if (!clientId) return res.status(400).json({ error: 'Client is required' });
 
@@ -311,13 +331,24 @@ router.post('/messages', auth, async (req, res) => {
 
 router.get('/crm-settings', auth, staffOnly, async (req, res) => {
   const rec = await store.byField('settings', 'key', 'crmSettings');
-  res.json({ settings: { hidePhonesFromAgents: false, ...(rec?.value || {}) } });
+  res.json({ settings: {
+    hidePhonesFromAgents: false,
+    duplicateControl: true,   // block repeated leads by default
+    manualClosing: false,     // clients cannot close positions by default
+    callRecording: true,
+    ...(rec?.value || {}),
+  } });
 });
 
 router.put('/crm-settings', auth, async (req, res) => {
   if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Administrator access only' });
 
-  const value = { hidePhonesFromAgents: Boolean(req.body?.hidePhonesFromAgents) };
+  const value = {
+    hidePhonesFromAgents: Boolean(req.body?.hidePhonesFromAgents),
+    duplicateControl: req.body?.duplicateControl !== false,
+    manualClosing: Boolean(req.body?.manualClosing),
+    callRecording: req.body?.callRecording !== false,
+  };
   const rec = await store.byField('settings', 'key', 'crmSettings');
   const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
   if (rec) await store.update('settings', rec.id, payload);
@@ -335,12 +366,15 @@ router.get('/client-status', auth, staffOnly, async (req, res) => {
 });
 
 router.put('/client-status', auth, staffOnly, async (req, res) => {
-  const clientId = clean(req.body?.clientId, 60);
+  const rawId = clean(req.body?.clientId, 60);
+  const clientId = String(rawId).replace(/^acc-/, '').replace(/\D/g, '') || rawId;
   const status = clean(req.body?.status, 60);
   if (!clientId) return res.status(400).json({ error: 'Client is required' });
 
   const rec = await store.byField('settings', 'key', 'clientStatuses');
-  const value = { ...(rec?.value || {}), [clientId]: status };
+  const prev = { ...(rec?.value || {}) };
+  delete prev[`acc-${clientId}`];
+  const value = { ...prev, [clientId]: status };
   const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
   if (rec) await store.update('settings', rec.id, payload);
   else await store.insert('settings', { key: 'clientStatuses', ...payload });
@@ -358,6 +392,105 @@ router.get('/activity', auth, staffOnly, async (req, res) => {
   res.json({
     activity: filtered.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 300),
   });
+});
+
+/* ---------------- withdrawal blocks («Block withdrawal» in the CRM) ----------------
+   A REAL switch: while a client id is in this map, POST /api/transactions/withdraw
+   answers 403. Stored as plain numeric user-id keys. */
+
+router.get('/withdraw-blocks', auth, staffOnly, async (req, res) => {
+  const rec = await store.byField('settings', 'key', 'withdrawBlocks');
+  res.json({ blocks: rec?.value || {} });
+});
+
+router.put('/withdraw-blocks', auth, staffOnly, async (req, res) => {
+  const clientId = String(req.body?.clientId || '').replace(/\D/g, '');
+  const blocked = Boolean(req.body?.blocked);
+  if (!clientId) return res.status(400).json({ error: 'clientId is required' });
+
+  const rec = await store.byField('settings', 'key', 'withdrawBlocks');
+  const value = { ...(rec?.value || {}) };
+  if (blocked) value[clientId] = true;
+  else delete value[clientId];
+
+  const payload = { value, updatedBy: req.user.name, updatedAt: new Date().toISOString() };
+  if (rec) await store.update('settings', rec.id, payload);
+  else await store.insert('settings', { key: 'withdrawBlocks', ...payload });
+
+  await logActivity({
+    actor: req.user,
+    action: blocked ? 'withdrawals_blocked' : 'withdrawals_unblocked',
+    target: `user ${clientId}`,
+    details: '',
+  });
+  res.json({ ok: true, blocks: value });
+});
+
+/* ---------------- staff calendar (admin + manager) ---------------- */
+
+router.get('/appointments', auth, staffOnly, async (req, res) => {
+  const { fireDueAppointments } = await import('../notifications.js');
+  await fireDueAppointments().catch(() => undefined);
+  const all = await store.all('appointments');
+  res.json({
+    appointments: all.sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt))),
+  });
+});
+
+router.post('/appointments', auth, staffOnly, async (req, res) => {
+  const b = req.body || {};
+  const clientId = Number(b.clientId);
+  if (!clientId) return res.status(400).json({ error: 'Pick a client' });
+  const client = await store.byId('users', clientId);
+  if (!client || client.role !== 'CLIENT') return res.status(404).json({ error: 'Client not found' });
+  const startsAt = String(b.startsAt || '').trim();
+  if (!startsAt || Number.isNaN(new Date(startsAt).getTime())) {
+    return res.status(400).json({ error: 'Pick a date and time' });
+  }
+  const startMs = new Date(startsAt).getTime();
+  const endsAt = b.endsAt
+    ? String(b.endsAt)
+    : new Date(startMs + 30 * 60000).toISOString();
+  const appt = await store.insert('appointments', {
+    clientId,
+    clientName: client.name,
+    clientEmail: client.email,
+    title: clean(b.title, 160).trim() || `Call with ${client.name}`,
+    notes: clean(b.notes, 2000),
+    startsAt: new Date(startsAt).toISOString(),
+    endsAt: new Date(endsAt).toISOString(),
+    createdById: req.user.id,
+    createdByName: req.user.name,
+    createdAt: new Date().toISOString(),
+  });
+  await logActivity({
+    actor: req.user,
+    action: 'appointment_created',
+    target: `user-${clientId}`,
+    details: appt.title,
+  });
+  res.json({ ok: true, appointment: appt });
+});
+
+router.patch('/appointments/:id', auth, staffOnly, async (req, res) => {
+  const id = Number(req.params.id);
+  const existing = await store.byId('appointments', id);
+  if (!existing) return res.status(404).json({ error: 'Appointment not found' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.title != null) patch.title = clean(b.title, 160);
+  if (b.notes != null) patch.notes = clean(b.notes, 2000);
+  if (b.startsAt) patch.startsAt = new Date(b.startsAt).toISOString();
+  if (b.endsAt) patch.endsAt = new Date(b.endsAt).toISOString();
+  const appointment = await store.update('appointments', id, patch);
+  res.json({ ok: true, appointment });
+});
+
+router.delete('/appointments/:id', auth, staffOnly, async (req, res) => {
+  const id = Number(req.params.id);
+  const removed = await store.removeWhere('appointments', (a) => a.id === id);
+  if (!removed) return res.status(404).json({ error: 'Appointment not found' });
+  res.json({ ok: true });
 });
 
 export default router;

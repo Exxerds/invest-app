@@ -96,7 +96,7 @@ export const CallDock: React.FC<DockProps> = ({
   if (headless) {
     return (
       <>
-        <audio ref={remoteAudioRef} autoPlay />
+        <audio ref={remoteAudioRef} autoPlay playsInline />
         <video ref={remoteVideoRef} autoPlay playsInline className="hidden" />
       </>
     );
@@ -209,7 +209,7 @@ export const CallDock: React.FC<DockProps> = ({
           <Minimize2 className="w-4 h-4" /> Minimize
         </button>
       )}
-      <audio ref={remoteAudioRef} autoPlay />
+      <audio ref={remoteAudioRef} autoPlay playsInline />
 
       <div className="p-3 bg-white flex items-center justify-center gap-2">
         <button

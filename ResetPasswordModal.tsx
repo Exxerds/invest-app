@@ -73,7 +73,7 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
           </h1>
           <p className="text-slate-300 text-sm mt-2">
             Every asset passes a 4-stage compliance audit and legal review. You can invest online —
-            the trade is automatically registered in the CRM.
+            the trade is automatically registered on the platform.
           </p>
         </div>
 
@@ -83,7 +83,7 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
             className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl text-xs font-medium transition-all flex items-center gap-2 cursor-pointer"
           >
             <PlusCircle className="w-4 h-4 text-blue-400" />
-            <span>+ Create a new asset in the CRM panel</span>
+            <span>+ Create a new asset in the admin panel</span>
           </button>
         </div>
       </div>

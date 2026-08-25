@@ -8,10 +8,10 @@
 // ============================================================
 import React, { useState, useRef, useEffect } from 'react';
 import type { Project, Investor, Lead, TransactionRequest, LeadStage, CrmSettings, ClientNote } from '../../types';
-import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone } from '../../types';
+import { CLIENT_STATUSES, KYC_DOC_LABELS, statusTone, lookupClientStatus, bareClientId, formatLastSeen } from '../../types';
 import type { ApiKycDoc, ApiNotification, ApiCall, ApiAnalytics, ApiManagerStat } from '../../api';
-import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates, apiResetUserPortfolio, apiSupportConversations, apiSupportMessages, apiSendSupportMessage, apiSupportRead } from '../../api';
-import type { ApiSupportConversation, ApiSupportMessage } from '../../api';
+import { apiPushSend, apiAnalytics, apiManagerStats, apiCallLog, apiCallInbox, apiCallRecording, fetchKycFile, apiMailAudience, apiSendMailing, apiDepositWallets, apiSaveDepositWallets, apiClientWallets, apiSaveClientWallets, apiMarginRates, apiSaveMarginRates, apiResetUserPortfolio, apiSupportConversations, apiSupportMessages, apiSendSupportMessage, apiSupportRead, apiUserActivity, apiAdminUpdateUser } from '../../api';
+import type { ApiActivityEntry, ApiSupportConversation, ApiSupportMessage } from '../../api';
 import type { ApiUser } from '../../api';
 import { sanitizeDecimal } from '../../utils/number';
 import {
@@ -56,6 +56,10 @@ import {
   Activity,
   Download,
   Circle,
+  IdCard,
+  Briefcase,
+  Trash2,
+  Calendar,
 } from 'lucide-react';
 import { CrmTradesManager } from './CrmTradesManager';
 import type { AdminTrade } from './CrmTradesManager';
@@ -64,7 +68,9 @@ import { Card, Btn, Badge, Field, Input, Select, Kpi, Th, Td, Avatar } from './u
 import { ImportLeadsModal } from '../modals/ImportLeadsModal';
 import { CreateClientModal } from '../modals/CreateClientModal';
 import { StatementModal } from '../modals/StatementModal';
-import { Upload } from 'lucide-react';
+import { CrmMarketsPanel } from './CrmMarketsPanel';
+import { CrmCalendarPanel } from './CrmCalendarPanel';
+import { Upload, Menu } from 'lucide-react';
 
 type CrmTab =
   | 'dashboard'
@@ -80,6 +86,9 @@ type CrmTab =
   | 'support'
   | 'calls'
   | 'analytics'
+  | 'client-cards'
+  | 'markets'
+  | 'calendar'
   | 'settings';
 
 interface CrmDashboardProps {
@@ -101,24 +110,34 @@ interface CrmDashboardProps {
   onRejectRequest: (requestId: string) => void;
   projects: Project[];
   onOpenNewProjectModal: () => void;
+  onUpdateProject?: (id: string, patch: Partial<Project> & import('../../api').AssetTimerPatch) => void;
+  onDeleteProject?: (id: string) => void;
+  onRefreshProjects?: () => void;
   trades: AdminTrade[];
   onUpdateInvestorBalance: (investorId: string, newBalance: number) => void;
   onCreateTrade: (trade: Omit<AdminTrade, 'id' | 'status'>) => void;
   onUpdateTrade: (tradeId: string, patch: Partial<AdminTrade>) => void;
   onCloseTrade: (tradeId: string) => void;
   onAddLeadComment: (leadId: string, text: string) => void;
+  onRefreshLeads?: () => void;
   users: ApiUser[];
   currentUserName: string;
   currentUserRole: string;
+  currentUserId?: number;
   onChangeUserPassword: (userId: number, newPassword: string) => Promise<void>;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
+  onDeleteUser?: (userId: number) => Promise<void>;
+  onPatchUser?: (userId: number, patch: Partial<ApiUser>) => void;
   settings: CrmSettings;
-  onToggleHidePhones: () => void;
+  onToggleSetting: (key: keyof CrmSettings) => void;
   onNotify: (message: string) => void;
   notes: ClientNote[];
   onAddNote: (clientId: string, text: string) => void;
   clientStatuses: Record<string, string>;
   onSetClientStatus: (clientId: string, status: string) => void;
+  /** server-enforced payout block: { '<userId>': true } */
+  withdrawBlocks: Record<string, boolean>;
+  onSetWithdrawBlock: (clientId: string, blocked: boolean) => Promise<void>;
   kycDocuments: ApiKycDoc[];
   onReviewKyc: (docId: number, status: 'approved' | 'rejected', reason?: string) => void;
   notifications: ApiNotification[];
@@ -153,6 +172,7 @@ const ADMIN_ONLY_TABS: CrmTab[] = ['settings', 'banks'];
  */
 const MAIN_NAV: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'client-cards', label: 'Client cards', icon: IdCard },
   { id: 'trading', label: 'Trading', icon: TrendingUp },
   { id: 'leads', label: 'Leads', icon: Kanban },
   {
@@ -170,12 +190,15 @@ const MAIN_NAV: NavItem[] = [
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'support', label: 'Support', icon: LifeBuoy },
   { id: 'calls', label: 'Calls', icon: PhoneCall },
+  { id: 'calendar', label: 'Calendar', icon: Calendar },
+  { id: 'markets', label: 'Markets', icon: Briefcase },
   { id: 'banks', label: 'Partner banks', icon: Landmark, adminOnly: true },
   { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
 ];
 
 const TAB_TITLES: Record<CrmTab, { title: string; sub: string }> = {
   dashboard: { title: 'Dashboard', sub: 'Welcome to the Oak Haven Yield admin panel' },
+  'client-cards': { title: 'Client cards', sub: 'Work the book — status, last comment and last seen' },
   trading: { title: 'Trading', sub: 'Full control over client positions and balances' },
   users: { title: 'All users', sub: 'Platform accounts, roles and access' },
   'user-details': { title: 'User details', sub: 'Detailed information about the user' },
@@ -188,7 +211,9 @@ const TAB_TITLES: Record<CrmTab, { title: string; sub: string }> = {
   support: { title: 'Support', sub: 'Live chat, tickets and history' },
   calls: { title: 'Calls', sub: 'WebRTC calls, prompter and screen sharing' },
   analytics: { title: 'Analytics', sub: 'Base quality, managers and trading stats' },
-  settings: { title: 'Settings', sub: 'Global platform and CRM rules' },
+  settings: { title: 'Settings', sub: 'Global platform rules' },
+  markets: { title: 'Markets', sub: 'Create, edit and remove tradable assets' },
+  calendar: { title: 'Calendar', sub: 'Reminders and call times — click a client to open their card' },
 };
 
 export const CrmDashboard: React.FC<CrmDashboardProps> = ({
@@ -205,24 +230,34 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onWhisper,
   onRejectRequest,
   onOpenNewProjectModal,
+  onUpdateProject,
+  onDeleteProject,
+  onRefreshProjects,
+  projects,
   trades,
   onUpdateInvestorBalance,
   onCreateTrade,
   onUpdateTrade,
   onCloseTrade,
   onAddLeadComment,
+  onRefreshLeads,
   users,
   currentUserName,
   currentUserRole,
+  currentUserId: _currentUserId,
   onChangeUserPassword,
   onUpdateUserStatus,
+  onDeleteUser,
+  onPatchUser,
   settings,
-  onToggleHidePhones,
+  onToggleSetting,
   onNotify,
   notes,
   onAddNote,
   clientStatuses,
   onSetClientStatus,
+  withdrawBlocks,
+  onSetWithdrawBlock,
   kycDocuments,
   onReviewKyc,
   notifications,
@@ -230,8 +265,13 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onMarkNotificationsRead,
 }) => {
   const [activeTab, setActiveTab] = useState<CrmTab>('dashboard');
+
+  // Mobile (< lg): the sidebar becomes a slide-in drawer over the content
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => setNavOpen(false), [activeTab]);
   const [openGroup, setOpenGroup] = useState<string | null>('Users');
   const [searchInvestor, setSearchInvestor] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedUserId, setSelectedUserId] = useState<string>(investors[0]?.id ?? '');
 
   // Lead import and client creation modals
@@ -257,12 +297,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const profileRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
 
-  // Settings toggles (interactive)
-  const [rules, setRules] = useState({
-    duplicateControl: true,
-    manualClosing: false,
-    callRecording: true,
-  });
+  // Settings toggles live on the SERVER (crmSettings) — shared between all
+  // staff members and persistent across restarts. Nothing local anymore.
+  /** which client the Trading tab should open with (deep links) */
+  const [tradingFocusId, setTradingFocusId] = useState<string | null>(null);
   const [modules, setModules] = useState<Record<string, boolean>>({
     Spot: true, Futures: true, P2P: true, Binary: true, Staking: true,
     'AI Trading': false, Swap: false, 'Copy trading': false,
@@ -274,6 +312,19 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
 
   // Support — real chat (TradeNation-style)
   const [supportConvs, setSupportConvs] = useState<ApiSupportConversation[]>([]);
+
+  // Dashboard: the «Online chat» tile shows the REAL count of unanswered
+  // client messages, so fetch conversations when the tab opens too
+  useEffect(() => {
+    if (activeTab !== 'dashboard') return;
+    let alive = true;
+    apiSupportConversations()
+      .then(r => { if (alive) setSupportConvs(r.conversations); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [activeTab]);
+
+  const chatUnread = supportConvs.reduce((s, c) => s + (c.unreadForStaff || 0), 0);
   const [supportSearch, setSupportSearch] = useState('');
   const [supportActiveClientId, setSupportActiveClientId] = useState<number | null>(null);
   const [supportMsgs, setSupportMsgs] = useState<ApiSupportMessage[]>([]);
@@ -324,7 +375,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const [letterBody, setLetterBody] = useState(
     'Dear client,\n\nYour account statement for the current period is now available in your personal cabinet.\n\nBest regards,\nOak Haven Yield',
   );
-  const [letterAudience, setLetterAudience] = useState('All clients');
+  const [letterAudience, setLetterAudience] = useState('One client');
   const [sendingLetter, setSendingLetter] = useState(false);
   const [walletDraft, setWalletDraft] = useState<Record<string, string>>({ BTC: '', ETH: '', USDC: '' });
   const [marginDraft, setMarginDraft] = useState<Record<string, number>>({});
@@ -345,14 +396,19 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
       .then(r => setWalletDraft(r.wallets))
       .catch(() => undefined);
   }, [activeTab]);
-  const [mailAudience, setMailAudience] = useState({ all: 0, active: 0, noDeposit: 0 });
+  const [mailAudience, setMailAudience] = useState<{
+    all: number; active: number; noDeposit: number;
+    clients: { id: number; name: string; email: string; status: string }[];
+  }>({ all: 0, active: 0, noDeposit: 0, clients: [] });
+  const [letterUserId, setLetterUserId] = useState('');
+  const [letterClientQuery, setLetterClientQuery] = useState('');
 
   // Live recipient counts straight from the database
   useEffect(() => {
     if (activeTab !== 'happy-letter') return;
     apiMailAudience()
       .then(setMailAudience)
-      .catch(() => setMailAudience({ all: 0, active: 0, noDeposit: 0 }));
+      .catch(() => setMailAudience({ all: 0, active: 0, noDeposit: 0, clients: [] }));
   }, [activeTab]);
 
   // Close dropdowns on outside click
@@ -423,7 +479,10 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           invested,
           totalProfit: profit,
           registrationDate: (u.created_at || '').slice(0, 10),
-          manager: clientStatuses[`acc-${u.id}`] ? '' : 'Unassigned',
+          manager: u.assignedManagerName || 'Unassigned',
+          lastSeen: u.lastSeen || null,
+          assignedManagerId: u.assignedManagerId || null,
+          defaultLeverage: u.defaultLeverage || 10,
         } as Investor;
       });
   }, [users, trades, kycDocuments, clientStatuses]);
@@ -436,20 +495,60 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const selectedUser =
     allClients.find(i => i.id === selectedUserId || i.id === `acc-${selectedUserId}`) || allClients[0];
 
-  const filteredInvestors = allClients.filter(
-    inv =>
-      inv.name.toLowerCase().includes(searchInvestor.toLowerCase()) ||
-      inv.email.toLowerCase().includes(searchInvestor.toLowerCase()) ||
-      inv.phone.includes(searchInvestor),
-  );
+  const filteredInvestors = allClients.filter(inv => {
+    const q = searchInvestor.toLowerCase();
+    const matchesText =
+      inv.name.toLowerCase().includes(q) ||
+      inv.email.toLowerCase().includes(q) ||
+      inv.phone.includes(searchInvestor);
+    const st = lookupClientStatus(clientStatuses, inv.id);
+    const matchesStatus = statusFilter === 'all' || st === statusFilter;
+    return matchesText && matchesStatus;
+  });
 
-  const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
+  const pendingWithdrawalCount = requests.filter(r => r.status === 'pending' && r.type === 'withdrawal').length;
+  const pendingDepositCount = requests.filter(r => r.status === 'pending' && r.type === 'deposit').length;
+  const pendingRequestsCount = pendingWithdrawalCount + pendingDepositCount;
   const totalAum = investors.reduce((s, i) => s + i.balance + i.invested, 0);
   const openTrades = trades.filter(t => t.status === 'OPEN').length;
 
   const openUser = (id: string) => {
     setSelectedUserId(id);
     setActiveTab('user-details');
+  };
+
+  /**
+   * Clicking a notification opens the screen the event belongs to —
+   * a support alert opens the chat (of that client, when known),
+   * a money request opens the money queue, a lead alert the pipeline, etc.
+   */
+  const handleNotificationNav = (n: ApiNotification) => {
+    switch (n.link) {
+      case 'leads':
+        setActiveTab('leads');
+        break;
+      case 'support':
+        setActiveTab('support');
+        if (n.userId) setSupportActiveClientId(n.userId);
+        break;
+      case 'trading':
+        if (n.userId) setTradingFocusId(String(n.userId));
+        setActiveTab('trading');
+        break;
+      case 'transactions':
+        setActiveTab(n.kind && n.kind.includes('deposit') ? 'deposits' : 'withdrawals');
+        break;
+      case 'user-details':
+        if (n.userId) openUser(String(n.userId));
+        else setActiveTab('users');
+        break;
+      case 'calendar':
+        setActiveTab('calendar');
+        break;
+      default:
+        if (n.kind === 'calendar') setActiveTab('calendar');
+        break;
+    }
   };
 
   const handleAddComment = () => {
@@ -503,18 +602,36 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   return (
     <div className="flex min-h-screen bg-[#F5F2E9] text-[#213532]">
       {/* ==================== SIDEBAR ==================== */}
-      <aside className="w-[248px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] hidden lg:flex flex-col sticky top-0 h-screen text-[#F5F2E9]">
+      {/* mobile backdrop */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-[#1C412C]/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+      <aside className={`w-[248px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] flex flex-col text-[#F5F2E9]
+        fixed inset-y-0 left-0 z-50 h-screen overflow-y-auto transform transition-transform duration-200 ease-out
+        ${navOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:translate-x-0 lg:static lg:z-auto lg:sticky lg:top-0 lg:h-screen lg:overflow-visible`}>
         {/* Logo — same brand lockup as the landing page and the client
             cabinet. The crest is green, so it must sit on the cream disc
             to stay visible against the dark-green sidebar. */}
         <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/10">
-          <div className="w-10 h-10 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0">
-            <OakCrest size={22} />
+          <div className="w-16 h-16 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0 overflow-hidden">
+            <OakCrest size={64} />
           </div>
-          <div className="leading-tight">
-            <OakWordmark tone="light" />
-            <div className="text-[9px] font-bold text-[#B08B48] tracking-widest mt-0.5">{roleLabel}</div>
-          </div>
+            <div className="leading-tight">
+              <OakWordmark tone="light" />
+              <div className="text-[9px] font-bold text-[#B08B48] tracking-widest mt-0.5">{roleLabel}</div>
+            </div>
+            {/* close drawer — mobile only */}
+            <button
+              onClick={() => setNavOpen(false)}
+              className="ml-auto lg:hidden w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer"
+              aria-label="Close menu"
+            >
+              <X className="w-4 h-4" />
+            </button>
         </div>
 
         {/* Profile */}
@@ -547,9 +664,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate">{item.label}</span>
-                  {item.id === 'withdrawals' && pendingRequestsCount > 0 && (
+                  {item.id === 'withdrawals' && pendingWithdrawalCount > 0 && (
                     <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-bold">
-                      {pendingRequestsCount}
+                      {pendingWithdrawalCount}
+                    </span>
+                  )}
+                  {item.id === 'deposits' && pendingDepositCount > 0 && (
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-bold">
+                      {pendingDepositCount}
                     </span>
                   )}
                   {item.id === 'leads' && (
@@ -601,18 +723,26 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
       {/* ==================== MAIN ==================== */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Topbar */}
-        <header className="h-16 shrink-0 border-b border-[#E4DECB] bg-white/90 backdrop-blur sticky top-0 z-30 flex items-center justify-between px-5 shadow-sm">
-          <div className="flex items-center gap-2 text-[11px] text-[#213532]/70">
+        <header className="h-16 shrink-0 border-b border-[#E4DECB] bg-white/90 backdrop-blur sticky top-0 z-30 flex items-center justify-between gap-2 px-3 sm:px-5 shadow-sm">
+          <div className="min-w-0 flex-1 flex items-center gap-2 text-[11px] text-[#213532]/70">
+            {/* burger — opens the drawer on phones */}
+            <button
+              onClick={() => setNavOpen(true)}
+              className="lg:hidden w-9 h-9 rounded-full bg-[#1C412C]/[.06] border border-[#E4DECB] flex items-center justify-center text-[#213532] hover:bg-[#1C412C]/[.12] cursor-pointer"
+              aria-label="Open menu"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
             <button
               onClick={() => setActiveTab('dashboard')}
-              className="hover:text-[#1C412C] font-medium cursor-pointer"
+              className="hover:text-[#1C412C] font-medium cursor-pointer max-[400px]:hidden"
             >
               Home
             </button>
-            <ChevronRight className="w-3 h-3" />
+            <ChevronRight className="w-3 h-3 max-[400px]:hidden" />
             <span className="px-2 py-1 rounded-lg bg-[#1C412C]/[.06] text-[#1C412C] font-semibold">{header.title}</span>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2.5">
             {/* Notifications */}
             <div className="relative" ref={bellRef}>
               <button
@@ -621,14 +751,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               >
                 <Bell className="w-4 h-4" />
                 {(unreadCount > 0 || pendingRequestsCount > 0) && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[#B08B48] text-[9px] font-extrabold text-white flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#B08B48] text-[9px] leading-none font-extrabold text-white flex items-center justify-center whitespace-nowrap ring-2 ring-white z-10">
                     {unreadCount || pendingRequestsCount}
                   </span>
                 )}
               </button>
               {bellOpen && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-[#E4DECB] rounded-xl shadow-2xl py-2 z-50">
-                  <div className="px-4 py-2 flex items-center justify-between border-b border-[#E4DECB]">
+                <div className="crm-notification-popover absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-white border border-[#E4DECB] rounded-xl shadow-2xl py-2 z-50">
+                  <div className="px-4 py-2 flex items-center justify-between gap-2 border-b border-[#E4DECB]">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#213532]/60">
                       Notifications
                     </span>
@@ -642,24 +772,24 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     )}
                   </div>
 
-                  <div className="max-h-80 overflow-y-auto divide-y divide-[#E4DECB]/60">
+                  <div className="crm-notification-list max-h-80 overflow-y-auto divide-y divide-[#E4DECB]/60">
                     {/* live events from the server */}
                     {notifications.map(n => (
                       <button
                         key={n.id}
                         onClick={() => {
                           onMarkNotificationsRead(n.id);
-                          if (n.link === 'user-details') setActiveTab('users');
+                          handleNotificationNav(n);
                           setBellOpen(false);
                         }}
-                        className={`w-full flex items-start gap-2.5 px-4 py-2.5 text-left cursor-pointer hover:bg-[#F2EEDF] ${
+                        className={`w-full grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-2.5 px-4 py-2.5 text-left cursor-pointer hover:bg-[#F2EEDF] ${
                           n.read ? 'opacity-60' : ''
                         }`}
                       >
                         <FileText className="w-4 h-4 text-[#B08B48] shrink-0 mt-0.5" />
                         <span className="min-w-0">
-                          <span className="block text-[12.5px] text-[#1C412C] font-semibold">{n.title}</span>
-                          <span className="block text-[11px] text-[#213532]/70">{n.message}</span>
+                          <span className="block min-w-0 break-words text-[12.5px] text-[#1C412C] font-semibold">{n.title}</span>
+                          <span className="block min-w-0 break-words text-[11px] text-[#213532]/70">{n.message}</span>
                           <span className="block text-[10px] text-[#213532]/50 mt-0.5">
                             {new Date(n.createdAt).toLocaleString('en-US')}
                           </span>
@@ -670,16 +800,16 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
 
                     {/* always-present operational shortcuts */}
                     {[
-                      { t: `${pendingRequestsCount} withdrawal request(s) pending`, tab: 'withdrawals' as CrmTab, icon: ArrowDownToLine },
+                      { t: `${pendingWithdrawalCount} withdrawal request(s) pending`, tab: 'withdrawals' as CrmTab, icon: ArrowDownToLine },
                       { t: `${leads.filter(l => l.stage === 'new').length} new lead(s) assigned`, tab: 'leads' as CrmTab, icon: Kanban },
                     ].map(n => (
                       <button
                         key={n.t}
                         onClick={() => { setActiveTab(n.tab); setBellOpen(false); }}
-                        className="w-full flex items-start gap-2.5 px-4 py-2.5 text-left text-[12.5px] text-[#213532] hover:bg-[#F2EEDF] cursor-pointer"
+                        className="w-full grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-2.5 px-4 py-2.5 text-left text-[12.5px] text-[#213532] hover:bg-[#F2EEDF] cursor-pointer"
                       >
                         <n.icon className="w-4 h-4 text-[#213532]/50 shrink-0 mt-0.5" />
-                        {n.t}
+                        <span className="min-w-0 break-words">{n.t}</span>
                       </button>
                     ))}
                   </div>
@@ -693,6 +823,13 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               className="w-9 h-9 rounded-full bg-[#1C412C]/[.06] border border-[#E4DECB] flex items-center justify-center text-[#213532]/70 hover:text-[#1C412C] hover:bg-[#1C412C]/[.12] cursor-pointer"
             >
               <Phone className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setActiveTab('calendar')}
+              title="Calendar"
+              className="w-9 h-9 rounded-full bg-[#1C412C]/[.06] border border-[#E4DECB] flex items-center justify-center text-[#213532]/70 hover:text-[#1C412C] hover:bg-[#1C412C]/[.12] cursor-pointer"
+            >
+              <Calendar className="w-4 h-4" />
             </button>
 
             {/* Profile menu */}
@@ -750,18 +887,24 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 <p className="text-[12px] text-[#213532]/70 mt-0.5">{header.sub}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Btn variant="gold" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
-                  Create client
-                </Btn>
-                <Btn variant="ghost" icon={Upload} onClick={() => setIsImportLeadsOpen(true)}>
-                  Import leads
-                </Btn>
-                <Btn variant="ghost" icon={Plus} onClick={onOpenNewLeadModal}>
-                  Add lead
-                </Btn>
+                {isAdmin && (
+                  <>
+                    <Btn variant="gold" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
+                      Create client
+                    </Btn>
+                    <Btn variant="ghost" icon={Upload} onClick={() => setIsImportLeadsOpen(true)}>
+                      Import leads
+                    </Btn>
+                    <Btn variant="ghost" icon={Plus} onClick={onOpenNewLeadModal}>
+                      Add lead
+                    </Btn>
+                  </>
+                )}
+                {activeTab === 'markets' && (
                 <Btn variant="ghost" icon={Plus} onClick={onOpenNewProjectModal}>
                   New asset
                 </Btn>
+                )}
               </div>
             </div>
           )}
@@ -770,22 +913,25 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           {activeTab === 'dashboard' && (
             <div className="space-y-5">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Kpi icon={Users} label="Total users" value={String(investors.length)} hint="+12% this month" />
-                <Kpi icon={Activity} label="Active clients" value={String(investors.filter(i => i.kycStatus === 'verified').length)} tone="green" hint="+4%" />
+                <Kpi icon={Users} label="Total users" value={String(investors.length)} />
+                <Kpi icon={Activity} label="Active clients" value={String(users.filter(u => u.role === 'CLIENT' && u.status === 'active').length)} tone="green" />
                 <Kpi icon={TrendingUp} label="Open trades" value={String(openTrades)} tone="blue" />
                 <Kpi icon={Ban} label="Blocked" value={String(users.filter(u => u.status === 'blocked').length)} tone="red" />
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <Card title="Online chat" subtitle="Unanswered messages" className="lg:col-span-1">
-                  <div className="p-5">
-                    <div className="text-3xl font-extrabold text-[#B08B48]">0</div>
-                    <p className="text-[11px] text-[#213532]/70 mt-1">No unanswered messages</p>
+                  <div className="p-5 cursor-pointer" onClick={() => setActiveTab('support')}>
+                    <div className="text-3xl font-extrabold text-[#B08B48]">{chatUnread}</div>
+                    <p className="text-[11px] text-[#213532]/70 mt-1">
+                      {chatUnread === 0 ? 'No unanswered messages' : chatUnread === 1 ? '1 message awaits an answer' : `${chatUnread} messages await answers`}
+                    </p>
+                    <p className="text-[10px] text-[#B08B48] font-bold mt-2">Open support →</p>
                   </div>
                 </Card>
                 <Card title="Withdrawals" subtitle="Pending processing">
                   <div className="p-5">
-                    <div className="text-3xl font-extrabold text-[#1C412C]">{pendingRequestsCount}</div>
+                    <div className="text-3xl font-extrabold text-[#1C412C]">{pendingWithdrawalCount}</div>
                     <p className="text-[11px] text-[#213532]/70 mt-1">requests in queue</p>
                     <Btn size="sm" variant="ghost" className="mt-3" onClick={() => setActiveTab('withdrawals')}>
                       Open
@@ -798,6 +944,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     <p className="text-[11px] text-[#213532]/70 mt-1">{requests.filter(r => r.type === 'deposit').length} deposits</p>
                   </div>
                 </Card>
+                {isAdmin ? (
                 <Card title="Quick registration" subtitle="Create a client account">
                   <div className="p-5 space-y-2">
                     <Btn variant="gold" size="sm" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
@@ -806,15 +953,23 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     <p className="text-[11px] text-[#213532]/70">Automatic account creation with active access</p>
                   </div>
                 </Card>
+                ) : (
+                <Card title="Your book" subtitle="Clients assigned to you">
+                  <div className="p-5">
+                    <div className="text-3xl font-extrabold text-[#1C412C]">{allClients.length}</div>
+                    <p className="text-[11px] text-[#213532]/70 mt-1">assigned clients</p>
+                  </div>
+                </Card>
+                )}
               </div>
 
-              {/* Trading modules row (PDF: Spot / Futures / Binary / P2P) */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Trading modules row — only real, computed figures. P2P and
+                  Binary products are not implemented on the platform, so the
+                  old hard-coded tiles (120 open orders / 8 active bets) went away. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  { t: 'P2P Trading', v: '120', s: 'open orders', tone: 'gold' },
-                  { t: 'Spot Trading', v: `${trades.filter(x => x.type === 'SPOT').length}`, s: 'last trades', tone: 'blue' },
-                  { t: 'Futures Trading', v: `${trades.filter(x => x.type !== 'SPOT').length}`, s: 'open positions', tone: 'green' },
-                  { t: 'Binary Trading', v: '8', s: 'active bets', tone: 'red' },
+                  { t: 'Spot Trading', v: `${trades.filter(x => x.type === 'SPOT').length}`, s: 'spot positions', tone: 'blue' },
+                  { t: 'Futures Trading', v: `${trades.filter(x => x.type !== 'SPOT').length}`, s: 'futures positions', tone: 'green' },
                 ].map(m => (
                   <Card key={m.t} className="p-5">
                     <div className="text-[11px] text-[#213532]/70 font-semibold uppercase tracking-wide">{m.t}</div>
@@ -824,54 +979,64 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 ))}
               </div>
 
-              {/* Users quick list */}
-              <Card title="Detailed user info" subtitle="Client base · CRM">
-                <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {investors.slice(0, 4).map(inv => (
-                    <div key={inv.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl p-4 shadow-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <Avatar name={inv.name} size={42} />
-                          <div className="min-w-0">
-                            <div className="font-bold text-[#1C412C] text-[14px] truncate">{inv.name}</div>
-                            <div className="text-[11px] text-[#213532]/70 truncate">{inv.email}</div>
-                            <div className="text-[11px] text-[#213532]/60 font-mono">{phonesHidden ? maskPhone(inv.phone) : inv.phone}</div>
-                          </div>
-                        </div>
-                        <Badge tone={inv.kycStatus === 'verified' ? 'green' : inv.kycStatus === 'pending' ? 'gold' : 'red'}>
-                          {inv.kycStatus}
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 mt-4">
-                        <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
-                          <div className="text-[10px] text-[#213532]/60 font-medium">Balance</div>
-                          <div className="text-[13px] font-extrabold text-[#1C412C]">${inv.balance.toLocaleString('en-US')}</div>
-                        </div>
-                        <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
-                          <div className="text-[10px] text-[#213532]/60 font-medium">Invested</div>
-                          <div className="text-[13px] font-extrabold text-[#1C412C]">${inv.invested.toLocaleString('en-US')}</div>
-                        </div>
-                        <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
-                          <div className="text-[10px] text-[#213532]/60 font-medium">Profit</div>
-                          <div className="text-[13px] font-extrabold text-emerald-700">+${inv.totalProfit.toLocaleString('en-US')}</div>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2 mt-4">
-                        <Btn size="sm" variant="gold" onClick={() => openUser(inv.id)}>
-                          Manage
-                        </Btn>
-                        <Btn size="sm" variant="ghost" icon={PhoneCall} onClick={() => setActiveTab('calls')}>
-                          Call
-                        </Btn>
-                        <Btn size="sm" variant="ghost" icon={MessageSquare} onClick={() => setActiveTab('support')}>
-                          Message
-                        </Btn>
-                      </div>
-                    </div>
-                  ))}
+              <Card className="p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[14px] font-bold text-[#1C412C]">Client cards</div>
+                    <p className="text-[12px] text-[#213532]/70 mt-0.5">Open the working book from the left menu to manage a large client list.</p>
+                  </div>
+                  <Btn variant="gold" onClick={() => setActiveTab('client-cards')}>Open client cards</Btn>
                 </div>
               </Card>
             </div>
+          )}
+
+          {activeTab === 'client-cards' && (
+            <Card title={`Client cards (${allClients.length})`} subtitle="Last comment and client status persist in the database">
+              <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {allClients.map(inv => {
+                  const crmStatus = lookupClientStatus(clientStatuses, inv.id);
+                  const lastNote = notes
+                    .filter(n => bareClientId(n.clientId) === bareClientId(inv.id))
+                    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+                  const seen = formatLastSeen(inv.lastSeen);
+                  return (
+                  <div key={inv.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-2xl p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar name={inv.name} size={42} />
+                        <div className="min-w-0">
+                          <div className="font-bold text-[#1C412C] text-[14px] truncate">{inv.name}</div>
+                          <div className={`text-[11px] font-bold ${seen.online ? 'text-emerald-600' : 'text-[#213532]/55'}`}>{seen.label}</div>
+                          <div className="text-[11px] text-[#213532]/70 truncate">{inv.email}</div>
+                        </div>
+                      </div>
+                      <Badge tone={statusTone(crmStatus)}>{crmStatus}</Badge>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-4">
+                      <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
+                        <div className="text-[10px] text-[#213532]/60 font-medium">Balance</div>
+                        <div className="text-[13px] font-extrabold text-[#1C412C]">${inv.balance.toLocaleString('en-US')}</div>
+                      </div>
+                      <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
+                        <div className="text-[10px] text-[#213532]/60 font-medium">Invested</div>
+                        <div className="text-[13px] font-extrabold text-[#1C412C]">${inv.invested.toLocaleString('en-US')}</div>
+                      </div>
+                      <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
+                        <div className="text-[10px] text-[#213532]/60 font-medium">Last comment</div>
+                        <div className="text-[12px] font-semibold text-[#1C412C] truncate">{lastNote ? lastNote.text : '—'}</div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      <Btn size="sm" variant="gold" onClick={() => openUser(inv.id)}>Manage</Btn>
+                      <Btn size="sm" variant="ghost" icon={PhoneCall} onClick={() => setActiveTab('calls')}>Call</Btn>
+                      <Btn size="sm" variant="ghost" icon={MessageSquare} onClick={() => setActiveTab('support')}>Message</Btn>
+                    </div>
+                  </div>
+                  );
+                })}
+              </div>
+            </Card>
           )}
 
           {/* ===================== TRADING ===================== */}
@@ -879,6 +1044,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
             <CrmTradesManager
               investors={investors}
               trades={trades}
+              focusInvestorId={tradingFocusId}
+              canManageTrades={currentUserRole === 'ADMIN' || Boolean(settings.manualClosing)}
               onUpdateInvestorBalance={onUpdateInvestorBalance}
               onCreateTrade={onCreateTrade}
               onUpdateTrade={onUpdateTrade}
@@ -893,9 +1060,15 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               subtitle="Platform accounts, balances and access"
               actions={
                 <div className="flex flex-wrap items-center gap-3">
+                  {isAdmin && (
                   <Btn variant="gold" size="sm" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
                     Create client
                   </Btn>
+                  )}
+                  <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="min-w-52">
+                    <option value="all">All statuses</option>
+                    {CLIENT_STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                  </Select>
                   <div className="relative w-64">
                     <Search className="w-4 h-4 text-[#213532]/40 absolute left-3 top-1/2 -translate-y-1/2" />
                     <Input
@@ -929,6 +1102,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                             <Avatar name={inv.name} size={34} />
                             <div>
                               <div className="font-semibold text-[#1C412C]">{inv.name}</div>
+                              <div className={`text-[10px] font-bold ${formatLastSeen(inv.lastSeen).online ? 'text-emerald-600' : 'text-[#213532]/50'}`}>{formatLastSeen(inv.lastSeen).label}</div>
                               <div className="text-[11px] text-[#213532]/60">{inv.email}</div>
                             </div>
                           </button>
@@ -938,8 +1112,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <Td className="text-[#213532]">${inv.invested.toLocaleString('en-US')}</Td>
                         <Td className="text-[12px] text-[#213532]/70">{inv.manager}</Td>
                         <Td>
-                          <Badge tone={inv.kycStatus === 'verified' ? 'green' : inv.kycStatus === 'pending' ? 'gold' : 'red'}>
-                            {inv.kycStatus === 'verified' ? 'Active' : inv.kycStatus}
+                          <Badge tone={statusTone(lookupClientStatus(clientStatuses, inv.id))}>
+                            {lookupClientStatus(clientStatuses, inv.id)}
                           </Badge>
                         </Td>
                         <Td className="text-right">
@@ -960,7 +1134,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 </table>
               </div>
 
-              {/* Platform accounts (backend users) */}
+              {isAdmin && (
               <div className="border-t border-[#E4DECB] p-5">
                 <h4 className="text-[13px] font-semibold text-[#1C412C] mb-3">Platform accounts ({users.length})</h4>
                 <div className="overflow-x-auto">
@@ -1013,6 +1187,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   </table>
                 </div>
               </div>
+              )}
             </Card>
           )}
 
@@ -1027,15 +1202,18 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               )}
               phonesHidden={phonesHidden}
               onBack={() => setActiveTab('users')}
-              onGoTrading={() => setActiveTab('trading')}
+              onGoTrading={() => { setTradingFocusId(selectedUser.id); setActiveTab('trading'); }}
               onGoCalls={() => setActiveTab('calls')}
               onGoTransactions={() => setActiveTab('deposits')}
               onUpdateBalance={onUpdateInvestorBalance}
               onNotify={onNotify}
-              notes={notes.filter(n => n.clientId === selectedUser.id)}
-              onAddNote={onAddNote}
-              status={clientStatuses[selectedUser.id] || 'New'}
-              onSetStatus={onSetClientStatus}
+              notes={notes.filter(n => bareClientId(n.clientId) === bareClientId(selectedUser.id))}
+              onAddNote={(id, text) => onAddNote(bareClientId(id), text)}
+              status={lookupClientStatus(clientStatuses, selectedUser.id)}
+              onSetStatus={(id, st) => onSetClientStatus(bareClientId(id), st)}
+              staffUsers={users.filter(u => u.role === 'ADMIN' || u.role === 'MANAGER')}
+              withdrawBlocks={withdrawBlocks}
+              onSetWithdrawBlock={onSetWithdrawBlock}
               currentUserName={displayName}
               kycDocuments={kycDocuments.filter(
                 d =>
@@ -1047,6 +1225,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               onChangePassword={openPwdModal}
               onImpersonate={onImpersonateUser}
               onUpdateUserStatus={onUpdateUserStatus}
+              onDeleteUser={onDeleteUser}
+              onPatchUser={onPatchUser}
               isAdmin={isAdmin}
               onOpenStatementModal={(id, name) => setStatementModalUser({ id, name })}
             />
@@ -1092,12 +1272,24 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   setSendingLetter(true);
                   try {
                     const audience =
-                      letterAudience === 'Active only'
+                      letterAudience === 'One client'
+                        ? 'one'
+                        : letterAudience === 'Active only'
                         ? 'active'
                         : letterAudience === 'No deposit'
                         ? 'noDeposit'
                         : 'all';
-                    const r = await apiSendMailing(letterSubject, letterBody, audience);
+                    if (audience === 'one' && !letterUserId) {
+                      onNotify('Pick a client first.');
+                      setSendingLetter(false);
+                      return;
+                    }
+                    const r = await apiSendMailing(
+                      letterSubject,
+                      letterBody,
+                      audience,
+                      audience === 'one' ? Number(letterUserId) : undefined,
+                    );
                     onNotify(r.message);
                   } catch (err) {
                     onNotify(err instanceof Error ? err.message : 'Could not send the letter');
@@ -1110,17 +1302,71 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                 <div>
                   <label className="text-[11px] font-bold uppercase text-[#213532]/70">Recipients</label>
                   <Select className="w-full mt-1.5" value={letterAudience} onChange={e => setLetterAudience(e.target.value)}>
+                    <option>One client</option>
                     <option>All clients</option>
                     <option>Active only</option>
                     <option>No deposit</option>
                   </Select>
-                  <div className="text-[11px] text-[#213532]/60 mt-1">
-                    {letterAudience === 'Active only'
-                      ? mailAudience.active
-                      : letterAudience === 'No deposit'
-                      ? mailAudience.noDeposit
-                      : mailAudience.all}{' '}
-                    recipient(s) selected
+                  {letterAudience === 'One client' && (
+                    <div className="mt-2 space-y-2">
+                      <Input
+                        className="w-full"
+                        placeholder="Search by name or e-mail..."
+                        value={letterClientQuery}
+                        onChange={e => setLetterClientQuery(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }}
+                      />
+                      <div className="max-h-48 overflow-y-auto border border-[#E4DECB] rounded-xl divide-y divide-[#E4DECB] bg-white">
+                        {(() => {
+                          const pool = mailAudience.clients.length
+                            ? mailAudience.clients
+                            : users.filter(u => u.role === 'CLIENT').map(u => ({ id: u.id, name: u.name, email: u.email, status: u.status }));
+                          const q = letterClientQuery.trim().toLowerCase();
+                          const shown = pool.filter(c => {
+                            if (!q) return true;
+                            return `${c.name} ${c.email}`.toLowerCase().includes(q);
+                          });
+                          if (shown.length === 0) {
+                            return <div className="px-3 py-3 text-[12px] text-[#213532]/60">No clients match «{letterClientQuery}»</div>;
+                          }
+                          return shown.map(c => (
+                            <button
+                              type="button"
+                              key={c.id}
+                              onClick={() => setLetterUserId(String(c.id))}
+                              className={`w-full text-left px-3 py-2.5 cursor-pointer ${
+                                String(letterUserId) === String(c.id) ? 'bg-[#B08B48]/15' : 'hover:bg-[#F5F2E9]'
+                              }`}
+                            >
+                              <div className="text-[13px] font-semibold text-[#1C412C]">{c.name}</div>
+                              <div className="text-[11px] text-[#213532]/60">{c.email}</div>
+                            </button>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                  <div className="text-[11px] text-[#213532]/70 mt-2 leading-relaxed">
+                    {(() => {
+                      const pool = users.filter(u => u.role === 'CLIENT' && u.status !== 'blocked');
+                      if (letterAudience === 'One client') {
+                        const one = pool.find(u => String(u.id) === String(letterUserId));
+                        return one
+                          ? `Will send to 1 person: ${one.name} (${one.email})`
+                          : 'Pick one client from the list — nobody is selected yet.';
+                      }
+                      const list =
+                        letterAudience === 'Active only'
+                          ? pool.filter(u => u.status === 'active')
+                          : letterAudience === 'No deposit'
+                          ? pool.filter(u => !Number(u.balance))
+                          : pool;
+                      if (!list.length) return 'Will send to 0 people with this filter.';
+                      if (list.length <= 4) {
+                        return `Will send to ${list.length}: ${list.map(u => u.name).join(', ')}`;
+                      }
+                      return `Will send to ${list.length} clients. Individual names are hidden when the list is large.`;
+                    })()}
                   </div>
                 </div>
                 <div>
@@ -1202,6 +1448,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   <span className="text-sm font-bold text-[#1C412C]">Sales Pipeline</span>
                   <Badge tone="gray">{leads.length} active leads</Badge>
                 </div>
+                {isAdmin && (
                 <div className="flex items-center gap-2">
                   <Btn variant="ghost" size="sm" icon={Upload} onClick={() => setIsImportLeadsOpen(true)}>
                     Import CSV
@@ -1210,6 +1457,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     Add Lead
                   </Btn>
                 </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1232,6 +1480,23 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         .map(lead => (
                           <div key={lead.id} className="bg-white border border-[#E4DECB] rounded-xl p-3 shadow-xs hover:border-[#B08B48]/50 transition-colors">
                             <div className="font-semibold text-[#1C412C] text-[13px]">{lead.name}</div>
+                            {(() => {
+                              const leadEmail = String(lead.email || '').trim().toLowerCase();
+                              const leadPhone = String(lead.phone || '').replace(/\D/g, '');
+                              const leadName = String(lead.name || '').trim().toLowerCase();
+                              const match = users.find(u => {
+                                if (u.role && u.role !== 'CLIENT') return false;
+                                const uEmail = String(u.email || '').trim().toLowerCase();
+                                const uPhone = String(u.phone || '').replace(/\D/g, '');
+                                const uName = String(u.name || '').trim().toLowerCase();
+                                if (leadEmail && uEmail && leadEmail === uEmail) return true;
+                                if (leadPhone.length >= 6 && uPhone && uPhone === leadPhone) return true;
+                                if (leadName && uName && leadName === uName) return true;
+                                return false;
+                              });
+                              const seen = formatLastSeen(match?.lastSeen);
+                              return <div className={`text-[10px] font-bold ${seen.online ? 'text-emerald-600' : 'text-[#213532]/50'}`}>{seen.label}</div>;
+                            })()}
                             <div className="text-[11px] text-[#213532]/70 font-mono">
                               {phonesHidden ? maskPhone(lead.phone) : lead.phone}
                             </div>
@@ -1276,14 +1541,33 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   <Input placeholder="Search by name, email, phone..." value={supportSearch} onChange={e => setSupportSearch(e.target.value)} className="w-full" />
                   {(() => {
                     const q = supportSearch.trim().toLowerCase();
-                    const filtered = supportConvs.filter(c => {
-                      if (!q) return true;
-                      const u = users.find(x => x.id === c.clientId) as any;
-                      const phone = u?.phone || '';
-                      return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || String(phone).toLowerCase().includes(q);
+                    const convById = new Map(supportConvs.map(c => [c.clientId, c]));
+                    const clientUsers = users.filter(u => u.role === 'CLIENT');
+                    const list = (q
+                      ? clientUsers.filter(u =>
+                          u.name.toLowerCase().includes(q) ||
+                          u.email.toLowerCase().includes(q) ||
+                          String(u.phone || '').toLowerCase().includes(q),
+                        )
+                      : supportConvs.map(c => clientUsers.find(u => u.id === c.clientId) || { id: c.clientId, name: c.name, email: c.email, role: 'CLIENT' as const, status: 'active' as const })
+                    );
+                    const filtered = list.map(u => {
+                      const c = convById.get(u.id);
+                      const seen = formatLastSeen(u.lastSeen ?? c?.lastSeen);
+                      return {
+                        clientId: u.id,
+                        name: u.name,
+                        email: u.email,
+                        online: seen.online,
+                        lastSeenLabel: seen.label,
+                        unreadForStaff: c?.unreadForStaff || 0,
+                        lastPreview: c?.lastPreview || '',
+                        createdAt: c?.createdAt || null,
+                        lastMessageAt: c?.lastMessageAt || null,
+                      };
                     });
                     if (filtered.length === 0) {
-                      return <div className="text-center text-[12px] text-[#213532]/60 py-8">No conversations yet — chats appear when clients write to you.</div>;
+                      return <div className="text-center text-[12px] text-[#213532]/60 py-8">{q ? 'No clients match this search.' : 'No conversations yet — search a client by name to write first.'}</div>;
                     }
                     return (
                       <div className="space-y-2">
@@ -1297,7 +1581,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                                 <Avatar name={c.name} size={36} />
                                 <div className="flex-1 min-w-0">
                                   <div className="text-[13px] font-bold text-[#1C412C] truncate">{c.name}</div>
-                                  <div className={`text-[11px] font-bold ${c.online ? 'text-emerald-600' : 'text-rose-600'}`}>{c.online ? 'ONLINE' : 'OFFLINE'}</div>
+                                  <div className={`text-[11px] font-bold ${c.online ? 'text-emerald-600' : 'text-rose-600'}`}>{c.online ? 'ONLINE' : ((c as any).lastSeenLabel || 'OFFLINE')}</div>
                                   <div className="text-[11px] text-[#213532]/60 truncate">{c.email}</div>
                                   {c.lastPreview && <div className="text-[11px] text-[#213532]/50 truncate mt-0.5">{c.lastPreview}</div>}
                                 </div>
@@ -1373,6 +1657,25 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
 
           {/* ===================== ANALYTICS ===================== */}
           {activeTab === 'analytics' && <AnalyticsPanel onNotify={onNotify} />}
+
+          {activeTab === 'calendar' && (
+            <CrmCalendarPanel
+              users={users}
+              onNotify={onNotify}
+              onOpenClient={(userId) => openUser(String(userId))}
+            />
+          )}
+
+          {activeTab === 'markets' && (
+            <CrmMarketsPanel
+              projects={projects}
+              users={users}
+              onUpdate={onUpdateProject}
+              onDelete={onDeleteProject}
+              onNotify={onNotify}
+              onRefresh={onRefreshProjects}
+            />
+          )}
 
           {/* ===================== SETTINGS ===================== */}
           {activeTab === 'settings' && (
@@ -1485,7 +1788,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                       </div>
                     </div>
                     <button
-                      onClick={onToggleHidePhones}
+                      onClick={() => onToggleSetting('hidePhonesFromAgents')}
                       className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer shrink-0 ${
                         settings.hidePhonesFromAgents ? 'bg-[#B08B48]' : 'bg-[#213532]/20'
                       }`}
@@ -1498,7 +1801,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   </div>
                   {([
                     { key: 'duplicateControl' as const, t: 'Duplicate control (block repeated leads)', s: 'Every new contact is checked against the base' },
-                    { key: 'manualClosing' as const, t: 'Allow manual position closing by clients', s: 'When off, only admins can close positions' },
+                    { key: 'manualClosing' as const, t: 'Allow manual position management (managers & clients)', s: 'When off, only the admin can open, edit or close client positions' },
                     { key: 'callRecording' as const, t: 'Enable call recording', s: 'Store call records for quality control' },
                   ]).map(r => (
                     <div key={r.key} className="flex items-center justify-between bg-[#F5F2E9] border border-[#E4DECB] rounded-xl p-4">
@@ -1507,14 +1810,14 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <div className="text-[11px] text-[#213532]/70 mt-0.5">{r.s}</div>
                       </div>
                       <button
-                        onClick={() => setRules(p => ({ ...p, [r.key]: !p[r.key] }))}
+                        onClick={() => onToggleSetting(r.key)}
                         className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer shrink-0 ${
-                          rules[r.key] ? 'bg-[#B08B48]' : 'bg-[#213532]/20'
+                          settings[r.key] ? 'bg-[#B08B48]' : 'bg-[#213532]/20'
                         }`}
                       >
                         <span
                           className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"
-                          style={{ left: rules[r.key] ? 26 : 2 }}
+                          style={{ left: settings[r.key] ? 26 : 2 }}
                         />
                       </button>
                     </div>
@@ -1634,8 +1937,9 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
         onClose={() => setIsCreateClientOpen(false)}
         managers={users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name).length ? users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name) : ['Laura Bennett (Senior Advisor)', 'Daniel Foster (Desk 2)', 'Oleg Vasilyev (Desk 3)']}
         onClientCreated={(newUser) => {
-          onNotify(`✔ Client ${newUser.name} created successfully.`);
-          setActiveTab('users');
+          onNotify(`✔ Client ${newUser.name} created — also added to Leads.`);
+          onRefreshLeads?.();
+          setActiveTab('leads');
         }}
       />
 
@@ -1679,8 +1983,14 @@ const UserDetails: React.FC<{
   /** Admin: open the client's cabinet in a support session */
   onImpersonate?: (user: ApiUser) => void;
   onUpdateUserStatus: (userId: number, status: string) => Promise<void>;
+  onDeleteUser?: (userId: number) => Promise<void>;
+  onPatchUser?: (userId: number, patch: Partial<ApiUser>) => void;
   isAdmin: boolean;
   onOpenStatementModal?: (userId: number, userName: string) => void;
+  /** real payout block, saved on the server: { '<userId>': true } */
+  withdrawBlocks: Record<string, boolean>;
+  onSetWithdrawBlock: (clientId: string, blocked: boolean) => Promise<void>;
+  staffUsers?: ApiUser[];
 }> = ({
   user,
   trades,
@@ -1702,15 +2012,23 @@ const UserDetails: React.FC<{
   onChangePassword,
   onImpersonate,
   onUpdateUserStatus,
+  onDeleteUser,
+  onPatchUser,
   isAdmin,
   onOpenStatementModal,
+  withdrawBlocks,
+  onSetWithdrawBlock,
+  staffUsers = [],
 }) => {
   const [moreOpen, setMoreOpen] = useState(false);
   // Real block state comes from the platform account, not local UI state
   const blocked = account?.status === 'blocked';
-  const [withdrawBlocked, setWithdrawBlocked] = useState(false);
+  // The payout block is stored ON THE SERVER (settings → withdrawBlocks):
+  // it survives reloads and is what actually stops /transactions/withdraw.
+  const plainClientId = String(account?.id ?? user.id).replace(/\D/g, '');
+  const withdrawBlocked = Boolean(withdrawBlocks[plainClientId]);
   const [statusBusy, setStatusBusy] = useState(false);
-  const [manager, setManager] = useState(user.manager);
+  const [assignedId, setAssignedId] = useState(String(account?.assignedManagerId || user.assignedManagerId || ''));
   const [balanceInput, setBalanceInput] = useState(String(user.balance));
   const moreRef = useRef<HTMLDivElement>(null);
   const [dialog, setDialog] = useState<null | 'topup' | 'bonus' | 'message'>(null);
@@ -1748,11 +2066,32 @@ const UserDetails: React.FC<{
   }, [kycDocuments]);
   const [dialogAmount, setDialogAmount] = useState('500');
   const [dialogText, setDialogText] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+
+  // "View user logs" — the real audit trail, fetched from the server
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logEntries, setLogEntries] = useState<ApiActivityEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const openLogs = async () => {
+    if (!account) return onNotify('This client does not have a platform account.');
+    setLogsOpen(true);
+    setLogsLoading(true);
+    try {
+      const r = await apiUserActivity(account.id);
+      setLogEntries(r.entries);
+    } catch {
+      setLogEntries([]);
+      onNotify('Could not load the activity log.');
+    } finally {
+      setLogsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setManager(user.manager);
+    setAssignedId(String(account?.assignedManagerId || user.assignedManagerId || ''));
     setBalanceInput(String(user.balance));
-  }, [user]);
+  }, [user, account?.assignedManagerId]);
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -1793,7 +2132,7 @@ const UserDetails: React.FC<{
     {
       icon: FileText,
       label: 'View user logs',
-      onClick: () => onNotify('Activity log will be available in the analytics module.'),
+      onClick: openLogs,
     },
     { icon: PhoneCall, label: 'Call', onClick: onGoCalls },
     { icon: History, label: 'Call history', onClick: onGoCalls },
@@ -1824,13 +2163,30 @@ const UserDetails: React.FC<{
     {
       icon: Lock,
       label: withdrawBlocked ? 'Unblock withdrawal' : 'Block withdrawal',
-      onClick: () => {
-        setWithdrawBlocked(v => !v);
+      onClick: async () => {
+        if (!account) return onNotify('This client does not have a platform account.');
+        await onSetWithdrawBlock(plainClientId, !withdrawBlocked);
         onNotify(
           withdrawBlocked
-            ? `Withdrawals unblocked for ${shortName} (applies once payouts run through the server).`
-            : `Withdrawals blocked for ${shortName} (applies once payouts run through the server).`,
+            ? `Withdrawals unblocked for ${shortName} — the change applies immediately.`
+            : `Withdrawals blocked for ${shortName} — the create-request button for this client is denied by the server as of now.`,
         );
+      },
+    },
+    {
+      icon: Trash2,
+      label: 'Delete account forever',
+      danger: true,
+      onClick: async () => {
+        if (!account) return onNotify('This client does not have a platform account.');
+        if (!isAdmin) return onNotify('Only an administrator can delete accounts.');
+        if (!confirm(`Delete ${shortName} forever? Users, leads, trades, notes and messages will be removed.`)) return;
+        try {
+          await onDeleteUser?.(account.id);
+          onBack();
+        } catch (err) {
+          onNotify(err instanceof Error ? err.message : 'Could not delete the account');
+        }
       },
     },
     {
@@ -2043,17 +2399,52 @@ const UserDetails: React.FC<{
             </Field>
             <Field label="Assigned manager">
               <Select
-                value={manager}
-                onChange={e => {
-                  setManager(e.target.value);
-                  onNotify(`Manager changed to ${e.target.value}`);
+                value={assignedId}
+                onChange={async e => {
+                  if (!account || !isAdmin) return onNotify('Only an administrator can reassign a client.');
+                  const val = e.target.value;
+                  const prev = assignedId;
+                  setAssignedId(val);
+                  try {
+                    const r = await apiAdminUpdateUser(account.id, { assignedManagerId: val ? Number(val) : null });
+                    const name = r.user?.assignedManagerName || staffUsers.find(m => String(m.id) === val)?.name || (val ? 'Assigned' : 'Unassigned');
+                    onPatchUser?.(account.id, {
+                      assignedManagerId: val ? Number(val) : null,
+                      assignedManagerName: val ? name : '',
+                    });
+                    onNotify(val ? `Assigned to ${name}. Saved.` : 'Client unassigned.');
+                  } catch (err) {
+                    setAssignedId(prev);
+                    onNotify(err instanceof Error ? err.message : 'Could not assign manager');
+                  }
                 }}
+                disabled={!isAdmin}
               >
-                <option>No manager (super-admin)</option>
-                <option>Laura Bennett (Senior Advisor)</option>
-                <option>Daniel Foster (Desk 2)</option>
-                <option value={user.manager}>{user.manager}</option>
+                <option value="">Unassigned</option>
+                {staffUsers.map(m => (
+                  <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
+                ))}
               </Select>
+            </Field>
+            <Field label="Default leverage">
+              <div className="flex items-center gap-2">
+                <Input
+                  className="w-24"
+                  defaultValue={String(account?.defaultLeverage || user.defaultLeverage || 10)}
+                  onBlur={async e => {
+                    if (!account) return;
+                    const lev = Math.max(1, Number(e.target.value) || 10);
+                    try {
+                      await apiAdminUpdateUser(account.id, { defaultLeverage: lev });
+                      onPatchUser?.(account.id, { defaultLeverage: lev });
+                      onNotify(`Default leverage for this client is now ${lev}x`);
+                    } catch (err) {
+                      onNotify(err instanceof Error ? err.message : 'Could not save leverage');
+                    }
+                  }}
+                />
+                <span className="text-[11px] text-[#213532]/60">x · used when opening a new position</span>
+              </div>
             </Field>
             <Field label="Registration date">{user.registrationDate}</Field>
             <Field label="KYC document">{user.documentName || '—'}</Field>
@@ -2362,7 +2753,17 @@ const UserDetails: React.FC<{
                   <Td className="text-[#213532]/60 py-8 text-center">No positions</Td>
                 </tr>
               )}
-              {trades.map(t => (
+              {trades.map(t => {
+                // Open positions tick live: PnL is recomputed from the
+                // mark price, exactly like the server settles it.
+                const livePnl = (() => {
+                  const entry = Number(t.entryPrice) || 0;
+                  if (t.status !== 'OPEN' || !(entry > 0)) return Number(t.pnl) || 0;
+                  const units = (Number(t.amount) || 0) / entry;
+                  const dir = t.type === 'SHORT' ? -1 : 1;
+                  return Math.round((Number(t.currentPrice) - entry) * units * dir * 100) / 100;
+                })();
+                return (
                 <tr key={t.id} className="hover:bg-[#F2EEDF]/50">
                   <Td className="font-semibold text-[#1C412C]">{t.asset}</Td>
                   <Td>
@@ -2372,14 +2773,15 @@ const UserDetails: React.FC<{
                   <Td className="text-[#213532]">{t.entryPrice.toLocaleString('en-US')}</Td>
                   <Td className="text-[#213532]">{t.currentPrice.toLocaleString('en-US')}</Td>
                   <Td className="text-[#213532]">{t.leverage}x</Td>
-                  <Td className={t.pnl >= 0 ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
-                    {t.pnl >= 0 ? '+' : ''}${t.pnl.toLocaleString('en-US')}
+                  <Td className={livePnl >= 0 ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                    {livePnl >= 0 ? '+' : ''}${livePnl.toLocaleString('en-US')}
                   </Td>
                   <Td>
                     <Badge tone={t.status === 'OPEN' ? 'gold' : 'gray'}>{t.status}</Badge>
                   </Td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2408,13 +2810,27 @@ const UserDetails: React.FC<{
                 </Btn>
                 <Btn
                   variant="gold"
-                  disabled={!dialogText.trim()}
-                  onClick={() => {
-                    onNotify(`Message sent to ${shortName}`);
-                    setDialog(null);
+                  disabled={!dialogText.trim() || sendingMessage}
+                  onClick={async () => {
+                    if (!account) {
+                      onNotify('This client does not have a platform account — create it first via «Create client».');
+                      return;
+                    }
+                    setSendingMessage(true);
+                    try {
+                      // the message becomes part of the real support chat with this client
+                      await apiSendSupportMessage({ clientId: account.id, text: dialogText.trim() });
+                      onNotify(`Message sent to ${shortName}. It's in the support chat now.`);
+                      setDialog(null);
+                      setDialogText('');
+                    } catch (err) {
+                      onNotify(err instanceof Error ? err.message : 'Could not send the message');
+                    } finally {
+                      setSendingMessage(false);
+                    }
                   }}
                 >
-                  Send
+                  {sendingMessage ? 'Sending…' : 'Send'}
                 </Btn>
               </div>
             </>
@@ -2464,6 +2880,39 @@ const UserDetails: React.FC<{
               </div>
             </>
           )}
+        </Modal>
+      )}
+
+      {/* ===== MODAL: audit trail ("View user logs") ===== */}
+      {logsOpen && (
+        <Modal
+          onClose={() => setLogsOpen(false)}
+          title="User activity log"
+          subtitle={shortName}
+        >
+          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+            {logsLoading && (
+              <div className="text-center text-[12px] text-[#213532]/60 py-8">Loading…</div>
+            )}
+            {!logsLoading && logEntries.length === 0 && (
+              <div className="text-center text-[12px] text-[#213532]/60 py-8">
+                No activity recorded yet. Logins, balance and status changes will appear here.
+              </div>
+            )}
+            {logEntries.map(e => (
+              <div key={e.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-xl p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[12.5px] font-bold text-[#1C412C]">{e.action}</span>
+                  <span className="text-[10px] text-[#213532]/50 shrink-0">
+                    {new Date(e.createdAt).toLocaleString('en-US')}
+                  </span>
+                </div>
+                <div className="text-[11px] text-[#213532]/70 mt-1">
+                  {e.actorName} ({e.actorRole}){e.details ? ` · ${e.details}` : ''}
+                </div>
+              </div>
+            ))}
+          </div>
         </Modal>
       )}
     </div>
