@@ -118,10 +118,17 @@ router.get('/ice-servers', auth, async (req, res) => {
     const raw = String(process.env.TURN_URL).split(',').map(s => s.trim()).filter(Boolean);
     const urls = [];
     for (const u of raw) {
-      urls.push(u);
-      if (!u.includes('transport=')) {
-        urls.push(`${u}?transport=udp`);
-        urls.push(`${u}?transport=tcp`);
+      // Give the browser one candidate per transport. Sending the bare URL
+      // plus udp/tcp duplicates makes Chromium open a large number of
+      // competing allocations, which then show up as stale 437/timeouts.
+      if (u.startsWith('turns:')) {
+        urls.push(u.includes('transport=') ? u : `${u}?transport=tcp`);
+      } else if (u.startsWith('turn:')) {
+        if (u.includes('transport=')) urls.push(u);
+        else {
+          urls.push(`${u}?transport=udp`);
+          urls.push(`${u}?transport=tcp`);
+        }
       }
     }
     servers.push({ urls, ...cred });
@@ -130,10 +137,7 @@ router.get('/ice-servers', auth, async (req, res) => {
     if (process.env.TURN_TLS_HOST) {
       const host = process.env.TURN_TLS_HOST;
       servers.push({
-        urls: [
-          `turns:${host}:5349?transport=tcp`,
-          `turn:${host}:5349?transport=tcp`,
-        ],
+        urls: [`turns:${host}:5349?transport=tcp`],
         ...cred,
       });
     }
