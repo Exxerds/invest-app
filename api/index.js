@@ -11,8 +11,8 @@
 import app from '../server/src/index.js';
 import { seedUsers } from '../server/src/seed.js';
 
-// A cold start gets a brand-new instance, so make sure the demo/admin
-// accounts exist. It runs once per instance, not on every request.
+// A cold start gets a brand-new instance, so make sure the configured
+// staff bootstrap accounts exist. It runs once per instance, not on every request.
 let ready = null;
 function ensureSeeded() {
   if (!ready) {

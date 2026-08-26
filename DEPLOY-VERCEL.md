@@ -71,6 +71,14 @@ git push -u origin main
 | `JWT_SECRET` | generate: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
 | `NODE_ENV` | `production` |
 | `SITE_URL` | `https://your-project.vercel.app` (or your domain) |
+| `SEED_DEMO` | `on` while the configured staff accounts should be bootstrapped |
+| `STAFF_ADMIN_EMAIL` | private administrator e-mail |
+| `STAFF_ADMIN_PASSWORD` | private administrator password |
+| `STAFF_MANAGER_EMAIL` | private moderator e-mail |
+| `STAFF_MANAGER_PASSWORD` | private moderator password |
+
+Keep the four staff values in the hosting provider's secret environment
+variables. Do not put them in Git or in screenshots.
 
 E-mail delivery (registration + password reset). Without it letters are only
 logged, so **new users cannot confirm their address**:
@@ -94,7 +102,7 @@ Open the deployed URL and verify:
 
 - [ ] the landing page loads with live quotes
 - [ ] **Register** creates an account (a letter is sent)
-- [ ] **Log in** with `admin@trade.io` / `admin123`
+- [ ] **Log in** with the account configured via `STAFF_ADMIN_EMAIL` / `STAFF_ADMIN_PASSWORD`
 - [ ] the CRM lists users — proof the database is connected
 - [ ] change a client's password, then confirm the old one is rejected
 - [ ] upload a KYC document in the client cabinet and approve it in the CRM
@@ -106,8 +114,8 @@ Open the deployed URL and verify:
 
 ## Step 6 — secure it before real traffic
 
-- [ ] Change the seeded passwords or delete those accounts:
-      `admin@trade.io`, `manager@trade.io`, `client@trade.io`
+- [ ] Configure private staff credentials with `STAFF_ADMIN_*` and
+      `STAFF_MANAGER_*` environment variables; never commit the passwords
 - [ ] Remove the demo login buttons in `src/components/modals/LoginModal.tsx`
 - [ ] Turn on backups in your database provider (Neon keeps history automatically)
 - [ ] Add your custom domain in **Settings → Domains** (HTTPS is automatic)

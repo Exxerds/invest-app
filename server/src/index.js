@@ -243,9 +243,8 @@ async function start() {
       process.exit(1);
     }
 
-    // SEED_DEMO=off skips creating the demo accounts (admin@trade.io has a
-    // publicly known password — on production switch this off once your own
-    // admin exists and the demo passwords are changed).
+    // SEED_DEMO=off skips the staff bootstrap accounts. In production
+    // configure STAFF_* credentials in server/.env before leaving this on.
     if (process.env.SEED_DEMO !== 'off') await seedUsers();
 
     console.log(`🗄  Storage backend: ${describeBackend()}`);

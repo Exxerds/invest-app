@@ -14,13 +14,9 @@ npm run dev
 - Website: http://localhost:3000
 - API: http://localhost:4000
 
-Demo accounts:
-
-| Role | Login | Password |
-|---|---|---|
-| Admin | `admin@trade.io` | `admin123` |
-| Manager | `manager@trade.io` | `manager123` |
-| Client | `client@trade.io` | `client123` |
+Staff bootstrap accounts are configured with `STAFF_*` variables in
+`server/.env` and are intentionally not stored in this repository.
+See `server/.env.example` and `server/scripts/update-staff-credentials.js`.
 
 Locally the data lives in `server/data.json` — no database needed.
 

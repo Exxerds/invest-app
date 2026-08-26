@@ -136,7 +136,8 @@ first and break the connection.
 ## 6. Before letting real users in
 
 - [ ] Remove the demo login buttons in `src/components/modals/LoginModal.tsx`
-- [ ] Change the seeded passwords (`admin@trade.io` etc.) or delete those accounts
+- [ ] Configure private staff credentials with `STAFF_ADMIN_*` and
+      `STAFF_MANAGER_*` in `server/.env`; never commit the passwords
 - [ ] Set up backups of **`server/data.json` AND `server/uploads/`**
       (the uploads folder holds clients' identity documents)
       ```

@@ -245,8 +245,13 @@ CORS_ORIGIN=
 DATABASE_URL=postgresql://ohy:ПАРОЛЬ_ИЗ_1.4@127.0.0.1:5432/oakhaven
 PGSSL=off
 
-# Первый запуск: on (создаст демо-админа). После смены паролей → off!
+# Bootstrap staff accounts. Set the four values in server/.env;
+# real passwords are not stored in Git.
 SEED_DEMO=on
+STAFF_ADMIN_EMAIL=ВАШ_НОВЫЙ_EMAIL_АДМИНИСТРАТОРА
+STAFF_ADMIN_PASSWORD=ВАШ_НОВЫЙ_ПАРОЛЬ_АДМИНИСТРАТОРА
+STAFF_MANAGER_EMAIL=ВАШ_НОВЫЙ_EMAIL_МОДЕРАТОРА
+STAFF_MANAGER_PASSWORD=ВАШ_НОВЫЙ_ПАРОЛЬ_МОДЕРАТОРА
 
 # SMTP — как сейчас на Vercel (Brevo и т.п.):
 SMTP_HOST=…
@@ -503,20 +508,22 @@ Certbot сам выпустит сертификат, впишет его в к�
 - [ ] Загрузка KYC-документа (это самый тяжёлый запрос — 12 МБ лимит в nginx)
 - [ ] Старые клиенты из Neon на месте, их сделки/балансы видны
 
-### ОБЯЗАТЕЛЬНО: демо-пароли
+### Учётные данные администратора и модератора
 
-При первом старте создаются демо-пользователи с **публично известными паролями**
-(они прямо в репозитории): `admin@trade.io / admin123`,
-`manager@trade.io / manager123`, `client@trade.io / client123`.
+Новые e-mail и пароли задаются только в `/opt/oakhaven/server/.env`
+через переменные `STAFF_ADMIN_*` и `STAFF_MANAGER_*` — в Git их добавлять нельзя.
 
-1. Войдите в CRM под `admin@trade.io / admin123`.
-2. В списке пользователей смените пароли **всех трёх** демо-аккаунтов
-   (или удалите manager/client и создайте своих).
-3. В `/opt/oakhaven/server/.env` поставьте `SEED_DEMO=off` и:
+Если база уже содержит старые bootstrap-аккаунты, после заполнения `.env` выполните:
 
 ```bash
+cd /opt/oakhaven/server
+sudo -u oakhaven node scripts/update-staff-credentials.js
 sudo systemctl restart oakhaven
 ```
+
+Скрипт сохраняет ID пользователей и связанные данные, переносит старые аккаунты
+на новые e-mail и хеширует новые пароли. Если новый аккаунт уже существует,
+старый аккаунт блокируется.
 
 ### Бэкапы (обязательно — теперь база ваша, не Neon's)
 
