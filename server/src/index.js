@@ -241,6 +241,14 @@ async function start() {
 
     await seedUsers();
 
+    // Show storage backend and TURN status at startup (helps VPS diagnostics)
+    try {
+      const { describeBackend } = await import('./db.js');
+      console.log(`Storage backend: ${describeBackend()}`);
+    } catch {
+      console.log('Storage backend: unknown');
+    }
+
     // '::' accepts both IPv6 (::1) and IPv4 (127.0.0.1) on all platforms
     const server = app.listen(PORT, '::', () => {
       console.log(`\n🚀 Oak Haven Yield API server running: http://localhost:${PORT}`);

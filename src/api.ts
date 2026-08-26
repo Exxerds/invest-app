@@ -38,6 +38,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string> | undefined),
       },
+      signal: (options as { signal?: AbortSignal }).signal,
     });
   } catch {
     // Network failure → the API server (npm run dev) is probably not running
@@ -701,10 +702,15 @@ export const apiPostSignal = (
     method: 'POST', headers: authHeader(), body: JSON.stringify({ kind, payload, role, channel }),
   });
 
-export const apiReadSignals = (callId: number, after: number, channel: 'main' | 'whisper' = 'main') =>
+export const apiReadSignals = (
+  callId: number,
+  after: number,
+  channel: 'main' | 'whisper' = 'main',
+  signal?: AbortSignal,
+) =>
   request<{ signals: ApiSignal[]; lastId: number }>(
     `/calls/${callId}/signals?after=${after}&channel=${channel}`,
-    { headers: authHeader() },
+    { headers: authHeader(), signal } as RequestInit,
   );
 
 export const apiCallStatus = (

@@ -1,15 +1,15 @@
 // ============================================================
-//  Live call widgets — styled in Oak Haven brand theme.
-//
-//  CallDock      — the in-call controls, shared by both sides
-//  IncomingCall  — full-screen prompt in the client's cabinet
+//  Live call widgets — Oak Haven brand + diagnostics
+//  CallDock      — in-call controls
+//  IncomingCall  — full-screen prompt
 // ============================================================
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Phone, PhoneOff, Mic, MicOff, MonitorUp, Circle, Ear, Loader2, GripVertical,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, Volume2, Bug,
 } from 'lucide-react';
 import { useWebRTCCall } from '../../hooks/useWebRTCCall';
+import { useCallDiagnostics } from '../../hooks/useCallDiagnostics';
 import type { CallRole } from '../../hooks/useWebRTCCall';
 import type { ApiCall } from '../../api';
 
@@ -20,11 +20,8 @@ interface DockProps {
   call: ApiCall;
   role: CallRole;
   initiator: boolean;
-  /** Separate peer connection for supervisor coaching */
   channel?: 'main' | 'whisper';
-  /** Supervisor listening in — shown to the manager only */
   whisperName?: string | null;
-  /** Audio-only leg: connects and plays sound, draws no window */
   headless?: boolean;
   onClosed: () => void;
 }
@@ -34,22 +31,23 @@ export const CallDock: React.FC<DockProps> = ({
 }) => {
   const {
     phase, error, warning, muted, micAvailable,
-    sharingScreen, recording, hasRemoteVideo,
-    remoteAudioRef, remoteVideoRef,
-    connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
+    sharingScreen, recording, hasRemoteVideo, needsUserGesture,
+    remoteAudioRef, remoteVideoRef, pcRef,
+    connect, hangUp, toggleMute, toggleScreenShare, toggleRecording, enableSound,
   } = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
+
+  const diag = useCallDiagnostics(pcRef, phase === 'active' || phase === 'connecting');
 
   const [seconds, setSeconds] = useState(0);
   const [videoExpanded, setVideoExpanded] = useState(false);
+  const [showDiag, setShowDiag] = useState(false);
 
-  /* The dock can be dragged anywhere, so it never covers a toast or a table */
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
 
   const startDrag = (e: React.MouseEvent) => {
     const box = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
     dragRef.current = { dx: e.clientX - box.left, dy: e.clientY - box.top };
-
     const move = (ev: MouseEvent) => {
       if (!dragRef.current) return;
       setPos({
@@ -77,7 +75,6 @@ export const CallDock: React.FC<DockProps> = ({
     return () => clearInterval(t);
   }, [phase]);
 
-  /* When the far side stops sharing, drop out of fullscreen automatically */
   useEffect(() => {
     if (!hasRemoteVideo) setVideoExpanded(false);
   }, [hasRemoteVideo]);
@@ -89,14 +86,10 @@ export const CallDock: React.FC<DockProps> = ({
       ? `Coaching ${call.managerName}`
       : call.clientName;
 
-  /**
-   * The manager's whisper leg exists only to carry the coach's audio —
-   * a second window on screen would just confuse them.
-   */
   if (headless) {
     return (
       <>
-        <audio ref={remoteAudioRef} autoPlay />
+        <audio ref={remoteAudioRef} autoPlay playsInline />
         <video ref={remoteVideoRef} autoPlay playsInline className="hidden" />
       </>
     );
@@ -104,7 +97,7 @@ export const CallDock: React.FC<DockProps> = ({
 
   return (
     <div
-      className="fixed z-[70] w-[320px] bg-white border border-[#E4DECB] rounded-2xl shadow-2xl shadow-black/20 overflow-hidden"
+      className="fixed z-[70] w-[340px] bg-white border border-[#E4DECB] rounded-2xl shadow-2xl shadow-black/20 overflow-hidden"
       style={pos ? { left: pos.x, top: pos.y } : { right: 20, bottom: 96 }}
     >
       <div className="px-4 py-3 bg-[#F5F2E9] border-b border-[#E4DECB] flex items-center gap-2.5">
@@ -136,9 +129,15 @@ export const CallDock: React.FC<DockProps> = ({
             <Circle className="w-2 h-2 fill-rose-600" /> REC
           </span>
         )}
+        <button
+          onClick={() => setShowDiag(v => !v)}
+          title="Diagnostics"
+          className={`w-6 h-6 rounded-full flex items-center justify-center ${showDiag ? 'bg-[#1C412C] text-white' : 'bg-[#1C412C]/10 text-[#1C412C]/60 hover:bg-[#1C412C]/20'}`}
+        >
+          <Bug className="w-3.5 h-3.5" />
+        </button>
       </div>
 
-      {/* Only the manager is told a supervisor is listening */}
       {whisperName && role === 'manager' && (
         <div className="px-4 py-2 bg-violet-500/10 border-b border-violet-500/20 text-[11px] text-violet-800 flex items-center gap-1.5 font-medium">
           <Ear className="w-3.5 h-3.5" /> {whisperName} is coaching you — the client cannot hear them
@@ -171,10 +170,29 @@ export const CallDock: React.FC<DockProps> = ({
         </div>
       )}
 
-      {/* Kept in the DOM at all times (the ref must exist when ontrack
-          fires); only becomes visible once the other side shares a screen.
-          The <video> stays a single element in a stable tree position —
-          expanding just swaps className/style, so srcObject is preserved. */}
+      {needsUserGesture && (
+        <div className="px-4 py-2 bg-blue-500/10 border-b border-blue-500/20 text-[11px] text-blue-900 flex items-center justify-between gap-2">
+          <span className="font-medium">Sound blocked by browser</span>
+          <button
+            onClick={() => void enableSound()}
+            className="px-2 py-1 rounded bg-blue-600 text-white font-bold hover:bg-blue-700 text-[10px] flex items-center gap-1"
+          >
+            <Volume2 className="w-3 h-3" /> Enable sound
+          </button>
+        </div>
+      )}
+
+      {/* Diagnostics panel — live during call, not after hangup */}
+      {showDiag && (
+        <div className="px-3 py-2 bg-[#1C412C] text-[#F5F2E9] text-[10px] font-mono leading-tight border-b border-[#E4DECB] space-y-1">
+          <div>state: {diag.connectionState} / {diag.iceConnectionState} / {diag.iceGatheringState} / {diag.signalingState}</div>
+          <div>ICE: {diag.gatheringComplete ? 'complete' : 'gathering'} / {diag.localCandidateProtocol || '-'}</div>
+          <div>candidates: {diag.localCandidateType} → {diag.remoteCandidateType} {diag.hasRelay ? '(relay)' : ''}</div>
+          <div>audio: ↑ {diag.bytesSent} B · ↓ {diag.bytesReceived} B {diag.rttMs ? `· RTT ${diag.rttMs}ms` : ''}</div>
+          <div>packets: ↑ {diag.packetsSent} · ↓ {diag.packetsReceived}</div>
+        </div>
+      )}
+
       <div className={videoExpanded ? '' : 'relative w-full'}>
         <video
           ref={remoteVideoRef}
@@ -209,7 +227,7 @@ export const CallDock: React.FC<DockProps> = ({
           <Minimize2 className="w-4 h-4" /> Minimize
         </button>
       )}
-      <audio ref={remoteAudioRef} autoPlay />
+      <audio ref={remoteAudioRef} autoPlay playsInline />
 
       <div className="p-3 bg-white flex items-center justify-center gap-2">
         <button
@@ -227,7 +245,6 @@ export const CallDock: React.FC<DockProps> = ({
           {muted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
         </button>
 
-        {/* Screen sharing is available to BOTH sides of the call */}
         <button
           onClick={toggleScreenShare}
           title="Share screen"
@@ -238,7 +255,6 @@ export const CallDock: React.FC<DockProps> = ({
           <MonitorUp className="w-4 h-4" />
         </button>
 
-        {/* Recording stays staff-only */}
         {role !== 'client' && (
           <button
             onClick={toggleRecording}

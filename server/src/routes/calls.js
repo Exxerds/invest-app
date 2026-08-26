@@ -94,6 +94,13 @@ async function expireStaleCalls() {
   }
 }
 
+// Log TURN configuration at startup (helps diagnose manager→client issues)
+if (process.env.TURN_URL && process.env.TURN_USER) {
+  console.log('[calls] ICE relay: TURN configured ->', process.env.TURN_URL);
+} else {
+  console.log('[calls] ICE relay: TURN not configured, using STUN only');
+}
+
 /** Public STUN servers are enough for most networks; TURN is optional. */
 router.get('/ice-servers', auth, async (req, res) => {
   const servers = [
@@ -108,9 +115,12 @@ router.get('/ice-servers', auth, async (req, res) => {
   ];
 
   // A TURN relay is needed behind strict corporate NATs
+  // TURN_URL can be a single URL or comma-separated list; support both
   if (process.env.TURN_URL && process.env.TURN_USER) {
+    const raw = String(process.env.TURN_URL).trim();
+    const urls = raw.includes(',') ? raw.split(',').map(u => u.trim()).filter(Boolean) : raw;
     servers.push({
-      urls: process.env.TURN_URL,
+      urls,
       username: process.env.TURN_USER,
       credential: process.env.TURN_PASS || '',
     });
@@ -244,28 +254,51 @@ router.post('/:id/signal', auth, async (req, res) => {
   res.json({ ok: true, id: signal.id });
 });
 
-/** Read everything posted by the OTHER participants since `after`. */
+/** Read everything posted by the OTHER participants since `after`.
+ *  Implements long-poll: if no fresh signals, wait up to ~8s (serverless-friendly)
+ *  polling DB every 500ms. This reduces chatter and improves offer/answer latency
+ *  vs pure 1.2s interval, while still working on Vercel (no WebSocket).
+ *  Also supports batched ICE (payload can be JSON array) — client handles both.
+ */
 router.get('/:id/signals', auth, async (req, res) => {
   const callId = Number(req.params.id);
   const after = Number(req.query.after) || 0;
-
   const channel = req.query.channel === 'whisper' ? 'whisper' : 'main';
+  const wantsLongPoll = req.query.longPoll !== '0'; // default enabled
 
-  /**
-   * Hard guarantee, not just a UI convention: a client can never read the
-   * whisper channel, so a supervisor's coaching cannot reach them even if
-   * the request is crafted by hand.
-   */
   const call = await store.byId('calls', callId);
   if (!call) return res.status(404).json({ error: 'Call not found' });
   if (channel === 'whisper' && !isStaff(req.user)) {
     return res.status(403).json({ error: 'Staff access only' });
   }
 
-  const all = await store.manyByField('signals', 'callId', callId);
-  const fresh = all
-    .filter(s => s.id > after && s.from !== req.user.id && (s.channel || 'main') === channel)
-    .sort((a, b) => a.id - b.id);
+  const getFresh = async () => {
+    const all = await store.manyByField('signals', 'callId', callId);
+    return all
+      .filter(s => s.id > after && s.from !== req.user.id && (s.channel || 'main') === channel)
+      .sort((a, b) => a.id - b.id);
+  };
+
+  let fresh = await getFresh();
+
+  // Long-poll: if nothing yet, wait up to 8s for something to arrive.
+  // This is crucial for manager→client: offer appears quickly, but answer may be delayed
+  // by client's getUserMedia. Without long-poll, client polling every 1.2s adds latency.
+  if (fresh.length === 0 && wantsLongPoll) {
+    const maxWaitMs = 8000;
+    const stepMs = 500;
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+      await new Promise(r => setTimeout(r, stepMs));
+      // If client aborted, stop waiting
+      if (req.aborted) break;
+      fresh = await getFresh();
+      if (fresh.length > 0) break;
+      // If call ended while waiting, return immediately (signals deleted)
+      const cur = await store.byId('calls', callId);
+      if (!cur || cur.status === 'ended') break;
+    }
+  }
 
   res.json({ signals: fresh, lastId: fresh.length ? fresh[fresh.length - 1].id : after });
 });
