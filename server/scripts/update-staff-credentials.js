@@ -5,9 +5,9 @@
 //    STAFF_ADMIN_EMAIL / STAFF_ADMIN_PASSWORD
 //    STAFF_MANAGER_EMAIL / STAFF_MANAGER_PASSWORD
 //
-//  It keeps the existing user IDs and related records. If a new
-//  account already exists, the old bootstrap account is blocked;
-//  otherwise the old bootstrap account is renamed in place.
+//  It creates or updates the new accounts, transfers references
+//  that use the old bootstrap IDs, and permanently removes the
+//  old admin@trade.io / manager@trade.io user rows.
 //
 //  Run ON THE VPS after pulling this version:
 //    cd /opt/oakhaven/server
@@ -62,66 +62,108 @@ function readCredentials() {
   return users;
 }
 
+async function transferReferences(oldUser, newUser) {
+  const oldId = Number(oldUser.id);
+  const newId = Number(newUser.id);
+
+  // Keep existing client assignments with the new moderator account.
+  for (const user of await store.all('users')) {
+    if (user.id !== oldId && Number(user.assignedManagerId) === oldId) {
+      await store.update('users', user.id, {
+        assignedManagerId: newId,
+        assignedManagerName: newUser.name,
+      });
+    }
+  }
+
+  // Keep call history and calendar entries linked to the new staff account.
+  for (const call of await store.all('calls')) {
+    if (Number(call.managerId) === oldId) {
+      await store.update('calls', call.id, {
+        managerId: newId,
+        managerName: newUser.name,
+      });
+    }
+  }
+  for (const appointment of await store.all('appointments')) {
+    if (Number(appointment.createdById) === oldId) {
+      await store.update('appointments', appointment.id, {
+        createdById: newId,
+        createdByName: newUser.name,
+      });
+    }
+  }
+
+  // Preserve the audit trail while making it point at the replacement account.
+  for (const activity of await store.all('activity')) {
+    if (Number(activity.actorId) === oldId) {
+      await store.update('activity', activity.id, {
+        actorId: newId,
+        actorName: newUser.name,
+        actorRole: newUser.role,
+      });
+    }
+  }
+
+  // Tokens and staff notifications belong to the old account and should not
+  // survive its deletion. Client conversations and other customer records are
+  // deliberately left untouched.
+  await store.removeWhere('tokens', token => Number(token.user_id) === oldId);
+  await store.removeWhere('notifications', notification => Number(notification.userId) === oldId);
+}
+
 async function migrate() {
   const users = readCredentials();
   const records = await Promise.all(users.map(async (u) => ({
     spec: u,
-    target: await store.findBy('users', 'email', u.email),
-    legacy: u.email === u.legacyEmail
-      ? null
-      : await store.findBy('users', 'email', u.legacyEmail),
+    targets: await store.manyByField('users', 'email', u.email),
+    legacyUsers: u.email === u.legacyEmail
+      ? []
+      : await store.manyByField('users', 'email', u.legacyEmail),
   })));
 
   // Preflight all records before changing either account.
-  for (const { spec, target, legacy } of records) {
-    if (target && target.role !== spec.role) {
+  for (const { spec, targets, legacyUsers } of records) {
+    if (targets.some(user => user.role !== spec.role)) {
       throw new Error(`The target e-mail for ${spec.role} already belongs to another role; nothing was changed.`);
     }
-    if (legacy && legacy.role !== spec.role) {
+    if (legacyUsers.some(user => user.role !== spec.role)) {
       throw new Error(`The legacy ${spec.role} e-mail belongs to another role; nothing was changed.`);
     }
   }
 
-  for (const { spec, target, legacy } of records) {
+  for (const { spec, targets, legacyUsers } of records) {
+    const target = targets[0];
     const hash = await bcrypt.hash(spec.password, 10);
+    let replacement;
 
     if (target) {
-      await store.update('users', target.id, {
+      replacement = await store.update('users', target.id, {
         email: spec.email,
         password: hash,
         role: spec.role,
         status: 'active',
       });
       console.log(`[credentials] Updated ${spec.role} account: ${spec.email}`);
-
-      if (legacy && legacy.id !== target.id) {
-        await store.update('users', legacy.id, { status: 'blocked' });
-        console.log(`[credentials] Blocked legacy ${spec.role} account.`);
-      }
-      continue;
-    }
-
-    if (legacy) {
-      await store.update('users', legacy.id, {
+    } else {
+      replacement = await store.insert('users', {
+        name: spec.name,
         email: spec.email,
         password: hash,
         role: spec.role,
         status: 'active',
+        balance: 0,
+        created_at: new Date().toISOString(),
       });
-      console.log(`[credentials] Renamed ${spec.role} account in place: ${spec.email}`);
-      continue;
+      console.log(`[credentials] Created ${spec.role} account: ${spec.email}`);
     }
 
-    await store.insert('users', {
-      name: spec.name,
-      email: spec.email,
-      password: hash,
-      role: spec.role,
-      status: 'active',
-      balance: 0,
-      created_at: new Date().toISOString(),
-    });
-    console.log(`[credentials] Created ${spec.role} account: ${spec.email}`);
+    for (const legacy of legacyUsers) {
+      if (legacy.id === replacement.id) continue;
+      await transferReferences(legacy, replacement);
+      await store.removeWhere('users', user => user.id === legacy.id);
+      console.log(`[credentials] Deleted legacy ${spec.role} account.`);
+    }
   }
 
   console.log('[credentials] Staff credential migration completed.');
