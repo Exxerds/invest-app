@@ -220,12 +220,12 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
       const { iceServers, turnConfigured } = await apiIceServers();
       const pc = new RTCPeerConnection({
         iceServers,
-        iceCandidatePoolSize: turnConfigured ? 0 : 8,
+        iceCandidatePoolSize: 8,
         // In production force the proven TURN relay. This avoids a flaky
         // direct candidate being selected on a strict NAT and then dropping
         // the call after the initial handshake. Local development still uses
         // direct ICE when no TURN credentials are configured.
-        iceTransportPolicy: turnConfigured ? 'relay' : 'all',
+        iceTransportPolicy: 'all',
         bundlePolicy: 'max-bundle',
       });
       pcRef.current = pc;
