@@ -2154,6 +2154,7 @@ const UserDetails: React.FC<{
     {
       icon: KeyRound,
       label: 'Change password',
+      adminOnly: true,
       onClick: () => {
         if (!account) return onNotify('This client does not have a platform account.');
         if (!isAdmin) return onNotify('Only an administrator can change passwords.');
@@ -2176,6 +2177,7 @@ const UserDetails: React.FC<{
     {
       icon: Trash2,
       label: 'Delete account forever',
+      adminOnly: true,
       danger: true,
       onClick: async () => {
         if (!account) return onNotify('This client does not have a platform account.');
@@ -2192,6 +2194,7 @@ const UserDetails: React.FC<{
     {
       icon: Ban,
       label: blocked ? 'Unblock account' : 'Block account',
+      adminOnly: true,
       danger: true,
       onClick: async () => {
         if (!account) {
@@ -2281,7 +2284,7 @@ const UserDetails: React.FC<{
             </Btn>
             {moreOpen && (
               <div className="absolute left-0 top-full mt-2 w-60 bg-white border border-[#E4DECB] rounded-xl shadow-2xl py-1.5 z-40">
-                {moreItems.map(item => {
+                {moreItems.filter(item => !item.adminOnly || isAdmin).map(item => {
                   const Icon = item.icon;
                   return (
                     <button

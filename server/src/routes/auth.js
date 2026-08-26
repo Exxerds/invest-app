@@ -263,7 +263,7 @@ router.post('/forgot-password', async (req, res) => {
   const { email } = req.body || {};
   const user = await store.findBy('users', 'email', String(email || '').toLowerCase().trim());
 
-  if (user) {
+  if (user && user.role !== 'MANAGER') {
     const token = await createToken(user.id, 'reset_password');
     const link = `${publicUrl(req)}/reset-password?token=${token}`;
     await sendMail({
@@ -299,6 +299,11 @@ router.post('/reset-password', async (req, res) => {
         ? 'This reset link has expired (links are valid for 1 hour). Please request a new one.'
         : 'Link is invalid or has already been used',
     });
+  }
+
+  const resetUser = await store.byId('users', t.user_id);
+  if (resetUser?.role === 'MANAGER') {
+    return res.status(403).json({ error: 'Moderator passwords can only be changed by an administrator.' });
   }
 
   await store.update('tokens', t.id, { used: 1 });
