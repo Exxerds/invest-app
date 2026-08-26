@@ -172,9 +172,9 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     return () => {
       window.removeEventListener('pagehide', end);
       window.removeEventListener('beforeunload', end);
-      // Unmount without an explicit hangUp (navigation, tab close on
-      // some browsers) — end the call server-side as well.
-      end();
+      // Do NOT call end() on unmount — React re-render / inbox tick
+      // that sets activeCall=null would otherwise end the call
+      // prematurely and delete signals (client ICE missing bug).
     };
   }, [callId, channel]);
 
