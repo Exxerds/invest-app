@@ -6,6 +6,7 @@
 //  NOTE: if the server crashes, the full error text is written
 //  to server/server.log — open that file when reporting an issue.
 // ============================================================
+import 'dotenv/config'; // ← .env must land BEFORE db.js computes its backend mode
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -28,7 +29,9 @@ import pushRoutes from './routes/push.js';
 import statementRoutes from './routes/statements.js';
 import settingsRoutes from './routes/settings.js';
 import supportRoutes from './routes/support.js';
+import assetsRoutes from './routes/assets.js';
 import { seedUsers } from './seed.js';
+import { describeBackend } from './db.js';
 
 dotenv.config();
 
@@ -206,6 +209,7 @@ app.use('/api/push', pushRoutes);
 app.use('/api/statements', statementRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/assets', assetsRoutes);
 
 // Unknown API route → JSON 404 (never fall through to the SPA)
 app.use('/api', (req, res) => res.status(404).json({ error: 'Unknown API endpoint' }));
@@ -239,7 +243,13 @@ async function start() {
       process.exit(1);
     }
 
-    await seedUsers();
+    // SEED_DEMO=off skips creating the demo accounts (admin@trade.io has a
+    // publicly known password — on production switch this off once your own
+    // admin exists and the demo passwords are changed).
+    if (process.env.SEED_DEMO !== 'off') await seedUsers();
+
+    console.log(`🗄  Storage backend: ${describeBackend()}`);
+    console.log(`[calls] ICE relay: ${process.env.TURN_URL && process.env.TURN_USER && process.env.TURN_PASS ? 'TURN configured' : 'STUN only — configure TURN for calls across strict NATs'}`);
 
     // '::' accepts both IPv6 (::1) and IPv4 (127.0.0.1) on all platforms
     const server = app.listen(PORT, '::', () => {

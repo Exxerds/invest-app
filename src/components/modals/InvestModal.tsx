@@ -136,7 +136,7 @@ export const InvestModal: React.FC<InvestModalProps> = ({
 
           <div className="text-[11px] text-[#213532]/70 leading-relaxed">
             By clicking «Confirm», funds will be debited from your available balance. The trade will
-            be instantly reflected in your portfolio and in the CRM system.
+            be instantly reflected in your portfolio and on the platform.
           </div>
 
           {/* Buttons */}

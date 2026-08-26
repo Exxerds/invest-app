@@ -4,6 +4,7 @@ import { X, Wallet, ArrowDownRight, UserPlus, PlusCircle, Clock, Loader2, Shield
 import { apiRequestDeposit, apiRequestWithdrawal, apiDepositWallets, apiCheckDuplicate } from '../../api';
 import type { CryptoType } from '../../api';
 import { sanitizeDecimal, sanitizeInteger, parseNumber } from '../../utils/number';
+import { Select } from '../crm/ui';
 
 /* ========================================================
    DEPOSIT MODAL
@@ -22,7 +23,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 }) => {
   const [amountStr, setAmountStr] = useState<string>('10000');
   const amount = parseNumber(amountStr, 0);
-  const [method, setMethod] = useState<string>('Crypto gateway (USDT TRC20 / ERC20)');
+  const cryptoDepositMethod = 'Crypto gateway (USDT TRC20 / ERC20)';
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -32,7 +33,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   const [wallets, setWallets] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
 
-  const isCrypto = method.startsWith('Crypto');
+  const isCrypto = true;
   const address = isCrypto ? wallets[cryptoType] || '' : '';
 
   useEffect(() => {
@@ -69,10 +70,16 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!(amount > 0)) return;
+    // Without a wallet address there is nowhere to send the money —
+    // filing a request would produce work without payment details.
+    if (isCrypto && !address) {
+      setError('No wallet address is attached to your account yet. Contact support — they will assign one, then you can deposit.');
+      return;
+    }
     setSending(true);
     setError(null);
     try {
-      await apiRequestDeposit(amount, method, isCrypto ? cryptoType : undefined);
+      await apiRequestDeposit(amount, cryptoDepositMethod, cryptoType);
       setSubmitted(true);
       onRequested?.();
     } catch (err) {
@@ -158,15 +165,10 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1.5">
               Deposit method
             </label>
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value)}
-              className="w-full px-4 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-sm font-medium text-[#213532] focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48] cursor-pointer"
-            >
-              <option value="Crypto gateway (USDT TRC20 / ERC20)">Crypto gateway (USDT TRC20 / ERC20)</option>
-              <option value="Bank transfer (SWIFT / SEPA)">Bank transfer (SWIFT / SEPA)</option>
-              <option value="Visa / Mastercard">Visa / Mastercard</option>
-            </select>
+            <div className="w-full px-4 py-2.5 rounded-xl border border-[#B08B48]/45 bg-[#B08B48]/10 text-sm font-semibold text-[#1C412C] flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-[#B08B48]" />
+              {cryptoDepositMethod}
+            </div>
           </div>
 
           {isCrypto && (
@@ -213,13 +215,16 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                   </div>
                 ) : (
                   <div className="px-3 py-2.5 bg-amber-500/10 border border-amber-500/25 rounded-xl text-[12px] text-amber-800">
-                    No {cryptoType} address configured yet. Please contact your advisor for payment details.
+                    <strong>No {cryptoType} address configured yet.</strong> Please contact support — they will
+                    attach a payment address to your account. Until then deposits are unavailable.
                   </div>
                 )}
-                <p className="text-[11px] text-[#213532]/60 mt-1.5">
-                  Send exactly ${amount ? amount.toLocaleString('en-US') : '0'} worth of {cryptoType} to this
-                  address, then submit the request below.
-                </p>
+                {address && (
+                  <p className="text-[11px] text-[#213532]/60 mt-1.5">
+                    Send exactly ${amount ? amount.toLocaleString('en-US') : '0'} worth of {cryptoType} to this
+                    address, then submit the request below.
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -248,11 +253,12 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={sending}
-              className="px-5 py-2 rounded-xl bg-[#1C412C] hover:bg-[#245238] disabled:opacity-60 text-[#F5F2E9] text-sm font-bold shadow-sm cursor-pointer flex items-center gap-2"
+              disabled={sending || (isCrypto && !address)}
+              title={isCrypto && !address ? 'No wallet address attached — contact support first' : undefined}
+              className="px-5 py-2 rounded-xl bg-[#1C412C] hover:bg-[#245238] disabled:opacity-50 disabled:cursor-not-allowed text-[#F5F2E9] text-sm font-bold shadow-sm cursor-pointer flex items-center gap-2"
             >
               {sending && <Loader2 className="w-4 h-4 animate-spin" />}
-              {sending ? 'Submitting...' : 'Submit request'}
+              {sending ? 'Submitting...' : isCrypto && !address ? 'Address required' : 'Submit request'}
             </button>
           </div>
         </form>
@@ -394,14 +400,15 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
             <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1.5">
               Payout method
             </label>
-            <select
+            <Select
               value={payoutMethod}
               onChange={(e) => setPayoutMethod(e.target.value)}
-              className="w-full px-4 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-sm font-medium text-[#213532] focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48] cursor-pointer"
+              className="w-full"
+              aria-label="Payout method"
             >
               <option value="Crypto">Crypto</option>
               <option value="Bank">Bank transfer (SWIFT / SEPA)</option>
-            </select>
+            </Select>
           </div>
 
           {payoutMethod === 'Crypto' && (
@@ -557,7 +564,7 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
           </button>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 text-[#B08B48] text-xs font-semibold mb-2">
             <UserPlus className="w-3.5 h-3.5 text-[#B08B48]" />
-            <span>CRM Pipeline</span>
+            <span>Lead Pipeline</span>
           </div>
           <h2 className="font-serif text-xl font-bold">New client (Lead)</h2>
           <p className="text-xs text-[#F5F2E9]/75 mt-1">Add a lead to the first Kanban column</p>
@@ -629,15 +636,16 @@ export const NewLeadModal: React.FC<NewLeadModalProps> = ({
             <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
               Responsible manager
             </label>
-            <select
+            <Select
               value={manager}
               onChange={(e) => setManager(e.target.value)}
-              className="w-full px-4 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-[#213532] focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48] cursor-pointer"
+              className="w-full"
+              aria-label="Responsible manager"
             >
               <option value="Laura Bennett (Desk 1)">Laura Bennett (Desk 1)</option>
               <option value="Daniel Foster (Desk 2)">Daniel Foster (Desk 2)</option>
               <option value="Oleg Vasilyev (Desk 3)">Oleg Vasilyev (Desk 3)</option>
-            </select>
+            </Select>
           </div>
 
           <div>
@@ -697,6 +705,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [termMonthsStr, setTermMonthsStr] = useState('12');
   const [minCheckStr, setMinCheckStr] = useState('1000');
   const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
 
   const getCategoryLabel = (cat: AssetCategory) => {
     switch (cat) {
@@ -709,10 +718,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   const getDefaultImage = (cat: AssetCategory) => {
     switch (cat) {
-      case 'crypto': return 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80';
-      case 'forex': return 'https://images.unsplash.com/photo-1610375461246-83df859d849d?auto=format&fit=crop&w=800&q=80';
-      case 'futures': return 'https://images.unsplash.com/photo-1622630998477-20aa696ecb05?auto=format&fit=crop&w=800&q=80';
-      case 'pool': return 'https://images.unsplash.com/photo-1642543492481-44e81e3914a7?auto=format&fit=crop&w=800&q=80';
+      case 'crypto': return '/markets/bitcoin.jpg';
+      case 'forex': return '/markets/gold.jpg';
+      case 'futures': return '/markets/solana.jpg';
+      case 'pool': return '/markets/solana.jpg';
     }
   };
 
@@ -730,7 +739,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       minCheck: parseNumber(minCheckStr, 1000),
       riskLevel: category === 'futures' ? 'high' : 'medium',
       description: description || 'Trading asset with high liquidity and institutional quotes.',
-      imageUrl: getDefaultImage(category),
+      imageUrl: imageUrl || getDefaultImage(category),
       tags: ['New asset', 'Spot/Futures', 'Binance Feed']
     });
     onClose();
@@ -774,16 +783,17 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
                 Asset category
               </label>
-              <select
+              <Select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as AssetCategory)}
-                className="w-full px-3 py-2.5 bg-white border border-[#E4DECB] rounded-xl text-[#213532] focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48] cursor-pointer"
+                className="w-full"
+                aria-label="Asset category"
               >
                 <option value="crypto">Crypto Spot / Futures</option>
                 <option value="forex">Forex & Metals (EUR/USD, Gold)</option>
                 <option value="futures">Perpetual Futures</option>
                 <option value="pool">Algorithmic Pool</option>
-              </select>
+              </Select>
             </div>
 
             <div>
@@ -837,6 +847,34 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 className="w-full px-3 py-2 bg-white border border-[#E4DECB] rounded-xl text-[#213532] focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#213532] uppercase tracking-wide mb-1">
+              Photo
+            </label>
+            {imageUrl ? (
+              <img src={imageUrl} alt="" className="mb-2 h-28 w-full object-cover rounded-xl border border-[#E4DECB]" />
+            ) : null}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const r = new FileReader();
+                r.onload = () => setImageUrl(String(r.result || ''));
+                r.readAsDataURL(f);
+              }}
+              className="block w-full text-[12px] text-[#213532]"
+            />
+            <input
+              type="text"
+              placeholder="or paste image URL"
+              value={imageUrl.startsWith('data:') ? '' : imageUrl}
+              onChange={e => setImageUrl(e.target.value)}
+              className="mt-2 w-full px-4 py-2 bg-white border border-[#E4DECB] rounded-xl text-xs text-[#213532] placeholder:text-[#213532]/40 focus:outline-none focus:ring-2 focus:ring-[#B08B48]/20 focus:border-[#B08B48]"
+            />
           </div>
 
           <div>

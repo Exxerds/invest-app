@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import type { ActiveTab } from './components/Header';
 import { LandingPage } from './components/landing/LandingPage';
+import { LegalPage } from './components/legal/LegalPage';
+import type { LegalSlug } from './legal/docs';
 import { InvestorDashboard } from './components/investor/InvestorDashboard';
 import { ProjectCatalog } from './components/catalog/ProjectCatalog';
 import { CrmDashboard } from './components/crm/CrmDashboard';
@@ -10,18 +12,19 @@ import { LoginModal } from './components/modals/LoginModal';
 import { ForgotPasswordModal } from './components/modals/ForgotPasswordModal';
 import { RegisterModal } from './components/modals/RegisterModal';
 import { ResetPasswordModal } from './components/modals/ResetPasswordModal';
-import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser, apiSetUserBalance } from './api';
+import { apiMe, apiConfirmEmail, getToken, setToken, apiAdminUsers, apiAdminChangePassword, apiAdminUpdateUser, apiSetUserBalance, apiAdminDeleteUser } from './api';
 import type { ApiUser, ApiKycDoc, ApiNotification } from './api';
 import { 
   apiStartCall, apiWhisper, apiCallInbox, apiCallStatus, apiNotes, apiAddNote, 
-  apiCrmSettings, apiSaveCrmSettings, apiClientStatuses, apiSetClientStatus, 
+  apiCrmSettings, apiSaveCrmSettings, apiClientStatuses, apiSetClientStatus, apiWithdrawBlocks, apiSetWithdrawBlock,
   apiLeads, apiCreateLead, apiUpdateLead, apiAddLeadComment, apiImpersonate, 
   apiMyTransactions, apiAllTransactions, apiApproveTransaction, apiRejectTransaction, 
   apiKycAll, apiKycMine, apiKycReview, apiNotifications, apiMarkNotificationsRead, 
-  apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq,
+  apiAllTrades, apiUpdateTrade, apiCloseTrade as apiCloseTradeReq, apiOpenTrade, apiSupportPresence,
+  apiAssets, apiCreateAsset, apiUpdateAsset, apiDeleteAsset,
   apiMyInvestments, apiCreateInvestment, apiClaimInvestmentProfit, apiQuote
 } from './api';
-import type { ApiTrade, ApiTransaction, ApiCall } from './api';
+import type { ApiTrade, ApiTransaction, ApiCall, ApiAsset } from './api';
 import { CallDock, IncomingCall } from './components/calls/CallPanel';
 import { enablePushNotifications } from './push';
 import { 
@@ -30,11 +33,9 @@ import {
   NewLeadModal, 
   NewProjectModal 
 } from './components/modals/OperationsModals';
-import { 
-  INITIAL_PROJECTS, 
-  INITIAL_REQUESTS,
-  INITIAL_MY_INVESTMENTS
-} from './data/mockData';
+
+// NOTE: no more mock/demo data — every list below starts empty and is
+// filled exclusively from the server (real accounts, real trades).
 import type { 
   Project, 
   Investor, 
@@ -47,15 +48,32 @@ import type {
   KycStatus
 } from './types';
 import type { AdminTrade } from './components/crm/CrmTradesManager';
-import { CheckCircle2, TrendingUp } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 /** Where the user was before a refresh */
 const TAB_KEY = 'ohy_tab';
 /** Holds the admin's own token while they view a client account */
 const ADMIN_TOKEN_KEY = 'ohy_admin_token';
 
+function legalSlugFromPath(path: string): LegalSlug | null {
+  const m = path.match(/^\/legal\/(client|aml|terms|risk)\/?$/);
+  return m ? (m[1] as LegalSlug) : null;
+}
+
+function initialTab(): ActiveTab {
+  if (typeof window === 'undefined') return 'landing';
+  if (window.location.pathname === '/confirm-email') return 'investor';
+  if (getToken()) {
+    const saved = localStorage.getItem(TAB_KEY) as ActiveTab | null;
+    if (saved && saved !== 'landing') return saved;
+    return 'investor';
+  }
+  return 'landing';
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('landing');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
+  const [legalSlug, setLegalSlug] = useState<LegalSlug | null>(() => legalSlugFromPath(window.location.pathname));
 
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<ApiUser | null>(null);
@@ -65,8 +83,14 @@ export default function App() {
     if (isLoggedIn && activeTab !== 'landing') localStorage.setItem(TAB_KEY, activeTab);
   }, [activeTab, isLoggedIn]);
 
-  // Core State
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
+  useEffect(() => {
+    const onPop = () => setLegalSlug(legalSlugFromPath(window.location.pathname));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  // Core State — everything starts EMPTY; the server fills it (no demo data)
+  const [projects, setProjects] = useState<Project[]>([]);
   // Mirrors the server-side balance; only the back office can change it
   const [investorBalance, setInvestorBalance] = useState<number>(0);
   const [myTransactions, setMyTransactions] = useState<ApiTransaction[]>([]);
@@ -75,15 +99,24 @@ export default function App() {
   // Client records are derived from the database inside the CRM
   const [investors, setInvestors] = useState<Investor[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [requests] = useState<TransactionRequest[]>(INITIAL_REQUESTS);
 
   // CRM users (from backend) + privacy settings
   const [users, setUsers] = useState<ApiUser[]>([]);
-  const [settings, setSettings] = useState<CrmSettings>({ hidePhonesFromAgents: false });
+  const [settings, setSettings] = useState<CrmSettings>({
+    hidePhonesFromAgents: false,
+    duplicateControl: true,
+    manualClosing: false,
+    callRecording: true,
+  });
+
+  // Platform rules that bend what a CLIENT may do (server-checked anyway)
+  const [clientPolicy, setClientPolicy] = useState({ manualClosing: false });
 
   // Agent notes are append-only: no edit/delete handlers exist by design
   const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
   const [clientStatuses, setClientStatuses] = useState<Record<string, string>>({});
+  // Server-enforced payout blocks { '<userId>': true }
+  const [withdrawBlocks, setWithdrawBlocks] = useState<Record<string, boolean>>({});
 
   // KYC documents uploaded by clients, reviewed by admin/agent in the CRM
   const [kycDocuments, setKycDocuments] = useState<ApiKycDoc[]>([]);
@@ -91,57 +124,9 @@ export default function App() {
   // Positions opened through the platform (persisted server-side)
   const [serverTrades, setServerTrades] = useState<ApiTrade[]>([]);
 
-  // Admin Trades State (Priority feature for CRM!)
-  const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([
-    {
-      id: 'trade-01',
-      investorId: 'inv-01',
-      asset: 'BTC/USDT (Crypto Spot)',
-      type: 'LONG',
-      amount: 15000,
-      entryPrice: 61400,
-      currentPrice: 64200,
-      leverage: 1,
-      pnl: 1450,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-02',
-      investorId: 'inv-01',
-      asset: 'ETH/USDT (Futures Long 10x)',
-      type: 'LONG',
-      amount: 10000,
-      entryPrice: 2680,
-      currentPrice: 2820,
-      leverage: 10,
-      pnl: 2100,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-03',
-      investorId: 'inv-01',
-      asset: 'XAU/USD — Gold (Precious Metal Spot)',
-      type: 'SPOT',
-      amount: 35000,
-      entryPrice: 2380,
-      currentPrice: 2415,
-      leverage: 1,
-      pnl: 4810,
-      status: 'OPEN'
-    },
-    {
-      id: 'trade-04',
-      investorId: 'inv-02',
-      asset: 'BTC/USDT (Futures Short 5x)',
-      type: 'SHORT',
-      amount: 25000,
-      entryPrice: 63500,
-      currentPrice: 62100,
-      leverage: 5,
-      pnl: 2750,
-      status: 'OPEN'
-    }
-  ]);
+  // Admin Trades — local layer for desk-created drafts. ALWAYS starts empty:
+  // real positions are read from the server (see combinedTrades below).
+  const [adminTrades, setAdminTrades] = useState<AdminTrade[]>([]);
 
   // Modals state
   const [selectedProjectForInvest, setSelectedProjectForInvest] = useState<Project | null>(null);
@@ -231,9 +216,20 @@ export default function App() {
     enablePushNotifications().catch(() => undefined);
   }, [isLoggedIn, currentUser?.role]);
 
+  // Real last-seen heartbeat — any logged-in client pings while the tab is open
+  useEffect(() => {
+    if (!isLoggedIn || currentUser?.role !== 'CLIENT' || !getToken()) return;
+    const tick = () => { apiSupportPresence().catch(() => undefined); };
+    tick();
+    const t = setInterval(tick, 25000);
+    return () => clearInterval(t);
+  }, [isLoggedIn, currentUser?.role]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const path = window.location.pathname;
+    const initialLegal = legalSlugFromPath(path);
+    if (initialLegal) setLegalSlug(initialLegal);
     const confirmToken = params.get('token');
 
     if (path === '/confirm-email' && confirmToken) {
@@ -243,10 +239,19 @@ export default function App() {
           setCurrentUser(res.user);
           setIsLoggedIn(true);
           setActiveTab('investor');
+          // flag rules of the cabinet (manual position closing etc.)
+          apiMe().then(m => m.policy && setClientPolicy(m.policy)).catch(() => undefined);
           showToast('✔ Email confirmed! Welcome to the platform!');
         })
         .catch((err) => {
-          showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Link is invalid', 'info');
+          const e = err as { code?: string; status?: number; message?: string };
+          if (e.status === 409 || e.code === 'ALREADY_CONFIRMED') {
+            // Second click on the same letter: friendly state + open the sign-in form
+            showToast('✔ This e-mail is already confirmed. Just sign in!');
+            setIsLoginModalOpen(true);
+          } else {
+            showToast(`✖ ${e.message || 'Link is invalid'}`, 'info');
+          }
         })
         .finally(() => window.history.replaceState({}, '', '/'));
     } else if (path === '/reset-password' && confirmToken) {
@@ -260,10 +265,13 @@ export default function App() {
         .then((res) => {
           setCurrentUser(res.user);
           setIsLoggedIn(true);
+          setClientPolicy(res.policy || { manualClosing: false });
           const saved = localStorage.getItem(TAB_KEY) as ActiveTab | null;
           const allowed: ActiveTab[] =
             res.user.role === 'CLIENT' ? ['investor', 'catalog'] : ['crm'];
-          setActiveTab(saved && allowed.includes(saved) ? saved : allowed[0]);
+          if (!legalSlugFromPath(window.location.pathname)) {
+            setActiveTab(saved && allowed.includes(saved) ? saved : allowed[0]);
+          }
         })
         .catch(() => setToken(null));
     }
@@ -287,6 +295,8 @@ export default function App() {
     }
 
     const pull = async () => {
+      // Market instruments live on the server — same list for everyone
+      await reloadAssets();
       if (isStaff) {
         try {
           const res = await apiKycAll();
@@ -309,8 +319,16 @@ export default function App() {
         await reloadLeads();
         await reloadNotes();
         try {
+          const staffUsers = await apiAdminUsers();
+          setUsers(staffUsers.users);
+        } catch { /* ignore */ }
+        try {
           const st = await apiClientStatuses();
           setClientStatuses(st.statuses);
+        } catch { /* ignore */ }
+        try {
+          const wb = await apiWithdrawBlocks();
+          setWithdrawBlocks(wb.blocks);
         } catch { /* ignore */ }
         try {
           const cs = await apiCrmSettings();
@@ -332,26 +350,13 @@ export default function App() {
         } catch {
           /* ignore transient errors */
         }
-        // ...and their active investments
+        // ...and their active investments — the server is the single source
+        // of truth; an empty list honestly shows an empty portfolio.
         try {
           const invRes = await apiMyInvestments();
-          if (invRes.investments && invRes.investments.length > 0) {
-            setMyInvestments(invRes.investments);
-          } else {
-            const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
-            if (saved) {
-              setMyInvestments(JSON.parse(saved));
-            } else {
-              setMyInvestments(INITIAL_MY_INVESTMENTS);
-            }
-          }
+          setMyInvestments(invRes.investments || []);
         } catch {
-          const saved = localStorage.getItem(`ohy_investments_${currentUser?.id || 'client'}`);
-          if (saved) {
-            setMyInvestments(JSON.parse(saved));
-          } else {
-            setMyInvestments(INITIAL_MY_INVESTMENTS);
-          }
+          /* keep the last known list on transient network errors */
         }
       }
       try {
@@ -417,7 +422,19 @@ export default function App() {
         .filter(u => u.role === 'CLIENT')
         .map(u => {
           const existing = localById.get(String(u.id));
-          if (existing) return existing;
+          if (existing) {
+            return {
+              ...existing,
+              name: u.name,
+              email: u.email,
+              phone: u.phone || existing.phone,
+              balance: Number(u.balance) || existing.balance,
+              manager: u.assignedManagerName || 'Unassigned',
+              lastSeen: u.lastSeen || null,
+              assignedManagerId: u.assignedManagerId || null,
+              defaultLeverage: u.defaultLeverage || existing.defaultLeverage || 10,
+            };
+          }
           const created = u.created_at ? new Date(u.created_at) : new Date();
           const dd = String(created.getDate()).padStart(2, '0');
           const mm = String(created.getMonth() + 1).padStart(2, '0');
@@ -434,7 +451,10 @@ export default function App() {
             invested: 0,
             totalProfit: 0,
             registrationDate: `${dd}.${mm}.${created.getFullYear()}`,
-            manager: 'No manager',
+            manager: u.assignedManagerName || 'Unassigned',
+            lastSeen: u.lastSeen || null,
+            assignedManagerId: u.assignedManagerId || null,
+            defaultLeverage: u.defaultLeverage || 10,
           };
         });
     });
@@ -457,9 +477,10 @@ export default function App() {
   /* ========================================================
      USER LOGIN & AUTH ACTIONS
   ======================================================== */
-  const handleLoginSuccess = (user: ApiUser) => {
+  const handleLoginSuccess = (user: ApiUser, policy?: { manualClosing: boolean }) => {
     setCurrentUser(user);
     setIsLoggedIn(true);
+    if (policy) setClientPolicy(policy);
     setActiveTab(user.role === 'CLIENT' ? 'investor' : 'crm');
     showToast(`✔ Signed in as ${user.name} (${user.role})!`);
   };
@@ -535,7 +556,7 @@ export default function App() {
       }));
 
       showToast(`✔ Position of $${amount.toLocaleString('en-US')} opened in «${project.title}».`);
-    } catch (err) {
+    } catch {
       // Fallback
       setInvestorBalance(prev => Math.max(0, prev - amount));
       const newInv: ActiveInvestment = {
@@ -674,26 +695,27 @@ export default function App() {
     }
   };
 
-  const handleCreateTrade = (newTradeData: Omit<AdminTrade, 'id' | 'status'>) => {
-    const newTrade: AdminTrade = {
-      ...newTradeData,
-      id: `trade-${Date.now()}`,
-      status: 'OPEN'
-    };
-    setAdminTrades(prev => [newTrade, ...prev]);
-
-    setInvestors(prev => prev.map(inv => {
-      if (inv.id === newTradeData.investorId) {
-        return {
-          ...inv,
-          invested: inv.invested + newTradeData.amount,
-          totalProfit: inv.totalProfit + newTradeData.pnl
-        };
-      }
-      return inv;
-    }));
-
-    showToast(`✔ Opened trading position «${newTradeData.asset}» for the client!`);
+  const handleCreateTrade = async (newTradeData: Omit<AdminTrade, 'id' | 'status'>) => {
+    const userId = Number(String(newTradeData.investorId).replace(/^acc-/, ''));
+    const symbol = String(newTradeData.asset || '').split(' ')[0] || 'BTC/USDT';
+    try {
+      await apiOpenTrade({
+        userId,
+        symbol,
+        name: newTradeData.asset,
+        side: newTradeData.type,
+        amount: newTradeData.amount,
+        entryPrice: newTradeData.entryPrice,
+        currentPrice: newTradeData.currentPrice || newTradeData.entryPrice,
+        leverage: newTradeData.leverage,
+        openedAt: newTradeData.openedAt,
+      });
+      const t = await apiAllTrades();
+      setServerTrades(t.trades);
+      showToast(`✔ Opened trading position «${newTradeData.asset}» for the client!`);
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not open the position', 'info');
+    }
   };
 
   const handleUpdateTrade = async (tradeId: string, patch: Partial<AdminTrade>) => {
@@ -767,6 +789,7 @@ export default function App() {
           id: String(l.id),
           name: l.name,
           phone: l.phone,
+          email: l.email || '',
           potentialAmount: l.potentialAmount,
           stage: (l.stage || 'new') as LeadStage,
           notes: l.notes || '',
@@ -865,16 +888,80 @@ export default function App() {
     }
   };
 
-  const handleCreateProject = (newProjData: Omit<Project, 'id' | 'raisedAmount' | 'status'>) => {
-    const newProject: Project = {
-      ...newProjData,
-      id: `p-${Date.now()}`,
-      raisedAmount: 0,
-      status: 'active'
-    };
-    setProjects(prev => [newProject, ...prev]);
-    showToast(`✔ New asset «${newProject.title}» published!`);
-    setActiveTab('catalog');
+  /**
+   * Assets are platform data: they live on the server, so an instrument the
+   * admin publishes appears in every client's Market — not in one browser.
+   */
+  const handleCreateProject = async (newProjData: Omit<Project, 'id' | 'raisedAmount' | 'status'>) => {
+    try {
+      await apiCreateAsset(newProjData as Partial<ApiAsset> & { title: string });
+      await reloadAssets();
+      showToast(`✔ New asset «${newProjData.title}» published!`);
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not create the asset', 'info');
+    }
+  };
+
+  const handleUpdateProject = async (id: string, patch: Partial<Project> & import('./api').AssetTimerPatch) => {
+    const numId = Number(String(id).replace(/^srv-/, ''));
+    try {
+      await apiUpdateAsset(numId, patch as Partial<ApiAsset> & import('./api').AssetTimerPatch);
+      await reloadAssets();
+      try {
+        const invRes = await apiMyInvestments();
+        setMyInvestments(invRes.investments || []);
+      } catch { /* staff may not have client investments */ }
+      showToast('✔ Asset saved.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the asset', 'info');
+    }
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    const numId = Number(String(id).replace(/^srv-/, ''));
+    try {
+      await apiDeleteAsset(numId);
+      await reloadAssets();
+      showToast('✔ Asset removed.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not delete the asset', 'info');
+    }
+  };
+
+  const openLegal = (slug: LegalSlug) => {
+    setLegalSlug(slug);
+    window.history.pushState({}, '', `/legal/${slug}`);
+  };
+
+  const closeLegal = () => {
+    setLegalSlug(null);
+    window.history.pushState({}, '', '/');
+    setActiveTab('landing');
+  };
+
+  const reloadAssets = async () => {
+    try {
+      const r = await apiAssets();
+      setProjects(r.assets.map(a => ({
+        id: `srv-${a.id}`,
+        title: a.title,
+        category: a.category as Project['category'],
+        categoryLabel: a.categoryLabel,
+        targetAmount: Number(a.targetAmount) || 0,
+        raisedAmount: Number(a.raisedAmount) || 0,
+        apr: Number(a.apr) || 0,
+        termMonths: Number(a.termMonths) || 0,
+        minCheck: Number(a.minCheck) || 0,
+        riskLevel: a.riskLevel,
+        status: a.status as Project['status'],
+        description: a.description,
+        imageUrl: a.imageUrl,
+        tags: Array.isArray(a.tags) ? a.tags : [],
+        closesAt: a.closesAt || null,
+      })));
+    } catch {
+      /* keep the last known list on transient errors */
+    }
   };
 
   /* ========================================================
@@ -889,6 +976,28 @@ export default function App() {
     await apiAdminUpdateUser(userId, { status });
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: status as ApiUser['status'] } : u));
     showToast(`✔ User status updated: ${status}`);
+  };
+
+  const handleDeleteUser = async (userId: number) => {
+    const res = await apiAdminDeleteUser(userId);
+    setUsers(prev => prev.filter(u => u.id !== userId));
+    setInvestors(prev => prev.filter(inv => String(inv.id) !== String(userId) && inv.id !== `acc-${userId}`));
+    await reloadLeads();
+    showToast(`✔ ${res.message}`);
+  };
+
+  const handlePatchUser = (userId: number, patch: Partial<ApiUser>) => {
+    setUsers(prev => prev.map(u => (u.id === userId ? { ...u, ...patch } : u)));
+    setInvestors(prev => prev.map(inv => {
+      if (String(inv.id) !== String(userId) && inv.id !== `acc-${userId}`) return inv;
+      return {
+        ...inv,
+        manager: patch.assignedManagerName ?? inv.manager,
+        assignedManagerId: patch.assignedManagerId !== undefined ? patch.assignedManagerId : inv.assignedManagerId,
+        defaultLeverage: patch.defaultLeverage ?? inv.defaultLeverage,
+        lastSeen: patch.lastSeen !== undefined ? patch.lastSeen : inv.lastSeen,
+      };
+    }));
   };
 
   /**
@@ -945,6 +1054,17 @@ export default function App() {
     }
   };
 
+  /** CRM «Block withdrawal» — actually stops /transactions/withdraw server-side */
+  const handleSetWithdrawBlock = async (clientId: string, blocked: boolean) => {
+    try {
+      const res = await apiSetWithdrawBlock(clientId, blocked);
+      setWithdrawBlocks(res.blocks);
+      showToast(blocked ? '✔ Withdrawals blocked for this client.' : '✔ Withdrawals unblocked.');
+    } catch (err) {
+      showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save', 'info');
+    }
+  };
+
   const handleSetClientStatus = async (clientId: string, status: string) => {
     try {
       const res = await apiSetClientStatus(clientId, status);
@@ -967,18 +1087,20 @@ export default function App() {
     }
   };
 
-  const handleToggleHidePhones = async () => {
+  /**
+   * All \"Privacy & access\" toggles persist through the same endpoint,
+   * so the choice survives restarts and applies to every staff member.
+   */
+  const handleToggleCrmSetting = async (key: keyof CrmSettings) => {
     if (currentUser?.role !== 'ADMIN') {
       showToast('Only an administrator can change this setting.', 'info');
       return;
     }
-    const next = !settings.hidePhonesFromAgents;
+    const next = { ...settings, [key]: !settings[key] };
     try {
       const res = await apiSaveCrmSettings(next);
       setSettings(res.settings);
-      showToast(next
-        ? '✔ Phone numbers are now hidden from agents.'
-        : '✔ Agents can see full phone numbers again.');
+      showToast('✔ Setting saved.');
     } catch (err) {
       showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not save the setting', 'info');
     }
@@ -1080,7 +1202,7 @@ export default function App() {
       )}
 
       {/* Top Header (hidden on landing & CRM — they have their own navbars) */}
-      {activeTab !== 'crm' && activeTab !== 'landing' && activeTab !== 'investor' && (
+      {activeTab !== 'crm' && activeTab !== 'landing' && activeTab !== 'investor' && !legalSlug && (
       <Header
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -1100,7 +1222,11 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full">
-        {activeTab === 'landing' && (
+        {legalSlug && (
+          <LegalPage slug={legalSlug} onBack={closeLegal} onOpen={openLegal} />
+        )}
+
+        {activeTab === 'landing' && !legalSlug && !getToken() && (
           <LandingPage
             onOpenLoginModal={() => setIsLoginModalOpen(true)}
             onOpenRegisterModal={() => setIsRegisterModalOpen(true)}
@@ -1117,6 +1243,7 @@ export default function App() {
             onOpenCatalog={() => setActiveTab('catalog')}
             onOpenDepositModal={() => setIsDepositModalOpen(true)}
             onOpenWithdrawModal={() => setIsWithdrawModalOpen(true)}
+            allowManualClosing={clientPolicy.manualClosing}
             onClaimDividends={handleClaimDividends}
             onLogout={handleLogout}
             onBalanceChanged={refreshMyFinances}
@@ -1139,22 +1266,24 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
           <ProjectCatalog
             projects={projects}
+            canManageAssets={isStaff}
+            notifications={notifications}
             onOpenInvestModal={(proj) => setSelectedProjectForInvest(proj)}
             onSwitchToCrm={() => setActiveTab('crm')}
           />
           </div>
         )}
 
-        {activeTab === 'crm' && (
+        {activeTab === 'crm' && isStaff && !legalSlug && (
           <CrmDashboard
             leads={leads}
             onMoveLeadStage={handleMoveLeadStage}
             onOpenNewLeadModal={() => setIsNewLeadModalOpen(true)}
             investors={investors}
             onApproveKyc={handleApproveKyc}
-            requests={[
-              // Real deposit / withdrawal requests from the server
-              ...allTransactions.map(t => ({
+            requests={
+              // only real deposit / withdrawal requests from the server
+              allTransactions.map(t => ({
                 id: String(t.id),
                 investorId: `srv-${t.userId}`,
                 investorName: t.userName,
@@ -1168,9 +1297,8 @@ export default function App() {
                   minute: '2-digit',
                 }),
                 method: t.method,
-              })) as TransactionRequest[],
-              ...requests,
-            ]}
+              })) as TransactionRequest[]
+            }
             onPlaceCall={async (client, callerName) => {
               try {
                 const res = await apiStartCall(client.id, callerName);
@@ -1212,24 +1340,32 @@ export default function App() {
             onRejectRequest={handleRejectRequest}
             projects={projects}
             onOpenNewProjectModal={() => setIsNewProjectModalOpen(true)}
+            onUpdateProject={handleUpdateProject}
+            onDeleteProject={handleDeleteProject}
+            onRefreshProjects={reloadAssets}
             trades={combinedTrades}
             onUpdateInvestorBalance={handleUpdateInvestorBalance}
             onCreateTrade={handleCreateTrade}
             onUpdateTrade={handleUpdateTrade}
             onCloseTrade={handleCloseTrade}
             onAddLeadComment={handleAddLeadComment}
+            onRefreshLeads={reloadLeads}
             users={users}
             currentUserName={currentUser?.name || 'Manager'}
             currentUserRole={currentUser?.role || 'MANAGER'}
             onChangeUserPassword={handleChangeUserPassword}
             onUpdateUserStatus={handleUpdateUserStatus}
+            onDeleteUser={handleDeleteUser}
+            onPatchUser={handlePatchUser}
             settings={settings}
-            onToggleHidePhones={handleToggleHidePhones}
+            onToggleSetting={handleToggleCrmSetting}
             onNotify={showToast}
             notes={clientNotes}
             onAddNote={handleAddClientNote}
             clientStatuses={clientStatuses}
             onSetClientStatus={handleSetClientStatus}
+            withdrawBlocks={withdrawBlocks}
+            onSetWithdrawBlock={handleSetWithdrawBlock}
             kycDocuments={kycDocuments}
             onReviewKyc={handleReviewKyc}
             notifications={notifications}
@@ -1240,15 +1376,15 @@ export default function App() {
       </main>
 
       {/* Footer (like Shoreline Direct: risk warning + payments + copyright) */}
-      {activeTab !== 'crm' && activeTab !== 'investor' && (
+      {activeTab !== 'crm' && activeTab !== 'investor' && !legalSlug && (
       <footer className="bg-[#1C412C] border-t border-[#B08B48]/25 text-[#F5F2E9]/70">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
             <div className="max-w-sm">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-full bg-[#B08B48] flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-white" />
-                </div>
+              <div className="flex items-center gap-3">
+                <span className="w-16 h-16 rounded-full bg-[#F5F2E9] flex items-center justify-center shrink-0 overflow-hidden">
+                  <img src="/brand-crest.png" alt="" className="w-[88px] h-[88px] object-contain max-w-none" />
+                </span>
                 <span className="font-serif font-bold text-lg text-white tracking-wide">OAK HAVEN <span className="text-[#B08B48] italic">YIELD</span></span>
               </div>
               <p className="text-xs leading-relaxed mt-3">
@@ -1260,7 +1396,7 @@ export default function App() {
             <div>
               <div className="text-xs font-bold text-white uppercase tracking-wider mb-3">Payment methods</div>
               <div className="flex flex-wrap gap-2">
-                {['VISA', 'Mastercard', 'PayPal', 'USDT', 'BTC'].map(p => (
+                {['USDT', 'BTC', 'ETH', 'USDC'].map(p => (
                   <span key={p} className="px-3 py-1.5 rounded-md bg-white/10 border border-white/15 text-xs font-bold text-[#F5F2E9]">
                     {p}
                   </span>
@@ -1284,10 +1420,10 @@ export default function App() {
           <div className="mt-6 pt-6 border-t border-white/15 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
             <span>© 2026 Oak Haven Yield. All Rights Reserved.</span>
             <div className="flex items-center gap-5">
-              <button onClick={() => setActiveTab('landing')} className="hover:text-white transition-colors cursor-pointer">
-                Privacy Policy
+              <button onClick={() => openLegal('client')} className="hover:text-white transition-colors cursor-pointer">
+                Client Agreement
               </button>
-              <button onClick={() => setActiveTab('landing')} className="hover:text-white transition-colors cursor-pointer">
+              <button onClick={() => openLegal('terms')} className="hover:text-white transition-colors cursor-pointer">
                 Terms & Conditions
               </button>
             </div>

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   apiIceServers,
   apiPostSignal,
+  apiPostSignals,
   apiReadSignals,
   apiCallStatus,
   apiUploadRecording,
@@ -46,6 +47,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   const [error, setError] = useState<string | null>(null);
   /** Non-fatal notice (e.g. no microphone → listen-only mode) */
   const [warning, setWarning] = useState<string | null>(null);
+  const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
   /** A local microphone track is present */
   const [micAvailable, setMicAvailable] = useState(true);
   /** The other side is actually sending a video (screen share) */
@@ -61,9 +63,10 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   const recStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const lastSignalRef = useRef(0);
-  const pollRef = useRef<number | null>(null);
+  const pollAbortRef = useRef<AbortController | null>(null);
   const negotiatingRef = useRef(false);
-  const retryRef = useRef<number | null>(null);
+  const outgoingSignalsRef = useRef<{ kind: string; payload: string; role: string }[]>([]);
+  const outgoingTimerRef = useRef<number | null>(null);
   /**
    * ICE candidates often arrive BEFORE the remote description is applied;
    * feeding them to addIceCandidate at that moment throws and the candidate
@@ -94,14 +97,13 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
 
   /** Tear everything down — safe to call twice. */
   const cleanup = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
+    pollAbortRef.current?.abort();
+    pollAbortRef.current = null;
+    if (outgoingTimerRef.current) {
+      clearTimeout(outgoingTimerRef.current);
+      outgoingTimerRef.current = null;
     }
-    if (retryRef.current) {
-      clearInterval(retryRef.current);
-      retryRef.current = null;
-    }
+    outgoingSignalsRef.current = [];
     if (disconnectTimerRef.current) {
       clearTimeout(disconnectTimerRef.current);
       disconnectTimerRef.current = null;
@@ -139,6 +141,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     setPhase('ended');
     setSharingScreen(false);
     setRecording(false);
+    setNeedsAudioUnlock(false);
     setHasRemoteVideo(false);
     onEnded?.();
   }, [callId, channel, cleanup, onEnded]);
@@ -199,6 +202,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     if (!callId || pcRef.current) return;
     setError(null);
     setWarning(null);
+    setNeedsAudioUnlock(false);
     setMicAvailable(true);
     setPhase('connecting');
 
@@ -213,9 +217,73 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     }
 
     try {
-      const { iceServers } = await apiIceServers();
-      const pc = new RTCPeerConnection({ iceServers });
+      const { iceServers, turnConfigured } = await apiIceServers();
+      const pc = new RTCPeerConnection({
+        iceServers,
+        iceCandidatePoolSize: turnConfigured ? 0 : 8,
+        // In production force the proven TURN relay. This avoids a flaky
+        // direct candidate being selected on a strict NAT and then dropping
+        // the call after the initial handshake. Local development still uses
+        // direct ICE when no TURN credentials are configured.
+        iceTransportPolicy: turnConfigured ? 'relay' : 'all',
+        bundlePolicy: 'max-bundle',
+      });
       pcRef.current = pc;
+      let restartAttempts = 0;
+      let restartInFlight = false;
+
+      const flushOutgoingSignals = async () => {
+        if (!callId || !outgoingSignalsRef.current.length || !pcRef.current) return;
+        const batch = outgoingSignalsRef.current.splice(0, 64);
+        try {
+          await apiPostSignals(callId, batch, channel);
+        } catch {
+          outgoingSignalsRef.current.unshift(...batch);
+          if (!outgoingTimerRef.current && pcRef.current) {
+            outgoingTimerRef.current = window.setTimeout(() => {
+              outgoingTimerRef.current = null;
+              void flushOutgoingSignals();
+            }, 300);
+          }
+        }
+        if (outgoingSignalsRef.current.length && !outgoingTimerRef.current && pcRef.current) {
+          outgoingTimerRef.current = window.setTimeout(() => {
+            outgoingTimerRef.current = null;
+            void flushOutgoingSignals();
+          }, 90);
+        }
+      };
+
+      const queueSignal = (signal: { kind: string; payload: string; role: string }) => {
+        outgoingSignalsRef.current.push(signal);
+        if (!outgoingTimerRef.current) {
+          outgoingTimerRef.current = window.setTimeout(() => {
+            outgoingTimerRef.current = null;
+            void flushOutgoingSignals();
+          }, 90);
+        }
+      };
+
+      const restartIce = async () => {
+        if (!initiator || restartInFlight || restartAttempts >= 3 || !pcRef.current) return false;
+        restartInFlight = true;
+        restartAttempts += 1;
+        try {
+          const offer = await pc.createOffer({ iceRestart: true });
+          await pc.setLocalDescription(offer);
+          await apiPostSignal(callId, 'offer', JSON.stringify(pc.localDescription), role, channel);
+          if (restartAttempts < 3) {
+            window.setTimeout(() => {
+              if (pcRef.current === pc && pc.connectionState !== 'connected') void restartIce();
+            }, 2500);
+          }
+          return true;
+        } catch {
+          return false;
+        } finally {
+          restartInFlight = false;
+        }
+      };
 
       /**
        * The microphone is NOT mandatory. Laptops without a built-in mic (or
@@ -258,10 +326,20 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
         } else if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = stream;
-          remoteAudioRef.current.play().catch(() => undefined);
+          remoteAudioRef.current.play().catch(() => setNeedsAudioUnlock(true));
           // Recording started before the remote audio arrived? Add it now
           // so the file contains both voices.
           if (recStreamRef.current) recStreamRef.current.addTrack(e.track);
+        }
+      };
+
+      pc.onicecandidate = event => {
+        if (event.candidate) {
+          queueSignal({
+            kind: 'ice',
+            payload: JSON.stringify(event.candidate),
+            role,
+          });
         }
       };
 
@@ -284,12 +362,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
         }
       };
 
-      pc.onicecandidate = (e) => {
-        if (e.candidate && callId) {
-          apiPostSignal(callId, 'ice', JSON.stringify(e.candidate), role, channel).catch(() => undefined);
-        }
-      };
-
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'connected') {
           if (disconnectTimerRef.current) {
@@ -298,6 +370,10 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
           }
           setPhase('active');
         } else if (pc.connectionState === 'failed') {
+          if (initiator && restartAttempts < 3) {
+            void restartIce();
+            return;
+          }
           setError('Connection failed — both sides could not reach each other. ' +
             'Try again, or connect over a different network.');
           void hangUp();
@@ -311,7 +387,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
                 setError('The connection was lost.');
                 void hangUp();
               }
-            }, 15000);
+            }, 45000);
           }
         }
       };
@@ -319,84 +395,71 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
       if (initiator) {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        await apiPostSignal(callId, 'offer', JSON.stringify(offer), role, channel);
-
-        /**
-         * The callee may not have opened the page yet, and a missed offer
-         * leaves both sides waiting forever. Re-send it every 4s until the
-         * answer lands.
-         */
-        let tries = 0;
-        const retry = window.setInterval(async () => {
-          tries += 1;
-          const pcNow = pcRef.current;
-          if (!pcNow || pcNow.remoteDescription || tries > 15) {
-            clearInterval(retry);
-            return;
-          }
-          try {
-            await apiPostSignal(callId, 'offer', JSON.stringify(pcNow.localDescription), role, channel);
-          } catch {
-            /* keep trying */
-          }
-        }, 4000);
-        retryRef.current = retry;
+        await apiPostSignal(callId, 'offer', JSON.stringify(pc.localDescription), role, channel);
       }
 
-      // Poll for the other side's SDP / ICE
-      pollRef.current = window.setInterval(async () => {
-        if (!pcRef.current) return;
-        try {
-          const { signals, lastId } = await apiReadSignals(callId, lastSignalRef.current, channel);
-          lastSignalRef.current = Math.max(lastSignalRef.current, lastId);
+      // One long-poll loop replaces overlapping interval requests. The cursor
+      // advances only after each signal has been handled, so ICE cannot be
+      // lost between two polls.
+      const pollSignals = async () => {
+        while (pcRef.current === pc) {
+          const controller = new AbortController();
+          pollAbortRef.current = controller;
+          try {
+            const result = await apiReadSignals(callId, lastSignalRef.current, channel, {
+              wait: 25_000,
+              signal: controller.signal,
+            });
+            for (const signal of result.signals.sort((a, b) => a.id - b.id)) {
+              if (signal.id <= lastSignalRef.current) continue;
+              const data = JSON.parse(signal.payload);
 
-          for (const s of signals) {
-            const data = JSON.parse(s.payload);
-
-            if (s.kind === 'offer') {
-              if (negotiatingRef.current) continue;
-              negotiatingRef.current = true;
-              try {
-                // Rolling back first lets a re-offer (screen share) succeed
-                if (pcRef.current.signalingState !== 'stable') {
-                  await pcRef.current.setLocalDescription({ type: 'rollback' });
+              if (signal.kind === 'offer') {
+                // Rolling back first lets a re-offer (including ICE restart or
+                // screen sharing) succeed without dropping the call.
+                if (pc.signalingState !== 'stable') {
+                  await pc.setLocalDescription({ type: 'rollback' });
                 }
-                await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
+                await pc.setRemoteDescription(new RTCSessionDescription(data));
                 await flushIceQueue();
-                const answer = await pcRef.current.createAnswer();
-                await pcRef.current.setLocalDescription(answer);
-                await apiPostSignal(callId, 'answer', JSON.stringify(answer), role, channel);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                await apiPostSignal(callId, 'answer', JSON.stringify(pc.localDescription), role, channel);
                 if (role === 'client') await apiCallStatus(callId, 'active');
-              } finally {
-                negotiatingRef.current = false;
-              }
-            } else if (s.kind === 'answer') {
-              if (pcRef.current.signalingState === 'have-local-offer') {
-                await pcRef.current.setRemoteDescription(new RTCSessionDescription(data));
-                await flushIceQueue();
-                // The callee answered — media can start flowing right away,
-                // so flip to active without waiting for the connection event.
-                setPhase('active');
-              }
-            } else if (s.kind === 'ice') {
-              if (!pcRef.current.remoteDescription) {
-                // Too early — queue it, it is flushed after the description
-                iceQueueRef.current.push(new RTCIceCandidate(data));
-              } else {
-                try {
-                  await pcRef.current.addIceCandidate(new RTCIceCandidate(data));
-                } catch {
-                  /* stale candidate — drop it */
+              } else if (signal.kind === 'answer') {
+                if (pc.signalingState === 'have-local-offer') {
+                  await pc.setRemoteDescription(new RTCSessionDescription(data));
+                  await flushIceQueue();
+                  setPhase('active');
                 }
+              } else if (signal.kind === 'ice') {
+                const candidate = new RTCIceCandidate(data);
+                if (!pc.remoteDescription) {
+                  iceQueueRef.current.push(candidate);
+                } else {
+                  try {
+                    await pc.addIceCandidate(candidate);
+                  } catch {
+                    /* stale candidate — drop it */
+                  }
+                }
+              } else if (signal.kind === 'bye') {
+                await hangUp();
               }
-            } else if (s.kind === 'bye') {
-              await hangUp();
+              lastSignalRef.current = Math.max(lastSignalRef.current, signal.id);
             }
+            // The server cursor also includes our own signals. Skipping those
+            // is safe and prevents scanning the same mailbox forever.
+            lastSignalRef.current = Math.max(lastSignalRef.current, result.lastId);
+          } catch {
+            if (controller.signal.aborted) return;
+            await new Promise(resolve => window.setTimeout(resolve, 250));
+          } finally {
+            if (pollAbortRef.current === controller) pollAbortRef.current = null;
           }
-        } catch {
-          /* transient network errors are fine, we poll again */
         }
-      }, 1200);
+      };
+      void pollSignals();
     } catch (err) {
       cleanup();
       setPhase('failed');
@@ -408,7 +471,16 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
         void apiCallStatus(callId, 'ended').catch(() => undefined);
       }
     }
-  }, [callId, role, initiator, cleanup, hangUp, flushIceQueue]);
+  }, [callId, role, initiator, channel, cleanup, hangUp, flushIceQueue]);
+
+  const enableAudio = useCallback(async () => {
+    try {
+      await remoteAudioRef.current?.play();
+      setNeedsAudioUnlock(false);
+    } catch {
+      setWarning('Click Enable sound in the call window to start the remote audio.');
+    }
+  }, []);
 
   const toggleMute = useCallback(() => {
     const track = localRef.current?.getAudioTracks()[0];
@@ -420,23 +492,12 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     setMuted(!track.enabled);
   }, []);
 
-  /**
-   * Renegotiate the connection (a fresh offer with the current track set).
-   * Both starting and STOPPING a screen share go through this — without
-   * the re-offer on stop the other side keeps a frozen screen forever.
-   */
   const renegotiate = useCallback(async (pc: RTCPeerConnection) => {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await apiPostSignal(callId!, 'offer', JSON.stringify(offer), role, channel);
+    await apiPostSignal(callId!, 'offer', JSON.stringify(pc.localDescription), role, channel);
   }, [callId, role, channel]);
 
-  /**
-   * Stop sharing. Kept as its own stable callback (refs only, no state) so
-   * the track's "ended" event can call it without a stale closure —
-   * re-invoking the toggle from onended with an old `sharingScreen` state
-   * is what used to re-open the OS screen picker by itself.
-   */
   const stopScreenShare = useCallback(async () => {
     if (!sharingRef.current) return;
     sharingRef.current = false;
@@ -469,7 +530,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   const stopShareRef = useRef(stopScreenShare);
   stopShareRef.current = stopScreenShare;
 
-  /** Share the screen over the same connection (PDF p.4). */
   const toggleScreenShare = useCallback(async () => {
     if (sharingScreen || sharingRef.current) {
       void stopShareRef.current();
@@ -491,7 +551,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
       const [track] = screen.getVideoTracks();
       pc.addTrack(track, screen);
       sharingRef.current = true;
-      // The user can also stop from the OS picker's "Stop sharing" button
       track.onended = () => { void stopShareRef.current(); };
 
       negotiatingRef.current = true;
@@ -508,11 +567,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     }
   }, [sharingScreen, callId, renegotiate]);
 
-  /**
-   * Record BOTH sides of the conversation: our own mic track plus the
-   * remote audio track, merged into one stream. (Recording the local
-   * stream alone produced files with only our own voice.)
-   */
   const toggleRecording = useCallback(async () => {
     if (recording) {
       recorderRef.current?.stop();
@@ -560,9 +614,9 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   useEffect(() => cleanup, [cleanup]);
 
   return {
-    phase, error, warning, muted, micAvailable,
+    phase, error, warning, needsAudioUnlock, muted, micAvailable,
     sharingScreen, recording, hasRemoteVideo,
-    remoteAudioRef, remoteVideoRef,
-    connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
+    remoteAudioRef, remoteVideoRef, peerConnectionRef: pcRef,
+    connect, hangUp, enableAudio, toggleMute, toggleScreenShare, toggleRecording,
   };
 }
