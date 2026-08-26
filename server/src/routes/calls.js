@@ -107,16 +107,43 @@ router.get('/ice-servers', auth, async (req, res) => {
     },
   ];
 
+  const turnConfigured = Boolean(process.env.TURN_URL && process.env.TURN_USER && process.env.TURN_PASS);
+
   // A TURN relay is needed behind strict corporate NATs
-  if (process.env.TURN_URL && process.env.TURN_USER) {
-    servers.push({
-      urls: process.env.TURN_URL,
+  if (turnConfigured) {
+    const cred = {
       username: process.env.TURN_USER,
       credential: process.env.TURN_PASS || '',
-    });
+    };
+    const raw = String(process.env.TURN_URL).split(',').map(s => s.trim()).filter(Boolean);
+    const urls = [];
+    for (const u of raw) {
+      // Give the browser one candidate per transport. Sending the bare URL
+      // plus udp/tcp duplicates makes Chromium open a large number of
+      // competing allocations, which then show up as stale 437/timeouts.
+      if (u.startsWith('turns:')) {
+        urls.push(u.includes('transport=') ? u : `${u}?transport=tcp`);
+      } else if (u.startsWith('turn:')) {
+        if (u.includes('transport=')) urls.push(u);
+        else {
+          urls.push(`${u}?transport=udp`);
+          urls.push(`${u}?transport=tcp`);
+        }
+      }
+    }
+    servers.push({ urls, ...cred });
+    // Fallback lane for networks that strangle plain UDP:
+    // TURN-over-TLS on 5349 looks like regular HTTPS traffic.
+    if (process.env.TURN_TLS_HOST) {
+      const host = process.env.TURN_TLS_HOST;
+      servers.push({
+        urls: [`turns:${host}:5349?transport=tcp`],
+        ...cred,
+      });
+    }
   }
 
-  res.json({ iceServers: servers });
+  res.json({ iceServers: servers, turnConfigured });
 });
 
 /* ---------------- start ---------------- */
@@ -205,69 +232,103 @@ router.get('/inbox', auth, async (req, res) => {
 
 /* ---------------- signalling ---------------- */
 
+async function signalContext(req, res, callId) {
+  const call = await store.byId('calls', callId);
+  if (!call) {
+    res.status(404).json({ error: 'Call not found' });
+    return null;
+  }
+  const allowed = call.clientId === req.user.id || call.managerId === req.user.id || isStaff(req.user);
+  if (!allowed) {
+    res.status(403).json({ error: 'Access denied' });
+    return null;
+  }
+  return call;
+}
+
+async function insertSignal(req, callId, signal, channel) {
+  return store.insert('signals', {
+    callId,
+    from: req.user.id,
+    channel,
+    role: clean(signal?.role, 20) || (isStaff(req.user) ? 'manager' : 'client'),
+    kind: clean(signal?.kind, 20),
+    // SDP and candidates are bounded before they enter either storage backend.
+    payload: String(signal?.payload ?? '').slice(0, 200_000),
+    createdAt: new Date().toISOString(),
+  });
+}
+
 /**
  * Post an offer / answer / ICE candidate for the other participants.
  * `role` says who is speaking: manager, client or supervisor.
  */
 router.post('/:id/signal', auth, async (req, res) => {
   const callId = Number(req.params.id);
-  const call = await store.byId('calls', callId);
-  if (!call) return res.status(404).json({ error: 'Call not found' });
-
-  const allowed =
-    call.clientId === req.user.id || call.managerId === req.user.id || isStaff(req.user);
-  if (!allowed) return res.status(403).json({ error: 'Access denied' });
+  const call = await signalContext(req, res, callId);
+  if (!call) return;
 
   const wantsWhisper = req.body?.channel === 'whisper';
   if (wantsWhisper && !isStaff(req.user)) {
     return res.status(403).json({ error: 'Staff access only' });
   }
 
-  const signal = await store.insert('signals', {
-    callId,
-    from: req.user.id,
-    /**
-     * A three-way whisper needs two independent peer connections:
-     *   main    — manager <-> client
-     *   whisper — manager <-> supervisor
-     * Keeping their SDP apart is what stops the client from ever
-     * receiving the supervisor's audio.
-     */
-    channel: wantsWhisper ? 'whisper' : 'main',
-    role: clean(req.body?.role, 20) || (isStaff(req.user) ? 'manager' : 'client'),
-    kind: clean(req.body?.kind, 20),
-    // SDP blobs are large; keep them as-is but bounded
-    payload: String(req.body?.payload ?? '').slice(0, 200_000),
-    createdAt: new Date().toISOString(),
-  });
-
+  const signal = await insertSignal(req, callId, req.body, wantsWhisper ? 'whisper' : 'main');
   res.json({ ok: true, id: signal.id });
+});
+
+/** Batch ICE candidates so rapid trickle events cannot race each other. */
+router.post('/:id/signals', auth, async (req, res) => {
+  const callId = Number(req.params.id);
+  const call = await signalContext(req, res, callId);
+  if (!call) return;
+
+  const channel = req.body?.channel === 'whisper' ? 'whisper' : 'main';
+  if (channel === 'whisper' && !isStaff(req.user)) {
+    return res.status(403).json({ error: 'Staff access only' });
+  }
+  const signals = Array.isArray(req.body?.signals) ? req.body.signals.slice(0, 64) : [];
+  if (!signals.length) return res.status(400).json({ error: 'No signals supplied' });
+
+  const saved = [];
+  for (const signal of signals) saved.push(await insertSignal(req, callId, signal, channel));
+  res.json({ ok: true, ids: saved.map(signal => signal.id) });
 });
 
 /** Read everything posted by the OTHER participants since `after`. */
 router.get('/:id/signals', auth, async (req, res) => {
   const callId = Number(req.params.id);
   const after = Number(req.query.after) || 0;
-
   const channel = req.query.channel === 'whisper' ? 'whisper' : 'main';
-
-  /**
-   * Hard guarantee, not just a UI convention: a client can never read the
-   * whisper channel, so a supervisor's coaching cannot reach them even if
-   * the request is crafted by hand.
-   */
-  const call = await store.byId('calls', callId);
-  if (!call) return res.status(404).json({ error: 'Call not found' });
+  const call = await signalContext(req, res, callId);
+  if (!call) return;
   if (channel === 'whisper' && !isStaff(req.user)) {
     return res.status(403).json({ error: 'Staff access only' });
   }
 
-  const all = await store.manyByField('signals', 'callId', callId);
-  const fresh = all
-    .filter(s => s.id > after && s.from !== req.user.id && (s.channel || 'main') === channel)
-    .sort((a, b) => a.id - b.id);
+  // Long-polling removes overlapping 700ms requests while keeping the
+  // mailbox lossless. The cursor advances only past signals that were
+  // actually observed for this call/channel; a later insert is read next time.
+  const waitMs = Math.min(Math.max(Number(req.query.wait) || 0, 0), 25_000);
+  const deadline = Date.now() + waitMs;
+  let fresh = [];
+  let observedLastId = after;
 
-  res.json({ signals: fresh, lastId: fresh.length ? fresh[fresh.length - 1].id : after });
+  do {
+    const all = await store.manyByField('signals', 'callId', callId);
+    const channelSignals = all.filter(s => s.id > observedLastId && (s.channel || 'main') === channel);
+    if (channelSignals.length) {
+      observedLastId = Math.max(observedLastId, ...channelSignals.map(s => s.id));
+      fresh = channelSignals
+        .filter(s => s.from !== req.user.id)
+        .sort((a, b) => a.id - b.id);
+      if (fresh.length) break;
+    }
+    if (Date.now() >= deadline) break;
+    await new Promise(resolve => setTimeout(resolve, Math.min(250, deadline - Date.now())));
+  } while (true);
+
+  res.json({ signals: fresh, lastId: observedLastId });
 });
 
 /* ---------------- status ---------------- */
@@ -278,6 +339,7 @@ router.post('/:id/status', auth, async (req, res) => {
   if (!call) return res.status(404).json({ error: 'Call not found' });
 
   const status = clean(req.body?.status, 20);
+  if (status === 'ended' && call.status === 'ended') return res.json({ ok: true, call });
   const patch = {};
 
   if (status === 'active' && call.status !== 'active') {

@@ -79,10 +79,16 @@ router.post('/public', async (req, res) => {
   const message = clean(b.message ?? b.notes ?? '', 2000);
   const source = clean(b.source, 120).trim() || 'Landing';
 
-  // Duplicate — same phone or email already in leads or users (do not reveal who owns it)
-  const [leads, users] = await Promise.all([store.all('leads'), store.all('users')]);
+  // Duplicates are blocked only while the CRM setting "Duplicate control"
+  // is ON (default). Kill-switch lives in Settings → Privacy & access.
+  const [leads, users, settingsRec] = await Promise.all([
+    store.all('leads'),
+    store.all('users'),
+    store.byField('settings', 'key', 'crmSettings'),
+  ]);
+  const dupControl = settingsRec?.value?.duplicateControl !== false;
   const dup = await findDuplicate({ phone, email: emailRaw }, { leads, users });
-  if (dup) return res.status(409).json({ error: 'This contact already exists' });
+  if (dupControl && dup) return res.status(409).json({ error: 'This contact already exists' });
 
   // Anti-spam: max 3 leads per normalized email per 24h
   const eNorm = normEmail(emailRaw);
@@ -95,7 +101,7 @@ router.post('/public', async (req, res) => {
     phone,
     email: emailRaw,
     potentialAmount: 0,
-    stage: 'New',
+    stage: 'new',
     notes: message ? `From website: ${message}` : '',
     source,
     manager: '',
@@ -117,7 +123,41 @@ router.post('/public', async (req, res) => {
 });
 
 router.get('/', auth, async (req, res) => {
-  const leads = await store.all('leads');
+  let leads = await store.all('leads');
+  const users = await store.all('users');
+  const clients = users.filter(u => u.role === 'CLIENT');
+  const emailOf = (v) => String(v || '').trim().toLowerCase();
+  const known = new Set(leads.map(l => emailOf(l.email)).filter(Boolean));
+  for (const u of clients) {
+    const em = emailOf(u.email);
+    if (!em || known.has(em)) continue;
+    const lead = await store.insert('leads', {
+      name: u.name,
+      phone: u.phone || '',
+      email: u.email,
+      potentialAmount: Number(u.balance) || 0,
+      stage: 'active',
+      notes: 'Synced from registered client',
+      manager: u.assignedManagerName || '',
+      comments: [],
+      source: 'client-sync',
+      createdBy: 'system',
+      createdAt: u.created_at || new Date().toISOString(),
+    });
+    leads.push(lead);
+    known.add(em);
+  }
+  if (req.user.role !== 'ADMIN') {
+    const mine = String(req.user.name || '').toLowerCase();
+    const myId = Number(req.user.id);
+    leads = leads.filter(l => {
+      const mgr = String(l.manager || '').toLowerCase();
+      if (mgr && (mgr === mine || mgr.includes(mine) || mine.includes(mgr))) return true;
+      const client = clients.find(u => emailOf(u.email) && emailOf(u.email) === emailOf(l.email));
+      if (client && Number(client.assignedManagerId) === myId) return true;
+      return false;
+    });
+  }
   res.json({ leads: leads.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
 });
 
@@ -142,7 +182,7 @@ router.post('/', auth, async (req, res) => {
     phone: clean(b.phone, 40),
     email: clean(b.email, 120),
     potentialAmount: Number(b.potentialAmount) || 0,
-    stage: clean(b.stage, 60) || 'New',
+    stage: clean(b.stage, 60).toLowerCase() || 'new',
     notes: clean(b.notes, 2000),
     manager: clean(b.manager, 120) || req.user.name,
     comments: [],

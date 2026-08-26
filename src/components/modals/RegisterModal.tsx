@@ -78,7 +78,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
           </div>
           <h2 className="font-serif text-xl font-bold">Create account</h2>
           <p className="text-xs text-[#F5F2E9]/70 mt-1">
-            The account is activated after email confirmation. After payment you get full access.
+            The account is activated after email confirmation.
           </p>
         </div>
 
