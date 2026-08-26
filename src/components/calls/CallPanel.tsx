@@ -7,14 +7,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Phone, PhoneOff, Mic, MicOff, MonitorUp, Circle, Ear, Loader2, GripVertical,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, Activity,
 } from 'lucide-react';
 import { useWebRTCCall } from '../../hooks/useWebRTCCall';
+import { useCallDiagnostics } from '../../hooks/useCallDiagnostics';
 import type { CallRole } from '../../hooks/useWebRTCCall';
 import type { ApiCall } from '../../api';
 
 const fmt = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+const fmtBytes = (n: number) => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
 
 interface DockProps {
   call: ApiCall;
@@ -33,12 +36,14 @@ export const CallDock: React.FC<DockProps> = ({
   call, role, initiator, channel = 'main', whisperName, headless = false, onClosed,
 }) => {
   const {
-    phase, error, warning, muted, micAvailable,
+    phase, error, warning, needsAudioUnlock, muted, micAvailable,
     sharingScreen, recording, hasRemoteVideo,
-    remoteAudioRef, remoteVideoRef,
-    connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
+    remoteAudioRef, remoteVideoRef, peerConnectionRef,
+    connect, hangUp, enableAudio, toggleMute, toggleScreenShare, toggleRecording,
   } = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
 
+  const diagnostics = useCallDiagnostics(peerConnectionRef.current, phase !== 'idle' && phase !== 'ended');
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [videoExpanded, setVideoExpanded] = useState(false);
 
@@ -96,7 +101,7 @@ export const CallDock: React.FC<DockProps> = ({
   if (headless) {
     return (
       <>
-        <audio ref={remoteAudioRef} autoPlay />
+        <audio ref={remoteAudioRef} autoPlay playsInline />
         <video ref={remoteVideoRef} autoPlay playsInline className="hidden" />
       </>
     );
@@ -136,6 +141,15 @@ export const CallDock: React.FC<DockProps> = ({
             <Circle className="w-2 h-2 fill-rose-600" /> REC
           </span>
         )}
+        <button
+          type="button"
+          onClick={() => setDiagnosticsOpen(open => !open)}
+          title="Call diagnostics"
+          aria-label="Call diagnostics"
+          className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer ${diagnosticsOpen ? 'bg-[#B08B48] text-white' : 'text-[#213532]/50 hover:bg-[#1C412C]/10 hover:text-[#1C412C]'}`}
+        >
+          <Activity className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Only the manager is told a supervisor is listening */}
@@ -168,6 +182,30 @@ export const CallDock: React.FC<DockProps> = ({
       {warning && (
         <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-[11px] text-amber-900 font-medium leading-tight">
           {warning}
+        </div>
+      )}
+
+      {needsAudioUnlock && (
+        <button
+          type="button"
+          onClick={() => void enableAudio()}
+          className="w-full px-4 py-2 bg-[#B08B48] text-white text-[11px] font-bold hover:bg-[#9a7a3e] cursor-pointer"
+        >
+          Enable sound
+        </button>
+      )}
+
+      {diagnosticsOpen && (
+        <div className="border-b border-[#E4DECB] bg-[#FBF9F2] px-4 py-3 text-[10px] font-mono text-[#213532]/75 space-y-1">
+          <div className="flex items-center justify-between gap-2 font-sans font-bold text-[#1C412C]">
+            <span>Connection diagnostics</span>
+            <button type="button" onClick={() => void diagnostics.refresh()} className="font-sans text-[#B08B48] hover:underline cursor-pointer">Refresh</button>
+          </div>
+          <div>state: {diagnostics.snapshot.connectionState} / {diagnostics.snapshot.iceConnectionState}</div>
+          <div>ICE: {diagnostics.snapshot.iceGatheringState} · {diagnostics.snapshot.protocol}</div>
+          <div>candidates: {diagnostics.snapshot.localCandidateType} → {diagnostics.snapshot.remoteCandidateType} {diagnostics.snapshot.relay ? '· relay' : ''}</div>
+          <div>audio: ↑ {fmtBytes(diagnostics.snapshot.bytesSent)} · ↓ {fmtBytes(diagnostics.snapshot.bytesReceived)}</div>
+          <div>packets: ↑ {diagnostics.snapshot.packetsSent} · ↓ {diagnostics.snapshot.packetsReceived}{diagnostics.snapshot.roundTripTimeMs == null ? '' : ` · RTT ${diagnostics.snapshot.roundTripTimeMs} ms`}</div>
         </div>
       )}
 
@@ -209,7 +247,7 @@ export const CallDock: React.FC<DockProps> = ({
           <Minimize2 className="w-4 h-4" /> Minimize
         </button>
       )}
-      <audio ref={remoteAudioRef} autoPlay />
+      <audio ref={remoteAudioRef} autoPlay playsInline />
 
       <div className="p-3 bg-white flex items-center justify-center gap-2">
         <button

@@ -26,6 +26,7 @@ import {
   X,
   Loader2,
   Store,
+  Menu,
 } from 'lucide-react';
 import type { ActiveInvestment } from '../../types';
 import { Card, Btn, Badge, Kpi, Th, Td, Input, Select } from '../crm/ui';
@@ -51,6 +52,11 @@ interface InvestorDashboardProps {
   onOpenCatalog: () => void;
   onOpenDepositModal: () => void;
   onOpenWithdrawModal: () => void;
+  /** Platform rule from the server (CRM setting «Allow manual position
+   *  closing by clients»). When false the client sees a locked button with
+   *  a human explanation instead of a dead «Close». The server re-checks
+   *  the rule anyway — this prop only shapes the interface. */
+  allowManualClosing?: boolean;
   onClaimDividends: (id: string, profit: number) => void;
   /** Clears the session and returns to the public site */
   onLogout?: () => void;
@@ -149,11 +155,18 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   onOpenCatalog,
   onOpenDepositModal,
   onOpenWithdrawModal,
+  allowManualClosing = false,
   onClaimDividends,
   onLogout,
   onBalanceChanged,
   onProfileUpdated,
 }) => {
+
+  /** Standard explanation used whenever a client hits a staff-only action */
+  const tellWhyNoManualClosing = () =>
+    setToast(
+      'Manual position closing is disabled on this platform. To close a position, contact your manager via Support — they will close it instantly.',
+    );
   /* Display name derived from the signed-in account (no demo persona) */
   const fullName = (user?.name || '').trim();
   const nameParts = fullName.split(/\s+/).filter(Boolean);
@@ -166,6 +179,10 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     : (nameParts[0]?.slice(0, 2) || 'CL')).toUpperCase();
 
   const [tab, setTab] = useState<Tab>('dashboard');
+
+  // Mobile (< lg): the sidebar becomes a slide-in drawer over the content
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => setNavOpen(false), [tab]);
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
   const [amountStr, setAmountStr] = useState('500');
@@ -555,22 +572,44 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const totalInvested = openTrades.reduce((s, t) => s + Number(t.amount || 0), 0) + investedInPositions;
   const totalAccrued = openPnl + positionsAccrued;
   const walletsValue = WALLETS.reduce((s, w) => s + w.qty * w.price, 0);
-  // Equity = cash + margin locked + unrealised P/L + positions + their live P/L
-  const portfolioValue =
-    investorBalance + usedMargin + openPnl + walletsValue + investedInPositions + positionsAccrued;
+  /**
+   * Identity the client can verify by eye:
+   *   Total portfolio = Available balance + Invested + Live P/L
+   * (margin is INSIDE the invested amount, so it must not be added again —
+   *  it used to be counted twice, inflating the total).
+   */
+  const portfolioValue = investorBalance + walletsValue + totalInvested + totalAccrued;
 
   return (
     <div className="flex min-h-screen bg-[#F5F2E9] text-[#213532]">
       {/* ============ SIDEBAR (Oak Haven green) ============ */}
-      <aside className="w-[230px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] hidden lg:flex flex-col sticky top-0 h-screen text-[#F5F2E9]">
+      {/* mobile backdrop */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-[#1C412C]/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+      <aside className={`w-[230px] shrink-0 bg-[#1C412C] border-r border-[#1C412C] flex flex-col text-[#F5F2E9]
+        fixed inset-y-0 left-0 z-50 h-screen overflow-y-auto transform transition-transform duration-200 ease-out
+        ${navOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:translate-x-0 lg:static lg:z-auto lg:sticky lg:top-0 lg:h-screen lg:overflow-visible`}>
         <div className="px-4 py-4 flex items-center gap-2.5 border-b border-white/10">
-          <div className="w-10 h-10 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0">
-            <OakCrest size={22} />
+          <div className="w-14 h-14 rounded-full bg-[#F5F2E9] flex items-center justify-center shadow-sm shrink-0 overflow-hidden">
+            <OakCrest size={56} />
           </div>
           <div className="leading-tight">
             <OakWordmark tone="light" />
             <div className="text-[9px] font-bold text-[#B08B48] tracking-widest mt-0.5">CLIENT</div>
           </div>
+          {/* close drawer — mobile only */}
+          <button
+            onClick={() => setNavOpen(false)}
+            className="ml-auto lg:hidden w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer text-[#F5F2E9]"
+            aria-label="Close menu"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="px-4 py-4 flex items-center gap-3 border-b border-white/10">
@@ -619,7 +658,16 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       <div className="flex-1 min-w-0 p-5 space-y-5">
         {/* header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
+          <div className="flex items-center gap-3">
+            {/* burger — opens the drawer on phones */}
+            <button
+              onClick={() => setNavOpen(true)}
+              className="lg:hidden w-9 h-9 shrink-0 rounded-full bg-[#1C412C]/[.06] border border-[#E4DECB] flex items-center justify-center text-[#213532] hover:bg-[#1C412C]/[.12] cursor-pointer"
+              aria-label="Open menu"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+            <div>
             <h1 className="text-2xl font-extrabold text-[#1C412C] font-serif tracking-tight">
               {NAV.find(n => n.id === tab)?.label}
             </h1>
@@ -635,6 +683,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 </Badge>
               )}
             </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Btn variant="gold" icon={Wallet} onClick={onOpenDepositModal}>
@@ -1205,10 +1254,16 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                                 size="sm"
                                 variant="danger"
                                 onClick={async () => {
-                                  await apiCloseTrade(t.id);
-                                  await reloadTrades();
-                                  onBalanceChanged?.();
-                                  setToast('Order cancelled');
+                                  // Cancelling an UNFILLED pending order is always allowed —
+                                  // the platform rule covers open positions only.
+                                  try {
+                                    await apiCloseTrade(t.id);
+                                    await reloadTrades();
+                                    onBalanceChanged?.();
+                                    setToast('Order cancelled');
+                                  } catch (err) {
+                                    setToast(err instanceof Error ? err.message : 'Could not cancel the order');
+                                  }
                                 }}
                               >
                                 Cancel
@@ -1302,17 +1357,26 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                               <Btn
                                 size="sm"
                                 variant="danger"
+                                title={allowManualClosing ? undefined : 'Closing is done by your manager on this platform'}
                                 onClick={async () => {
-                                  const res = await apiCloseTrade(t.id);
-                                  await reloadTrades();
-                                  onBalanceChanged?.();
-                                  const settled = Number(res?.trade?.pnl ?? 0);
-                                  setToast(
-                                    `${t.symbol} closed · ${settled >= 0 ? '+' : '-'}${usd(Math.abs(settled))}`,
-                                  );
+                                  if (!allowManualClosing) {
+                                    tellWhyNoManualClosing();
+                                    return;
+                                  }
+                                  try {
+                                    const res = await apiCloseTrade(t.id);
+                                    await reloadTrades();
+                                    onBalanceChanged?.();
+                                    const settled = Number(res?.trade?.pnl ?? 0);
+                                    setToast(
+                                      `${t.symbol} closed · ${settled >= 0 ? '+' : '-'}${usd(Math.abs(settled))}`,
+                                    );
+                                  } catch (err) {
+                                    setToast(err instanceof Error ? err.message : 'Could not close the position');
+                                  }
                                 }}
                               >
-                                Close
+                                {allowManualClosing ? 'Close' : '🔒 Close via manager'}
                               </Btn>
                             </Td>
                           </tr>
