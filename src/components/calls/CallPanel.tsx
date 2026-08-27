@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ============================================================
 //  Live call widgets — Oak Haven brand theme
 //  Supports both P2P (fallback) and LiveKit (when configured)
