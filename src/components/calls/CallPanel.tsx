@@ -1,8 +1,6 @@
 // ============================================================
-//  Live call widgets — styled in Oak Haven brand theme.
-//
-//  CallDock      — the in-call controls, shared by both sides
-//  IncomingCall  — full-screen prompt in the client's cabinet
+//  Live call widgets — Oak Haven brand theme
+//  Supports both P2P (fallback) and LiveKit (when configured)
 // ============================================================
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -10,9 +8,11 @@ import {
   Maximize2, Minimize2, Activity,
 } from 'lucide-react';
 import { useWebRTCCall } from '../../hooks/useWebRTCCall';
+import { useLiveKitCall } from '../../hooks/useLiveKitCall';
 import { useCallDiagnostics } from '../../hooks/useCallDiagnostics';
 import type { CallRole } from '../../hooks/useWebRTCCall';
 import type { ApiCall } from '../../api';
+import { apiLiveKitConfig } from '../../api';
 
 const fmt = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -23,11 +23,8 @@ interface DockProps {
   call: ApiCall;
   role: CallRole;
   initiator: boolean;
-  /** Separate peer connection for supervisor coaching */
   channel?: 'main' | 'whisper';
-  /** Supervisor listening in — shown to the manager only */
   whisperName?: string | null;
-  /** Audio-only leg: connects and plays sound, draws no window */
   headless?: boolean;
   onClosed: () => void;
 }
@@ -35,26 +32,63 @@ interface DockProps {
 export const CallDock: React.FC<DockProps> = ({
   call, role, initiator, channel = 'main', whisperName, headless = false, onClosed,
 }) => {
+  // Detect LiveKit
+  const [useLiveKit, setUseLiveKit] = useState<boolean>(false);
+  const [liveKitChecked, setLiveKitChecked] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Check env var first
+    const envUrl = (import.meta as any).env?.VITE_LIVEKIT_URL;
+    if (envUrl) {
+      setUseLiveKit(true);
+      setLiveKitChecked(true);
+      return;
+    }
+    apiLiveKitConfig()
+      .then((cfg) => {
+        if (!cancelled) {
+          setUseLiveKit(cfg.configured);
+          setLiveKitChecked(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUseLiveKit(false);
+          setLiveKitChecked(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const p2p = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
+  const lk = useLiveKitCall({ callId: call.id, role, channel, onEnded: onClosed });
+
+  // Choose implementation — LiveKit if configured and checked, otherwise P2P
+  const active = useLiveKit && liveKitChecked ? lk : p2p;
+
   const {
     phase, error, warning, needsAudioUnlock, muted, micAvailable,
     sharingScreen, recording, hasRemoteVideo,
     remoteAudioRef, remoteVideoRef, peerConnectionRef,
     connect, hangUp, enableAudio, toggleMute, toggleScreenShare, toggleRecording,
-  } = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
+  } = active as any;
 
-  const diagnostics = useCallDiagnostics(peerConnectionRef.current, phase !== 'idle' && phase !== 'ended');
+  const diagnostics = useCallDiagnostics(
+    // LiveKit doesn't have peerConnection, so diagnostics will be empty — that's ok
+    (active as any).peerConnectionRef?.current || null,
+    phase !== 'idle' && phase !== 'ended'
+  );
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [videoExpanded, setVideoExpanded] = useState(false);
 
-  /* The dock can be dragged anywhere, so it never covers a toast or a table */
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
 
   const startDrag = (e: React.MouseEvent) => {
     const box = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
     dragRef.current = { dx: e.clientX - box.left, dy: e.clientY - box.top };
-
     const move = (ev: MouseEvent) => {
       if (!dragRef.current) return;
       setPos({
@@ -72,9 +106,10 @@ export const CallDock: React.FC<DockProps> = ({
   };
 
   useEffect(() => {
+    if (!liveKitChecked) return;
     void connect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [call.id]);
+  }, [call.id, liveKitChecked, useLiveKit]);
 
   useEffect(() => {
     if (phase !== 'active') return;
@@ -82,7 +117,6 @@ export const CallDock: React.FC<DockProps> = ({
     return () => clearInterval(t);
   }, [phase]);
 
-  /* When the far side stops sharing, drop out of fullscreen automatically */
   useEffect(() => {
     if (!hasRemoteVideo) setVideoExpanded(false);
   }, [hasRemoteVideo]);
@@ -94,10 +128,6 @@ export const CallDock: React.FC<DockProps> = ({
       ? `Coaching ${call.managerName}`
       : call.clientName;
 
-  /**
-   * The manager's whisper leg exists only to carry the coach's audio —
-   * a second window on screen would just confuse them.
-   */
   if (headless) {
     return (
       <>
@@ -130,6 +160,7 @@ export const CallDock: React.FC<DockProps> = ({
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-bold text-[#1C412C] truncate">{title}</div>
           <div className="text-[11px] text-[#213532]/70">
+            {useLiveKit && <span className="mr-1 text-[9px] bg-[#B08B48] text-white px-1 rounded">LIVEKIT</span>}
             {phase === 'connecting' && (role === 'supervisor' ? 'Waiting for the manager…' : 'Connecting…')}
             {phase === 'active' && fmt(seconds)}
             {phase === 'failed' && 'Call failed'}
@@ -145,14 +176,12 @@ export const CallDock: React.FC<DockProps> = ({
           type="button"
           onClick={() => setDiagnosticsOpen(open => !open)}
           title="Call diagnostics"
-          aria-label="Call diagnostics"
           className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer ${diagnosticsOpen ? 'bg-[#B08B48] text-white' : 'text-[#213532]/50 hover:bg-[#1C412C]/10 hover:text-[#1C412C]'}`}
         >
           <Activity className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* Only the manager is told a supervisor is listening */}
       {whisperName && role === 'manager' && (
         <div className="px-4 py-2 bg-violet-500/10 border-b border-violet-500/20 text-[11px] text-violet-800 flex items-center gap-1.5 font-medium">
           <Ear className="w-3.5 h-3.5" /> {whisperName} is coaching you — the client cannot hear them
@@ -195,7 +224,7 @@ export const CallDock: React.FC<DockProps> = ({
         </button>
       )}
 
-      {diagnosticsOpen && (
+      {diagnosticsOpen && !useLiveKit && (
         <div className="border-b border-[#E4DECB] bg-[#FBF9F2] px-4 py-3 text-[10px] font-mono text-[#213532]/75 space-y-1">
           <div className="flex items-center justify-between gap-2 font-sans font-bold text-[#1C412C]">
             <span>Connection diagnostics</span>
@@ -209,10 +238,15 @@ export const CallDock: React.FC<DockProps> = ({
         </div>
       )}
 
-      {/* Kept in the DOM at all times (the ref must exist when ontrack
-          fires); only becomes visible once the other side shares a screen.
-          The <video> stays a single element in a stable tree position —
-          expanding just swaps className/style, so srcObject is preserved. */}
+      {diagnosticsOpen && useLiveKit && (
+        <div className="border-b border-[#E4DECB] bg-[#FBF9F2] px-4 py-3 text-[10px] font-mono text-[#213532]/75">
+          <div className="font-sans font-bold text-[#1C412C]">LiveKit — SFU mode</div>
+          <div>Room: {channel === 'whisper' ? `whisper-${call.id}` : `call-${call.id}`}</div>
+          <div>Phase: {phase}</div>
+          <div className="text-[9px] mt-1">TURN/ICE handled by LiveKit server</div>
+        </div>
+      )}
+
       <div className={videoExpanded ? '' : 'relative w-full'}>
         <video
           ref={remoteVideoRef}
@@ -265,7 +299,6 @@ export const CallDock: React.FC<DockProps> = ({
           {muted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
         </button>
 
-        {/* Screen sharing is available to BOTH sides of the call */}
         <button
           onClick={toggleScreenShare}
           title="Share screen"
@@ -276,7 +309,6 @@ export const CallDock: React.FC<DockProps> = ({
           <MonitorUp className="w-4 h-4" />
         </button>
 
-        {/* Recording stays staff-only */}
         {role !== 'client' && (
           <button
             onClick={toggleRecording}

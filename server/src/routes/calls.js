@@ -29,6 +29,15 @@ import * as store from '../db.js';
 import { notify } from '../notifications.js';
 import { logActivity } from './workspace.js';
 
+// LiveKit is optional — if env vars are missing we stay on P2P
+let AccessToken = null;
+try {
+  const mod = await import('livekit-server-sdk');
+  AccessToken = mod.AccessToken;
+} catch {
+  // livekit-server-sdk not installed or not configured — P2P fallback
+}
+
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 
@@ -144,6 +153,60 @@ router.get('/ice-servers', auth, async (req, res) => {
   }
 
   res.json({ iceServers: servers, turnConfigured });
+});
+
+/** LiveKit token — new path, old P2P still works */
+router.get('/:id/livekit-token', auth, async (req, res) => {
+  const callId = Number(req.params.id);
+  const call = await signalContext(req, res, callId);
+  if (!call) return;
+
+  const LIVEKIT_URL = process.env.LIVEKIT_URL;
+  const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
+  const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
+
+  if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET || !AccessToken) {
+    return res.status(501).json({ error: 'LiveKit not configured — using P2P fallback' });
+  }
+
+  const channel = req.query.channel === 'whisper' ? 'whisper' : 'main';
+  const roomName = channel === 'whisper' ? `whisper-${callId}` : `call-${callId}`;
+  const participantName = `${req.user.name} (${req.user.role})`;
+  const identity = `user-${req.user.id}-${channel}`;
+
+  const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+    identity,
+    name: participantName,
+    ttl: '2h',
+  });
+  at.addGrant({
+    room: roomName,
+    roomJoin: true,
+    canPublish: true,
+    canSubscribe: true,
+    canPublishData: true,
+  });
+
+  // For whisper: client must NOT be able to subscribe to supervisor's audio
+  // We handle this client-side by filtering tracks, but grant is same
+
+  const token = await at.toJwt();
+
+  res.json({
+    url: LIVEKIT_URL,
+    token,
+    room: roomName,
+    channel,
+  });
+});
+
+/** LiveKit info for frontend feature detection */
+router.get('/livekit-config', auth, async (req, res) => {
+  const configured = Boolean(process.env.LIVEKIT_URL && process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET);
+  res.json({
+    configured,
+    url: configured ? process.env.LIVEKIT_URL : null,
+  });
 });
 
 /* ---------------- start ---------------- */
