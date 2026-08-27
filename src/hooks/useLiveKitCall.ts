@@ -41,6 +41,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
   const [remoteParticipantConnected, setRemoteParticipantConnected] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
+  const pendingRemoteAudioRef = useRef<TrackType[]>([]);
   const localAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const screenTrackRef = useRef<MediaStreamTrack | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -57,6 +58,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
     roomRef.current = null;
     localAudioTrackRef.current = null;
     screenTrackRef.current = null;
+    pendingRemoteAudioRef.current = [];
     setSharingScreen(false);
     setHasRemoteVideo(false);
     setRemoteParticipantConnected(false);
@@ -100,8 +102,29 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
         setRemoteParticipantConnected(room.remoteParticipants.size > 0);
       };
 
+      const attachRemoteAudio = (track: TrackType) => {
+        const audio = remoteAudioRef.current;
+        if (!audio) {
+          if (!pendingRemoteAudioRef.current.includes(track)) pendingRemoteAudioRef.current.push(track);
+          return;
+        }
+        pendingRemoteAudioRef.current = pendingRemoteAudioRef.current.filter(item => item !== track);
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audio.muted = false;
+        audio.volume = 1;
+        (track as any).attach(audio);
+        audio.play().then(() => setNeedsAudioUnlock(false)).catch(() => setNeedsAudioUnlock(true));
+      };
+
       room.on(RoomEvent.ParticipantConnected, syncRemoteParticipant);
       room.on(RoomEvent.ParticipantDisconnected, syncRemoteParticipant);
+
+      // LiveKit can connect the room before the audio element is ready, so
+      // retain subscribed tracks and attach them on the next user gesture.
+      room.on(RoomEvent.AudioPlaybackStatusChanged, (playing: boolean) => {
+        if (!playing) setNeedsAudioUnlock(true);
+      });
 
       // Remote tracks
       room.on(RoomEvent.TrackSubscribed, (track: TrackType, _pub: any, participant: RemoteParticipant) => {
@@ -117,16 +140,14 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
           }
           track.on('ended', () => setHasRemoteVideo(false));
         } else if (track.kind === Track.Kind.Audio) {
-          if (remoteAudioRef.current) {
-            (track as any).attach(remoteAudioRef.current);
-            remoteAudioRef.current.play().catch(() => setNeedsAudioUnlock(true));
-          }
+          attachRemoteAudio(track);
         }
         setPhase('active');
       });
 
       room.on(RoomEvent.TrackUnsubscribed, (track: TrackType) => {
         (track as any).detach();
+        pendingRemoteAudioRef.current = pendingRemoteAudioRef.current.filter(item => item !== track);
         if (track.kind === Track.Kind.Video) setHasRemoteVideo(false);
       });
 
@@ -180,7 +201,20 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
 
   const enableAudio = useCallback(async () => {
     try {
-      await remoteAudioRef.current?.play();
+      const room = roomRef.current as any;
+      // Mobile browsers may block LiveKit's audio pipeline until a user
+      // gesture explicitly starts playback.
+      if (room?.startAudio) await room.startAudio();
+      const audio = remoteAudioRef.current;
+      if (audio) {
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audio.muted = false;
+        audio.volume = 1;
+        for (const track of pendingRemoteAudioRef.current) (track as any).attach(audio);
+        pendingRemoteAudioRef.current = [];
+        await audio.play();
+      }
       setNeedsAudioUnlock(false);
     } catch {
       setWarning('Click Enable sound to start remote audio.');
