@@ -77,8 +77,12 @@ export const CallDock: React.FC<DockProps> = ({
   } = active as any;
 
   // A LiveKit room becomes connected for the caller before the client
-  // accepts. The call timer must wait for the remote participant too.
+  // accepts. The remote participant alone is not enough either: use the
+  // server's answeredAt marker so both clocks start only after the client
+  // has accepted the call and joined the main room.
+  const callAnswered = channel !== 'main' || Boolean(call.answeredAt);
   const callActive = phase === 'active'
+    && callAnswered
     && (!useLiveKit || Boolean(liveKitRemoteParticipantConnected));
 
   const diagnostics = useCallDiagnostics(
