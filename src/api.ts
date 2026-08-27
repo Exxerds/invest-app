@@ -886,6 +886,16 @@ export const apiRequestCall = () =>
 export const apiCallRecording = (callId: number) =>
   request<{ data: string }>(`/calls/${callId}/recording`, { headers: authHeader() });
 
+// ---------- LiveKit (optional, falls back to P2P) ----------
+export const apiLiveKitConfig = () =>
+  request<{ configured: boolean; url: string | null }>('/calls/livekit-config', { headers: authHeader() });
+
+export const apiLiveKitToken = (callId: number, channel: 'main' | 'whisper' = 'main') =>
+  request<{ url: string; token: string; room: string; channel: string }>(
+    `/calls/${callId}/livekit-token?channel=${channel}`,
+    { headers: authHeader() }
+  );
+
 // ---------- live market data ----------
 
 export const apiOrderBook = (symbol: string) =>
