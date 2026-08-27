@@ -71,9 +71,15 @@ export const CallDock: React.FC<DockProps> = ({
   const {
     phase, error, warning, needsAudioUnlock, muted, micAvailable,
     sharingScreen, recording, hasRemoteVideo,
+    remoteParticipantConnected: liveKitRemoteParticipantConnected,
     remoteAudioRef, remoteVideoRef, peerConnectionRef,
     connect, hangUp, enableAudio, toggleMute, toggleScreenShare, toggleRecording,
   } = active as any;
+
+  // A LiveKit room becomes connected for the caller before the client
+  // accepts. The call timer must wait for the remote participant too.
+  const callActive = phase === 'active'
+    && (!useLiveKit || Boolean(liveKitRemoteParticipantConnected));
 
   const diagnostics = useCallDiagnostics(
     // LiveKit doesn't have peerConnection, so diagnostics will be empty — that's ok
@@ -113,10 +119,10 @@ export const CallDock: React.FC<DockProps> = ({
   }, [call.id, liveKitChecked, useLiveKit]);
 
   useEffect(() => {
-    if (phase !== 'active') return;
+    if (!callActive) return;
     const t = setInterval(() => setSeconds(s => s + 1), 1000);
     return () => clearInterval(t);
-  }, [phase]);
+  }, [callActive]);
 
   useEffect(() => {
     if (!hasRemoteVideo) setVideoExpanded(false);
@@ -162,8 +168,8 @@ export const CallDock: React.FC<DockProps> = ({
           <div className="text-[13px] font-bold text-[#1C412C] truncate">{title}</div>
           <div className="text-[11px] text-[#213532]/70">
             {useLiveKit && <span className="mr-1 text-[9px] bg-[#B08B48] text-white px-1 rounded">LIVEKIT</span>}
-            {phase === 'connecting' && (role === 'supervisor' ? 'Waiting for the manager…' : 'Connecting…')}
-            {phase === 'active' && fmt(seconds)}
+            {(phase === 'connecting' || (phase === 'active' && !callActive)) && (role === 'supervisor' ? 'Waiting for the manager…' : 'Connecting…')}
+            {callActive && fmt(seconds)}
             {phase === 'failed' && 'Call failed'}
             {phase === 'ended' && 'Call ended'}
           </div>

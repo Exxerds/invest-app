@@ -36,6 +36,9 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
   const [micAvailable, setMicAvailable] = useState(true);
   const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
+  // The room can be connected while the other participant is still ringing.
+  // Keep this separate so the UI timer starts only after both sides are in it.
+  const [remoteParticipantConnected, setRemoteParticipantConnected] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
   const localAudioTrackRef = useRef<MediaStreamTrack | null>(null);
@@ -56,6 +59,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
     screenTrackRef.current = null;
     setSharingScreen(false);
     setHasRemoteVideo(false);
+    setRemoteParticipantConnected(false);
   }, []);
 
   const hangUp = useCallback(async () => {
@@ -92,8 +96,16 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
       });
       roomRef.current = room;
 
+      const syncRemoteParticipant = () => {
+        setRemoteParticipantConnected(room.remoteParticipants.size > 0);
+      };
+
+      room.on(RoomEvent.ParticipantConnected, syncRemoteParticipant);
+      room.on(RoomEvent.ParticipantDisconnected, syncRemoteParticipant);
+
       // Remote tracks
       room.on(RoomEvent.TrackSubscribed, (track: TrackType, _pub: any, participant: RemoteParticipant) => {
+        setRemoteParticipantConnected(true);
         // Whisper filtering: client must not hear supervisor
         if (channel === 'main' && role === 'client' && participant.identity.includes('supervisor')) {
           return;
@@ -119,6 +131,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
       });
 
       room.on(RoomEvent.Disconnected, () => {
+        setRemoteParticipantConnected(false);
         setPhase('ended');
         onEnded?.();
       });
@@ -128,6 +141,9 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
       });
 
       await room.connect(url, token);
+      // A caller is connected to the SFU before the client accepts. Check
+      // the remote participant here in case they joined just before us.
+      syncRemoteParticipant();
 
       // Publish local audio (mic) — optional
       try {
@@ -298,6 +314,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
     sharingScreen,
     recording,
     hasRemoteVideo,
+    remoteParticipantConnected,
     remoteAudioRef,
     remoteVideoRef,
     peerConnectionRef,
