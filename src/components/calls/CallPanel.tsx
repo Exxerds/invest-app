@@ -123,10 +123,22 @@ export const CallDock: React.FC<DockProps> = ({
   }, [call.id, liveKitChecked, useLiveKit]);
 
   useEffect(() => {
-    if (!callActive) return;
-    const t = setInterval(() => setSeconds(s => s + 1), 1000);
+    if (!callActive) {
+      setSeconds(0);
+      return;
+    }
+
+    // Use the server timestamp instead of counting from the local render.
+    // Both browsers then show the same elapsed call time even if one inbox
+    // poll arrives a little later than the other.
+    const answeredAt = call.answeredAt ? Date.parse(call.answeredAt) : Date.now();
+    const tick = () => {
+      setSeconds(Math.max(0, Math.floor((Date.now() - answeredAt) / 1000)));
+    };
+    tick();
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [callActive]);
+  }, [callActive, call.answeredAt]);
 
   useEffect(() => {
     if (!hasRemoteVideo) setVideoExpanded(false);
