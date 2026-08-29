@@ -178,6 +178,20 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
       // the remote participant here in case they joined just before us.
       syncRemoteParticipant();
 
+      // For client, mark the call answered as soon as the client has joined
+      // the LiveKit room. Do this before microphone setup so a slow/blocked
+      // microphone cannot make an answered call appear as missed.
+      if (role === 'client' && channel === 'main') {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            await apiCallStatus(callId, 'active');
+            break;
+          } catch {
+            if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
+          }
+        }
+      }
+
       // Publish local audio (mic) — optional
       try {
         const audioTrack = await createLocalAudioTrack();
@@ -191,11 +205,6 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
         } else {
           throw err;
         }
-      }
-
-      // For client, mark call active
-      if (role === 'client' && channel === 'main') {
-        await apiCallStatus(callId, 'active').catch(() => {});
       }
 
       setPhase('active');

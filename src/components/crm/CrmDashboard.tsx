@@ -3290,12 +3290,14 @@ const CallsPanel: React.FC<{
                     <Td className="font-semibold text-[#1C412C] text-[12px]">{c.clientName}</Td>
                     <Td className="text-[12px] text-[#213532]">{c.managerName}</Td>
                     <Td className="text-[12px]">
-                      {c.answeredAt ? (
+                      {c.answeredAt || c.status === 'active' || c.durationSec > 0 ? (
                         fmtDur(c.durationSec)
                       ) : c.declined ? (
                         <Badge tone="red">declined</Badge>
-                      ) : (
+                      ) : c.missed ? (
                         <Badge tone="red">missed</Badge>
+                      ) : (
+                        <Badge tone="gray">ended</Badge>
                       )}
                     </Td>
                     <Td className="text-right">

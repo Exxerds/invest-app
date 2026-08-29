@@ -408,6 +408,7 @@ router.post('/:id/status', auth, async (req, res) => {
   if (status === 'active' && call.status !== 'active') {
     patch.status = 'active';
     patch.answeredAt = new Date().toISOString();
+    patch.missed = false;
   } else if (status === 'ended') {
     patch.status = 'ended';
     patch.endedAt = new Date().toISOString();
