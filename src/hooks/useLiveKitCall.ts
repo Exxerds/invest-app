@@ -36,6 +36,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
   const [micAvailable, setMicAvailable] = useState(true);
   const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
+  const [audioPlaybackReady, setAudioPlaybackReady] = useState(false);
   // The room can be connected while the other participant is still ringing.
   // Keep this separate so the UI timer starts only after both sides are in it.
   const [remoteParticipantConnected, setRemoteParticipantConnected] = useState(false);
@@ -61,6 +62,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
     pendingRemoteAudioRef.current = [];
     setSharingScreen(false);
     setHasRemoteVideo(false);
+    setAudioPlaybackReady(false);
     setRemoteParticipantConnected(false);
   }, []);
 
@@ -79,6 +81,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
     if (!callId || roomRef.current) return;
     setError(null);
     setWarning(null);
+    setAudioPlaybackReady(false);
     setPhase('connecting');
 
     try {
@@ -114,7 +117,15 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
         audio.muted = false;
         audio.volume = 1;
         (track as any).attach(audio);
-        audio.play().then(() => setNeedsAudioUnlock(false)).catch(() => setNeedsAudioUnlock(true));
+        audio.play()
+          .then(() => {
+            setAudioPlaybackReady(true);
+            setNeedsAudioUnlock(false);
+          })
+          .catch(() => {
+            setAudioPlaybackReady(false);
+            setNeedsAudioUnlock(true);
+          });
       };
 
       room.on(RoomEvent.ParticipantConnected, syncRemoteParticipant);
@@ -123,6 +134,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
       // LiveKit can connect the room before the audio element is ready, so
       // retain subscribed tracks and attach them on the next user gesture.
       room.on(RoomEvent.AudioPlaybackStatusChanged, (playing: boolean) => {
+        setAudioPlaybackReady(Boolean(playing));
         if (!playing) setNeedsAudioUnlock(true);
       });
 
@@ -214,6 +226,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
         for (const track of pendingRemoteAudioRef.current) (track as any).attach(audio);
         pendingRemoteAudioRef.current = [];
         await audio.play();
+        setAudioPlaybackReady(true);
       }
       setNeedsAudioUnlock(false);
     } catch {
@@ -348,6 +361,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
     sharingScreen,
     recording,
     hasRemoteVideo,
+    audioPlaybackReady,
     remoteParticipantConnected,
     remoteAudioRef,
     remoteVideoRef,

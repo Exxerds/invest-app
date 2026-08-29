@@ -71,6 +71,7 @@ export const CallDock: React.FC<DockProps> = ({
   const {
     phase, error, warning, needsAudioUnlock, muted, micAvailable,
     sharingScreen, recording, hasRemoteVideo,
+    audioPlaybackReady: liveKitAudioPlaybackReady,
     remoteParticipantConnected: liveKitRemoteParticipantConnected,
     remoteAudioRef, remoteVideoRef, peerConnectionRef,
     connect, hangUp, enableAudio, toggleMute, toggleScreenShare, toggleRecording,
@@ -237,7 +238,7 @@ export const CallDock: React.FC<DockProps> = ({
         </div>
       )}
 
-      {needsAudioUnlock && (
+      {(needsAudioUnlock || (useLiveKit && callActive && !liveKitAudioPlaybackReady)) && (
         <button
           type="button"
           onClick={() => void enableAudio()}
