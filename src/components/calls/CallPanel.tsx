@@ -36,7 +36,12 @@ function useIncomingRingtone(enabled: boolean) {
     try {
       const context = contextRef.current || new AudioContextCtor();
       contextRef.current = context;
+      // A page may receive a call while hidden or before a user gesture.
+      // Mark the control as blocked immediately so the client always gets a
+      // visible Enable ringtone button instead of a silent prompt.
+      if (context.state === 'suspended') setBlocked(true);
       if (context.state === 'suspended') await context.resume();
+      if (context.state !== 'running') return;
 
       const start = context.currentTime;
       [0, 0.28].forEach((offset, index) => {

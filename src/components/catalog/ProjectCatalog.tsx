@@ -38,6 +38,10 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
     return () => clearInterval(t);
   }, []);
 
+  // The Markets feed is intentionally limited to market activity. Call
+  // notifications belong to the incoming-call UI, not the investor feed.
+  const marketNotifications = notifications.filter(n => n.kind.startsWith('market_'));
+
   const filteredProjects = projects.filter((project) => {
     const matchesCategory = selectedCategory === 'all' || project.category === selectedCategory;
     const matchesSearch = project.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -103,10 +107,10 @@ export const ProjectCatalog: React.FC<ProjectCatalogProps> = ({
         )}
       </div>
 
-      {notifications.length > 0 && (
+      {marketNotifications.length > 0 && (
         <div className="bg-white border border-[#E4DECB] rounded-2xl p-4 space-y-2">
           <div className="text-[12px] font-bold uppercase tracking-wide text-[#213532]/60">Live market updates</div>
-          {notifications.slice(0, 6).map(n => (
+          {marketNotifications.slice(0, 6).map(n => (
             <div key={n.id} className="text-[13px] text-[#1C412C] border-t border-[#E4DECB] pt-2 first:border-0 first:pt-0">
               <span className="font-semibold">{n.title}.</span> {n.message}
               <span className="block text-[11px] text-[#213532]/50 mt-0.5">{new Date(n.createdAt).toLocaleString('en-US')}</span>

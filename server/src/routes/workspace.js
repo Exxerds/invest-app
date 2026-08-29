@@ -210,6 +210,24 @@ router.post('/investments', auth, async (req, res) => {
     }
   }
 
+  // A real client investment is public market activity: show it to every
+  // active client, including the investor who just opened the position.
+  // Notification failures must never roll back an already saved investment.
+  if (req.user.role === 'CLIENT') {
+    const clients = (await store.all('users')).filter(
+      u => u.role === 'CLIENT' && u.status !== 'blocked',
+    );
+    const marketMessage = `${req.user.name} allocated $${amount.toLocaleString('en-US')} to ${investment.projectTitle}.`;
+    await Promise.allSettled(clients.map(client => notify({
+      audience: 'client',
+      userId: client.id,
+      kind: 'market_investment',
+      title: 'Live market update',
+      message: marketMessage,
+      link: 'catalog',
+    })));
+  }
+
   res.json({ ok: true, investment, balance: nextBalance });
 });
 
