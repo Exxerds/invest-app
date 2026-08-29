@@ -20,6 +20,27 @@ const fmt = (s: number) =>
 
 const fmtBytes = (n: number) => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
 
+let sharedRingtoneContext: AudioContext | null = null;
+
+function ringtoneContext() {
+  const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  sharedRingtoneContext ||= new AudioContextCtor();
+  return sharedRingtoneContext;
+}
+
+/** Prime the shared audio context from an ordinary user interaction. */
+export async function primeCallAudio() {
+  const context = ringtoneContext();
+  if (!context) return false;
+  try {
+    if (context.state === 'suspended') await context.resume();
+    return context.state === 'running';
+  } catch {
+    return false;
+  }
+}
+
 /** A short repeating tone for the client-side incoming-call prompt. */
 function useIncomingRingtone(enabled: boolean) {
   const contextRef = useRef<AudioContext | null>(null);
@@ -27,14 +48,13 @@ function useIncomingRingtone(enabled: boolean) {
   const [blocked, setBlocked] = useState(false);
 
   const ringOnce = useCallback(async () => {
-    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextCtor) {
+    if (!ringtoneContext()) {
       setBlocked(true);
       return;
     }
 
     try {
-      const context = contextRef.current || new AudioContextCtor();
+      const context = contextRef.current || ringtoneContext();
       contextRef.current = context;
       // A page may receive a call while hidden or before a user gesture.
       // Mark the control as blocked immediately so the client always gets a
@@ -72,7 +92,8 @@ function useIncomingRingtone(enabled: boolean) {
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);
       timerRef.current = null;
-      void contextRef.current?.close().catch(() => undefined);
+      // Keep the shared context alive: it was primed by the client page and
+      // must be reusable for the next incoming call without another prompt.
       contextRef.current = null;
     };
   }, [enabled, ringOnce]);

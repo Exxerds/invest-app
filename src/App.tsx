@@ -25,7 +25,7 @@ import {
   apiMyInvestments, apiCreateInvestment, apiClaimInvestmentProfit, apiQuote
 } from './api';
 import type { ApiTrade, ApiTransaction, ApiCall, ApiAsset } from './api';
-import { CallDock, IncomingCall } from './components/calls/CallPanel';
+import { CallDock, IncomingCall, primeCallAudio } from './components/calls/CallPanel';
 import { enablePushNotifications } from './push';
 import { 
   DepositModal, 
@@ -214,6 +214,24 @@ export default function App() {
   useEffect(() => {
     if (!isLoggedIn || currentUser?.role !== 'CLIENT') return;
     enablePushNotifications().catch(() => undefined);
+  }, [isLoggedIn, currentUser?.role]);
+
+  // Prime the browser's audio context on the first real client interaction.
+  // This lets future incoming-call ringtones start automatically without a
+  // separate enable button, while still respecting autoplay policies.
+  useEffect(() => {
+    if (!isLoggedIn || currentUser?.role !== 'CLIENT') return;
+    const unlock = () => {
+      void primeCallAudio();
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
   }, [isLoggedIn, currentUser?.role]);
 
   // Real last-seen heartbeat — any logged-in client pings while the tab is open
