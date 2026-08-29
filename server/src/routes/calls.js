@@ -405,22 +405,33 @@ router.post('/:id/status', auth, async (req, res) => {
   if (status === 'ended' && call.status === 'ended') return res.json({ ok: true, call });
   const patch = {};
 
-  if (status === 'active' && call.status !== 'active') {
-    patch.status = 'active';
-    patch.answeredAt = new Date().toISOString();
+  if (status === 'active') {
+    if (call.status !== 'active') patch.status = 'active';
+    // The client sends this after joining the LiveKit room. Keep it even if
+    // the same status request is retried, and clear any stale missed marker.
+    if (!call.answeredAt) patch.answeredAt = new Date().toISOString();
     patch.missed = false;
+    patch.notAnswered = false;
   } else if (status === 'ended') {
     patch.status = 'ended';
     patch.endedAt = new Date().toISOString();
+    const wasAnswered = Boolean(call.answeredAt);
     const started = new Date(call.answeredAt || call.startedAt).getTime();
-    patch.durationSec = Math.max(0, Math.round((Date.now() - started) / 1000));
+    // Never turn time spent ringing into a fake talk duration.
+    patch.durationSec = wasAnswered
+      ? Math.max(0, Math.round((Date.now() - started) / 1000))
+      : 0;
     patch.endedBy = req.user.name;
+    if (!wasAnswered && !call.declined && !call.missed) patch.notAnswered = true;
     // Signalling data is useless once the call is over
     await store.removeWhere('signals', s => s.callId === callId);
   } else if (status === 'declined') {
     patch.status = 'ended';
     patch.endedAt = new Date().toISOString();
     patch.declined = true;
+    patch.notAnswered = false;
+    patch.missed = false;
+    patch.durationSec = 0;
   }
 
   if (req.body?.screenShare !== undefined) patch.screenShare = Boolean(req.body.screenShare);
@@ -507,6 +518,7 @@ router.get('/log', auth, async (req, res) => {
       status: c.status,
       declined: !!c.declined,
       missed: !!c.missed,
+      notAnswered: !!c.notAnswered,
       whisperName: c.whisperName || null,
       screenShare: !!c.screenShare,
       hasRecording: !!c.recordingUrl,

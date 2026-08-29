@@ -3,7 +3,7 @@
 //  Live call widgets — Oak Haven brand theme
 //  Supports both P2P (fallback) and LiveKit (when configured)
 // ============================================================
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Phone, PhoneOff, Mic, MicOff, MonitorUp, Circle, Ear, Loader2, GripVertical,
   Maximize2, Minimize2, Activity,
@@ -19,6 +19,61 @@ const fmt = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
 const fmtBytes = (n: number) => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+
+/** A short repeating tone for the client-side incoming-call prompt. */
+function useIncomingRingtone(enabled: boolean) {
+  const contextRef = useRef<AudioContext | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const [blocked, setBlocked] = useState(false);
+
+  const ringOnce = useCallback(async () => {
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextCtor) {
+      setBlocked(true);
+      return;
+    }
+
+    try {
+      const context = contextRef.current || new AudioContextCtor();
+      contextRef.current = context;
+      if (context.state === 'suspended') await context.resume();
+
+      const start = context.currentTime;
+      [0, 0.28].forEach((offset, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const at = start + offset;
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(index === 0 ? 880 : 660, at);
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(0.16, at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.22);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(at);
+        oscillator.stop(at + 0.24);
+      });
+      setBlocked(false);
+    } catch {
+      // Browsers may require a user gesture before allowing sound.
+      setBlocked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    void ringOnce();
+    timerRef.current = window.setInterval(() => void ringOnce(), 1600);
+    return () => {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+      timerRef.current = null;
+      void contextRef.current?.close().catch(() => undefined);
+      contextRef.current = null;
+    };
+  }, [enabled, ringOnce]);
+
+  return { blocked, enable: ringOnce };
+}
 
 interface DockProps {
   call: ApiCall;
@@ -363,7 +418,14 @@ interface IncomingProps {
   onDecline: () => void;
 }
 
-export const IncomingCall: React.FC<IncomingProps> = ({ call, onAccept, onDecline }) => (
+export const IncomingCall: React.FC<IncomingProps> = ({ call, onAccept, onDecline }) => {
+  const ringtone = useIncomingRingtone(true);
+  const accept = () => {
+    void ringtone.enable();
+    onAccept();
+  };
+
+  return (
   <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm">
     <div className="bg-white border border-[#E4DECB] rounded-3xl p-8 w-[340px] text-center shadow-2xl">
       <div className="w-20 h-20 rounded-full bg-[#1C412C] mx-auto flex items-center justify-center shadow-md animate-pulse">
@@ -371,6 +433,16 @@ export const IncomingCall: React.FC<IncomingProps> = ({ call, onAccept, onDeclin
       </div>
       <div className="mt-5 text-[11px] uppercase tracking-widest font-bold text-[#213532]/60">Incoming call</div>
       <div className="mt-1 text-[19px] font-bold text-[#1C412C]">{call.callerName}</div>
+
+      {ringtone.blocked && (
+        <button
+          type="button"
+          onClick={() => void ringtone.enable()}
+          className="mt-4 text-[11px] font-bold text-[#B08B48] hover:underline cursor-pointer"
+        >
+          Enable ringtone
+        </button>
+      )}
 
       <div className="mt-7 flex items-center justify-center gap-4">
         <button
@@ -380,7 +452,7 @@ export const IncomingCall: React.FC<IncomingProps> = ({ call, onAccept, onDeclin
           <PhoneOff className="w-6 h-6" />
         </button>
         <button
-          onClick={onAccept}
+          onClick={accept}
           className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center cursor-pointer shadow-md transition-transform hover:scale-105"
         >
           <Phone className="w-6 h-6" />
@@ -388,4 +460,5 @@ export const IncomingCall: React.FC<IncomingProps> = ({ call, onAccept, onDeclin
       </div>
     </div>
   </div>
-);
+  );
+};

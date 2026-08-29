@@ -790,7 +790,7 @@ export interface ApiCall {
   clientId: number; clientName: string; callerName: string;
   status: 'ringing' | 'active' | 'ended';
   whisperBy: number | null; whisperName?: string | null;
-  screenShare: boolean; declined?: boolean;
+  screenShare: boolean; declined?: boolean; missed?: boolean; notAnswered?: boolean;
   startedAt: string; answeredAt: string | null; endedAt: string | null;
   durationSec: number;
 }
