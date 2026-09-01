@@ -15,6 +15,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
+import { sendTelegramLead } from '../telegram.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -114,6 +115,16 @@ router.post('/public', async (req, res) => {
     createdBy: 'Website',
     createdAt: new Date().toISOString(),
   });
+
+  sendTelegramLead({
+    kind: 'New website lead',
+    name,
+    email: emailRaw,
+    phone,
+    accountType,
+    source,
+    message,
+  }).catch(err => console.error('[telegram] website lead not sent:', err.message));
 
   // Notify staff (bell + push)
   notify({

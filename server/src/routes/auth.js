@@ -10,6 +10,7 @@ import crypto from 'node:crypto';
 import * as store from '../db.js';
 import { sendMail, letterLayout, publicUrl } from '../mailer.js';
 import { notify } from '../notifications.js';
+import { sendTelegramLead } from '../telegram.js';
 import { logActivity } from './workspace.js';
 
 const router = Router();
@@ -101,12 +102,16 @@ function resetLetter(user, link) {
 // ------------------------------------------------------------
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password } = req.body || {};
+    const { name, email, password, phone } = req.body || {};
     const accountType = ACCOUNT_TYPES.has(String(req.body?.accountType || ''))
       ? String(req.body.accountType)
       : '';
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Fill in name, email and password' });
+    const cleanPhone = String(phone || '').trim();
+    if (!name || !email || !password || !cleanPhone) {
+      return res.status(400).json({ error: 'Fill in name, email, phone and password' });
+    }
+    if (cleanPhone.length < 5 || cleanPhone.length > 40) {
+      return res.status(400).json({ error: 'Enter a valid phone number' });
     }
     if (String(password).length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
@@ -121,9 +126,10 @@ router.post('/register', async (req, res) => {
     const user = await store.insert('users', {
       name: String(name).trim(),
       email: lower,
+      phone: cleanPhone,
       password: hash,
       role: 'CLIENT',
-      status: 'pending',
+      status: 'active',
       accountType,
       created_at: new Date().toISOString()
     });
@@ -136,7 +142,7 @@ router.post('/register', async (req, res) => {
       if (!dupControl || alreadyLead.length === 0) {
         await store.insert('leads', {
           name: user.name,
-          phone: '',
+          phone: user.phone,
           email: user.email,
           potentialAmount: 0,
           stage: 'new',
@@ -150,6 +156,14 @@ router.post('/register', async (req, res) => {
           createdBy: 'Platform',
           createdAt: new Date().toISOString(),
         });
+        sendTelegramLead({
+          kind: 'New registration lead',
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          accountType,
+          source: 'Registration',
+        }).catch(err => console.error('[telegram] registration lead not sent:', err.message));
         notify({
           audience: 'staff',
           kind: 'lead_registered',
@@ -163,29 +177,10 @@ router.post('/register', async (req, res) => {
       console.error('[register] lead pipeline skipped:', e && e.message);
     }
 
-    const token = await createToken(user.id, 'confirm_email');
-    const link = `${publicUrl(req)}/confirm-email?token=${token}`;
-
-    // The account already exists at this point. If the mail provider is down
-    // we must NOT return an error — that would tell the visitor registration
-    // failed while their account is actually there.
-    let mailSent = true;
-    await sendMail({
-      to: user.email,
-      subject: 'Confirm your email — Oak Haven Yield',
-      html: confirmLetter(user, link)
-    }).catch(err => {
-      mailSent = false;
-      console.error('[register] Could not send the confirmation e-mail:', err.message);
-    });
-
     res.json({
       ok: true,
-      emailSent: mailSent,
       email: user.email,
-      message: mailSent
-        ? 'Account created. Check your email — we sent a confirmation link.'
-        : 'Account created, but the confirmation e-mail could not be sent. Please contact support to activate it.',
+      message: 'Account created. You can sign in now.',
     });
   } catch (err) {
     console.error(err);
