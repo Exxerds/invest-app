@@ -129,7 +129,7 @@ router.post('/register', async (req, res) => {
       phone: cleanPhone,
       password: hash,
       role: 'CLIENT',
-      status: 'active',
+      status: 'pending',
       accountType,
       created_at: new Date().toISOString()
     });
@@ -177,10 +177,28 @@ router.post('/register', async (req, res) => {
       console.error('[register] lead pipeline skipped:', e && e.message);
     }
 
+    const token = await createToken(user.id, 'confirm_email');
+    const link = `${publicUrl(req)}/confirm-email?token=${token}`;
+
+    // The account exists immediately, but login remains locked until the
+    // visitor confirms ownership of the e-mail address.
+    let mailSent = true;
+    await sendMail({
+      to: user.email,
+      subject: 'Confirm your email — Oak Haven Yield',
+      html: confirmLetter(user, link),
+    }).catch(err => {
+      mailSent = false;
+      console.error('[register] Could not send the confirmation e-mail:', err.message);
+    });
+
     res.json({
       ok: true,
+      emailSent: mailSent,
       email: user.email,
-      message: 'Account created. You can sign in now.',
+      message: mailSent
+        ? 'Account created. Check your email — we sent a confirmation link.'
+        : 'Account created, but the confirmation e-mail could not be sent. Please contact support to activate it.',
     });
   } catch (err) {
     console.error(err);

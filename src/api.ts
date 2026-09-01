@@ -82,7 +82,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // ---------- auth ----------
 
 export const apiRegister = (name: string, email: string, password: string, accountType?: string, phone?: string) =>
-  request<{ ok: true; message: string }>('/auth/register', {
+  request<{ ok: true; message: string; emailSent?: boolean }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify({ name, email, password, phone, accountType }),
   });
