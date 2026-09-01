@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Lock, Mail, ArrowRight, ShieldCheck, Loader2 } from 'lucide-react';
 import { apiLogin, apiResendConfirmation } from '../../api';
 import type { ApiUser } from '../../api';
+import { trackMetaPixel } from '../../pixel';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     try {
       const res = await apiLogin(email, password);
       localStorage.setItem('tn_token', res.token);
+      trackMetaPixel('Login');
       onLoginSuccess(res.user);
       onClose();
     } catch (err) {

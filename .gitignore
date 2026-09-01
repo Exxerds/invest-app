@@ -13,6 +13,9 @@ dist
 dist-ssr
 *.local
 
+# ===== Frontend environment (Vite) =====
+.env
+
 # ===== Server runtime data (НЕ загружать на GitHub) =====
 server/data.json
 server/data.json.tmp

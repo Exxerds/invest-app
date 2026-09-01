@@ -117,6 +117,7 @@ SMTP_FROM=Trade Nation <no-reply@yourdomain.ru>
 | Демо-данные клиентов/лидов | `src/data/mockData.ts` |
 | База данных (файл) | `server/data.db` (создаётся сама) |
 | API-эндпоинты | `server/src/routes/auth.js` |
+| Meta Pixel (Facebook) / ретаргетинг | `META-PIXEL.md` |
 
 **Быстрый вход в демо:** в окне входа есть кнопка «Демо» — входит без сервера, удобно для показа клиенту.
 

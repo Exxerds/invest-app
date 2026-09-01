@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Mail, Lock, User, ArrowLeft, MailCheck, Loader2, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
 import { apiRegister, apiResendConfirmation } from '../../api';
+import { trackMetaPixel } from '../../pixel';
 
 interface RegisterModalProps {
   isOpen: boolean;
@@ -32,6 +33,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     try {
       const res = await apiRegister(name, email, password);
       setEmailSent(res.emailSent !== false);
+      // Meta Pixel: a new user completed the registration step (also matches
+      // the "Lead" / "CompleteRegistration" objective in Events Manager).
+      trackMetaPixel('CompleteRegistration', {
+        content_name: 'account_registration',
+        status: 'pending_email_confirmation',
+      });
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed');

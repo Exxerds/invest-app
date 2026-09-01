@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Project } from '../../types';
 import { X, TrendingUp, AlertCircle, ArrowRight } from 'lucide-react';
 import { sanitizeDecimal, parseNumber } from '../../utils/number';
+import { trackMetaPixel } from '../../pixel';
 
 interface InvestModalProps {
   project: Project | null;
@@ -49,6 +50,16 @@ export const InvestModal: React.FC<InvestModalProps> = ({
       setError(`Minimum investment: $${project.minCheck.toLocaleString('en-US')}`);
       return;
     }
+    // Meta Pixel: reaches the "checkout" step. The actual Purchase event is
+    // sent by the app only after the investment is successfully recorded.
+    trackMetaPixel('InitiateCheckout', {
+      value: amount,
+      currency: 'USD',
+      content_name: project.title,
+      content_type: 'product',
+      content_ids: [project.id],
+    });
+
     onConfirmInvest(project, amount);
     onClose();
   };
