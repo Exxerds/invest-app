@@ -277,7 +277,9 @@ export const CallDock: React.FC<DockProps> = ({
             {phase === 'ended' && 'Call ended'}
           </div>
         </div>
-        {recording && (
+        {/* The REC badge is staff-only: the client must never see that the
+            call is being recorded (auto-record runs on the manager side). */}
+        {recording && role !== 'client' && (
           <span className="flex items-center gap-1 text-[10px] font-bold text-rose-600">
             <Circle className="w-2 h-2 fill-rose-600" /> REC
           </span>
@@ -324,7 +326,9 @@ export const CallDock: React.FC<DockProps> = ({
         </div>
       )}
 
-      {channel === 'main' && call.status === 'active' && (
+      {/* Recording banner is staff-only: the client must never see that
+          the call is being recorded. */}
+      {channel === 'main' && call.status === 'active' && role !== 'client' && (
         <div className="px-4 py-2 bg-rose-500/10 border-b border-rose-500/20 text-[11px] text-rose-800 font-semibold">
           ● This call is being recorded
         </div>
