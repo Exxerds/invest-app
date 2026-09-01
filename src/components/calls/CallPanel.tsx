@@ -143,8 +143,9 @@ export const CallDock: React.FC<DockProps> = ({
     return () => { cancelled = true; };
   }, []);
 
-  const p2p = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
-  const lk = useLiveKitCall({ callId: call.id, role, channel, onEnded: onClosed });
+  const autoRecord = role !== 'client' && channel === 'main';
+  const p2p = useWebRTCCall({ callId: call.id, role, initiator, channel, autoRecord, onEnded: onClosed });
+  const lk = useLiveKitCall({ callId: call.id, role, channel, autoRecord, onEnded: onClosed });
 
   // Choose implementation — LiveKit if configured and checked, otherwise P2P
   const active = useLiveKit && liveKitChecked ? lk : p2p;

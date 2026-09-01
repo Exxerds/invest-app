@@ -23,10 +23,12 @@ interface Options {
   callId: number | null;
   role: CallRole;
   channel?: 'main' | 'whisper';
+  /** Automatically record the main staff-to-client call. */
+  autoRecord?: boolean;
   onEnded?: () => void;
 }
 
-export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Options) {
+export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = false, onEnded }: Options) {
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [muted, setMuted] = useState(false);
   const [sharingScreen, setSharingScreen] = useState(false);
@@ -48,11 +50,14 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
   const cleanup = useCallback(() => {
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
     recorderRef.current = null;
+    recordStreamRef.current = null;
+    setRecording(false);
     try {
       roomRef.current?.disconnect();
     } catch {}
@@ -76,6 +81,83 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
     setPhase('ended');
     onEnded?.();
   }, [callId, channel, cleanup, onEnded]);
+
+  const addRecordingTrack = useCallback((track: any) => {
+    const native = track?.mediaStreamTrack || track;
+    const stream = recordStreamRef.current;
+    if (!stream || !native || stream.getTracks().includes(native)) return;
+    stream.addTrack(native);
+  }, []);
+
+  const startRecording = useCallback(async ({ silent = false } = {}) => {
+    if (!callId || !roomRef.current || recorderRef.current?.state === 'recording') return false;
+
+    const tracks: MediaStreamTrack[] = [];
+    const room = roomRef.current as any;
+    room.localParticipant?.audioTrackPublications?.forEach((pub: any) => {
+      if (pub.track?.mediaStreamTrack) tracks.push(pub.track.mediaStreamTrack);
+    });
+    room.remoteParticipants?.forEach((participant: any) => {
+      participant.audioTrackPublications?.forEach((pub: any) => {
+        if (pub.track?.mediaStreamTrack) tracks.push(pub.track.mediaStreamTrack);
+      });
+    });
+
+    const uniqueTracks = tracks.filter((track, index) => tracks.indexOf(track) === index);
+    if (!uniqueTracks.length) {
+      if (!silent) setError('Nothing to record yet — no audio tracks in the call.');
+      return false;
+    }
+
+    try {
+      const stream = new MediaStream(uniqueTracks);
+      recordStreamRef.current = stream;
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
+        .find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type));
+      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = event => {
+        if (event.data.size) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        recordStreamRef.current = null;
+        if (!chunksRef.current.length) return;
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          apiUploadRecording(callId, String(reader.result)).catch(() => undefined);
+        };
+        reader.readAsDataURL(blob);
+      };
+      recorder.start(1000);
+      recorderRef.current = recorder;
+      setRecording(true);
+      return true;
+    } catch {
+      if (!silent) setError('Recording is not supported in this browser.');
+      return false;
+    }
+  }, [callId]);
+
+  const stopRecording = useCallback(() => {
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    recorderRef.current = null;
+    recordStreamRef.current = null;
+    setRecording(false);
+  }, []);
+
+  const toggleRecording = useCallback(async () => {
+    if (recording) {
+      stopRecording();
+      return;
+    }
+    await startRecording();
+  }, [recording, startRecording, stopRecording]);
+
+  const maybeStartAutoRecording = useCallback(() => {
+    if (!autoRecord || role === 'client' || channel !== 'main') return;
+    void startRecording({ silent: true });
+  }, [autoRecord, channel, role, startRecording]);
 
   const connect = useCallback(async () => {
     if (!callId || roomRef.current) return;
@@ -128,7 +210,10 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
           });
       };
 
-      room.on(RoomEvent.ParticipantConnected, syncRemoteParticipant);
+      room.on(RoomEvent.ParticipantConnected, () => {
+        syncRemoteParticipant();
+        maybeStartAutoRecording();
+      });
       room.on(RoomEvent.ParticipantDisconnected, syncRemoteParticipant);
 
       // LiveKit can connect the room before the audio element is ready, so
@@ -153,6 +238,8 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
           track.on('ended', () => setHasRemoteVideo(false));
         } else if (track.kind === Track.Kind.Audio) {
           attachRemoteAudio(track);
+          addRecordingTrack(track);
+          maybeStartAutoRecording();
         }
         setPhase('active');
       });
@@ -177,6 +264,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
       // A caller is connected to the SFU before the client accepts. Check
       // the remote participant here in case they joined just before us.
       syncRemoteParticipant();
+      maybeStartAutoRecording();
 
       // For client, mark the call answered as soon as the client has joined
       // the LiveKit room. Do this before microphone setup so a slow/blocked
@@ -198,6 +286,8 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
         await room.localParticipant.publishTrack(audioTrack);
         localAudioTrackRef.current = audioTrack.mediaStreamTrack;
         setMicAvailable(true);
+        addRecordingTrack(audioTrack);
+        maybeStartAutoRecording();
       } catch (err) {
         if (err instanceof DOMException && (err.name === 'NotFoundError' || err.name === 'OverconstrainedError')) {
           setMicAvailable(false);
@@ -218,7 +308,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
         } catch {}
       }
     }
-  }, [callId, role, channel, cleanup, onEnded]);
+  }, [callId, role, channel, cleanup, onEnded, addRecordingTrack, maybeStartAutoRecording]);
 
   const enableAudio = useCallback(async () => {
     try {
@@ -299,61 +389,6 @@ export function useLiveKitCall({ callId, role, channel = 'main', onEnded }: Opti
       // user cancelled picker
     }
   }, [sharingScreen, callId]);
-
-  const toggleRecording = useCallback(async () => {
-    // For LiveKit, recording is server-side Egress — we keep browser recording as fallback
-    // If LiveKit Egress is configured, backend should start it via webhook
-    // Here we keep simple browser recording for compatibility
-    if (recording) {
-      recorderRef.current?.stop();
-      setRecording(false);
-      return;
-    }
-    if (!callId) return;
-    const room = roomRef.current;
-    if (!room) return;
-
-    // Collect local + remote audio
-    const localStream = new MediaStream();
-    room.localParticipant.audioTrackPublications.forEach((pub: any) => {
-      if (pub.track) localStream.addTrack(pub.track.mediaStreamTrack);
-    });
-    room.remoteParticipants.forEach((p: any) => {
-      p.audioTrackPublications.forEach((pub: any) => {
-        if (pub.track) localStream.addTrack(pub.track.mediaStreamTrack);
-      });
-    });
-
-    if (localStream.getTracks().length === 0) {
-      setError('Nothing to record yet.');
-      return;
-    }
-
-    try {
-      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(
-        (t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)
-      );
-      const recorder = mime ? new MediaRecorder(localStream, { mimeType: mime }) : new MediaRecorder(localStream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size) chunksRef.current.push(e.data);
-      };
-      recorder.onstop = () => {
-        if (!chunksRef.current.length) return;
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          apiUploadRecording(callId, String(reader.result)).catch(() => {});
-        };
-        reader.readAsDataURL(blob);
-      };
-      recorder.start(1000);
-      recorderRef.current = recorder;
-      setRecording(true);
-    } catch {
-      setError('Recording not supported in this browser.');
-    }
-  }, [recording, callId]);
 
   useEffect(() => cleanup, [cleanup]);
 

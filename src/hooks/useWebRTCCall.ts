@@ -37,10 +37,12 @@ interface Options {
    *             client never receives the supervisor's audio
    */
   channel?: 'main' | 'whisper';
+  /** Automatically record the main staff-to-client call. */
+  autoRecord?: boolean;
   onEnded?: () => void;
 }
 
-export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnded }: Options) {
+export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoRecord = false, onEnded }: Options) {
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [muted, setMuted] = useState(false);
   const [sharingScreen, setSharingScreen] = useState(false);
@@ -611,6 +613,11 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
       setError('Recording is not supported in this browser.');
     }
   }, [recording, callId]);
+
+  useEffect(() => {
+    if (!autoRecord || role === 'client' || channel !== 'main' || phase !== 'active' || recording) return;
+    void toggleRecording();
+  }, [autoRecord, channel, phase, recording, role, toggleRecording]);
 
   useEffect(() => cleanup, [cleanup]);
 
