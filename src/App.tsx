@@ -37,6 +37,7 @@ import {
 import type { ApiTrade, ApiTransaction, ApiCall } from './api';
 import { CallDock, IncomingCall } from './components/calls/CallPanel';
 import { enablePushNotifications } from './push';
+import { initMetaPixel, trackPageView, trackMetaPixel } from './pixel';
 import { 
   DepositModal, 
   WithdrawModal, 
@@ -93,6 +94,13 @@ export default function App() {
   useEffect(() => {
     if (isLoggedIn && activeTab !== 'landing') localStorage.setItem(TAB_KEY, activeTab);
   }, [activeTab, isLoggedIn]);
+
+  // Meta Pixel: fire PageView on boot and every time the user switches screen.
+  // No-op unless VITE_META_PIXEL_ID is configured (see src/pixel.ts).
+  useEffect(() => {
+    initMetaPixel();
+    trackPageView();
+  }, [activeTab]);
 
   // Core State
   const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
@@ -556,6 +564,16 @@ export default function App() {
       }));
 
       showToast(`✔ Position of $${amount.toLocaleString('en-US')} opened in «${project.title}».`);
+
+      // Meta Pixel: standard Purchase event after a successful investment.
+      // Values are USD because the platform balances are USD-denominated.
+      trackMetaPixel('Purchase', {
+        value: amount,
+        currency: 'USD',
+        content_name: project.title,
+        content_type: 'product',
+        content_ids: [project.id],
+      });
     } catch (err) {
       // Fallback
       setInvestorBalance(prev => Math.max(0, prev - amount));
