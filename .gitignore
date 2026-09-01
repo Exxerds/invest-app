@@ -19,6 +19,7 @@ server/data.json.tmp
 server/server.log
 server/mails/
 server/.env
+.env
 server/data.db
 
 # ===== Editor =====

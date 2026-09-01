@@ -12,6 +12,7 @@ import { sanitizeDecimal, parseNumber } from '../../utils/number';
 import { TickerTape, MarketOverview, MiniChart, MarketQuotes, MiniChartLight } from '../investor/TradingViewChart';
 import { OakLogo } from '../brand/Logo';
 import { apiSubmitPublicLead } from '../../api';
+import { trackMeta } from '../../analytics/metaPixel';
 import {
   TrendingUp,
   ChevronDown,
@@ -39,7 +40,7 @@ import {
 
 interface LandingPageProps {
   onOpenLoginModal: () => void;
-  onOpenRegisterModal?: () => void;
+  onOpenRegisterModal?: (accountType?: string) => void;
 }
 
 const ACCOUNTS = [
@@ -193,6 +194,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
   const [leadEmail, setLeadEmail] = useState('');
   const [leadPhone, setLeadPhone] = useState('');
   const [leadMessage, setLeadMessage] = useState('');
+  const [selectedAccountType, setSelectedAccountType] = useState('');
   const [leadLoading, setLeadLoading] = useState(false);
   const [leadSuccess, setLeadSuccess] = useState(false);
   const [leadError, setLeadError] = useState<string | null>(null);
@@ -234,7 +236,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               Log in
             </button>
             <button
-              onClick={onOpenRegisterModal || onOpenLoginModal}
+              onClick={() => onOpenRegisterModal ? onOpenRegisterModal() : onOpenLoginModal()}
               className="px-4 py-2 rounded-xl bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] text-[13px] font-bold transition-colors cursor-pointer shadow-[0_6px_20px_-6px_rgba(176,139,72,.5)]"
             >
               Register
@@ -288,7 +290,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
 
           <div className="mt-8 flex items-center justify-center lg:justify-start gap-3">
             <button
-              onClick={onOpenRegisterModal || onOpenLoginModal}
+              onClick={() => onOpenRegisterModal ? onOpenRegisterModal() : onOpenLoginModal()}
               className="px-7 py-3 rounded-xl bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] font-bold text-[15px] transition-all cursor-pointer shadow-[0_10px_30px_-8px_rgba(176,139,72,.55)]"
             >
               Start trading
@@ -411,7 +413,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
 
         <div className="mt-6 text-center">
           <button
-            onClick={onOpenRegisterModal || onOpenLoginModal}
+            onClick={() => onOpenRegisterModal ? onOpenRegisterModal() : onOpenLoginModal()}
             className="px-7 py-3 rounded-xl bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] font-bold text-[14px] cursor-pointer transition-colors"
           >
             Start trading these markets
@@ -779,7 +781,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
                 ))}
               </ul>
               <button
-                onClick={onOpenRegisterModal || onOpenLoginModal}
+                onClick={() => {
+                  setSelectedAccountType(a.name);
+                  if (onOpenRegisterModal) onOpenRegisterModal(a.name);
+                  else onOpenLoginModal();
+                }}
                 className={`w-full mt-4 py-2 rounded-xl text-[12px] font-bold cursor-pointer transition-colors ${
                   i === 2 ? 'bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C]' : 'bg-[#1C412C]/[.07] hover:bg-[#1C412C]/[.12] text-[#1C412C]'
                 }`}
@@ -862,7 +868,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
             </p>
           </div>
           <button
-            onClick={onOpenRegisterModal || onOpenLoginModal}
+            onClick={() => onOpenRegisterModal ? onOpenRegisterModal() : onOpenLoginModal()}
             className="px-6 py-3 rounded-xl bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] font-bold text-[14px] flex items-center gap-2 cursor-pointer shrink-0"
           >
             Become a partner <ArrowRight className="w-4 h-4" />
@@ -977,9 +983,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               try {
                 const params = new URLSearchParams(window.location.search);
                 const src = params.get('utm_campaign') || params.get('utm_source') || 'Landing';
-                await apiSubmitPublicLead({ name: leadName, email: leadEmail, phone: leadPhone, message: leadMessage, source: src });
+                await apiSubmitPublicLead({
+                  name: leadName,
+                  email: leadEmail,
+                  phone: leadPhone,
+                  message: leadMessage,
+                  source: src,
+                  accountType: selectedAccountType || undefined,
+                });
+                trackMeta('Lead', {
+                  content_name: 'Contact form',
+                  content_category: src,
+                  account_type: selectedAccountType || undefined,
+                });
                 setLeadSuccess(true);
-                setLeadName(''); setLeadEmail(''); setLeadPhone(''); setLeadMessage('');
+                setLeadName(''); setLeadEmail(''); setLeadPhone(''); setLeadMessage(''); setSelectedAccountType('');
               } catch (err) {
                 setLeadError(err instanceof Error ? err.message : 'Could not send message');
               } finally {
@@ -998,6 +1016,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               <input required type="email" placeholder="E-mail" value={leadEmail} onChange={e => setLeadEmail(e.target.value)} className="px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
             </div>
             <input placeholder="Phone number" value={leadPhone} onChange={e => setLeadPhone(e.target.value)} className="w-full px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20" />
+            <select
+              value={selectedAccountType}
+              onChange={e => setSelectedAccountType(e.target.value)}
+              className="w-full px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20"
+            >
+              <option value="">Choose an account package (optional)</option>
+              {ACCOUNTS.map(a => <option key={a.name} value={a.name}>{a.name} — {a.dep} minimum deposit</option>)}
+            </select>
             <textarea rows={5} placeholder="Your message" value={leadMessage} onChange={e => setLeadMessage(e.target.value)} className="w-full px-4 py-2.5 bg-white border border-[#1C412C]/20 rounded-xl text-[13px] text-[#213532] placeholder:text-[#213532]/55 focus:outline-none focus:border-[#B08B48] focus:ring-2 focus:ring-[#B08B48]/20 resize-none" />
             {leadError && <div className="text-[12px] text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{leadError}</div>}
             <button disabled={leadLoading} className="w-full py-3 rounded-xl bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] font-bold text-[14px] cursor-pointer transition-colors disabled:opacity-50">

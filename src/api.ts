@@ -18,6 +18,7 @@ export interface ApiUser {
   assignedManagerId?: number | null;
   assignedManagerName?: string;
   defaultLeverage?: number;
+  accountType?: string;
 }
 
 export const TOKEN_KEY = 'tn_token';
@@ -80,10 +81,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 // ---------- auth ----------
 
-export const apiRegister = (name: string, email: string, password: string) =>
+export const apiRegister = (name: string, email: string, password: string, accountType?: string) =>
   request<{ ok: true; message: string; emailSent?: boolean }>('/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ name, email, password }),
+    body: JSON.stringify({ name, email, password, accountType }),
   });
 
 export const apiResendConfirmation = (email: string) =>
@@ -442,6 +443,7 @@ export interface ApiLead {
   email?: string;
   potentialAmount: number;
   stage: string;
+  accountType?: string;
   notes: string;
   manager: string;
   comments: { id: string; author: string; text: string; date: string }[];
@@ -472,7 +474,7 @@ export const apiAddLeadComment = (id: number, text: string) =>
     body: JSON.stringify({ text }),
   });
 
-export const apiSubmitPublicLead = (data: { name: string; email: string; phone?: string; message?: string; source?: string }) =>
+export const apiSubmitPublicLead = (data: { name: string; email: string; phone?: string; message?: string; source?: string; accountType?: string }) =>
   request<{ ok: true; id: number }>('/leads/public', {
     method: 'POST',
     body: JSON.stringify(data),

@@ -124,6 +124,7 @@ router.get('/users', auth('STAFF'), async (req, res) => {
     assignedManagerId: u.assignedManagerId || null,
     assignedManagerName: u.assignedManagerName || '',
     defaultLeverage: Number(u.defaultLeverage) || 10,
+    accountType: u.accountType || '',
   }));
   res.json({ users });
 });

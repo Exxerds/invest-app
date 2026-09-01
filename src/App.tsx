@@ -27,6 +27,7 @@ import {
 import type { ApiTrade, ApiTransaction, ApiCall, ApiAsset } from './api';
 import { CallDock, IncomingCall, primeCallAudio } from './components/calls/CallPanel';
 import { enablePushNotifications } from './push';
+import { initMetaPixel, trackMeta } from './analytics/metaPixel';
 import { 
   DepositModal, 
   WithdrawModal, 
@@ -72,6 +73,10 @@ function initialTab(): ActiveTab {
 }
 
 export default function App() {
+  useEffect(() => {
+    initMetaPixel();
+  }, []);
+
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   const [legalSlug, setLegalSlug] = useState<LegalSlug | null>(() => legalSlugFromPath(window.location.pathname));
 
@@ -137,6 +142,7 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [selectedAccountType, setSelectedAccountType] = useState<string | null>(null);
   const [resetToken, setResetToken] = useState<string | null>(null);
   /* ---- calls (WebRTC) ---- */
   const [incomingCall, setIncomingCall] = useState<ApiCall | null>(null);
@@ -448,6 +454,7 @@ export default function App() {
               phone: u.phone || existing.phone,
               balance: Number(u.balance) || existing.balance,
               manager: u.assignedManagerName || 'Unassigned',
+              accountType: u.accountType || existing.accountType,
               lastSeen: u.lastSeen || null,
               assignedManagerId: u.assignedManagerId || null,
               defaultLeverage: u.defaultLeverage || existing.defaultLeverage || 10,
@@ -464,6 +471,7 @@ export default function App() {
             name: u.name,
             email: u.email,
             phone: u.phone || '',
+            accountType: u.accountType || '',
             kycStatus,
             balance: Number(u.balance) || 0,
             invested: 0,
@@ -501,6 +509,13 @@ export default function App() {
     if (policy) setClientPolicy(policy);
     setActiveTab(user.role === 'CLIENT' ? 'investor' : 'crm');
     showToast(`✔ Signed in as ${user.name} (${user.role})!`);
+  };
+
+  const openRegister = (accountType?: string) => {
+    const selected = accountType || null;
+    setSelectedAccountType(selected);
+    if (selected) trackMeta('ViewContent', { content_name: selected, content_category: 'Account tier' });
+    setIsRegisterModalOpen(true);
   };
 
   const handleLogout = () => {
@@ -557,6 +572,11 @@ export default function App() {
       else setInvestorBalance(prev => Math.max(0, prev - amount));
 
       const newInv = res.investment;
+      trackMeta('Purchase', {
+        value: amount,
+        currency: 'USD',
+        content_name: project.title,
+      });
       setMyInvestments(prev => {
         const next = [newInv, ...prev];
         localStorage.setItem(`ohy_investments_${currentUser?.id || 'client'}`, JSON.stringify(next));
@@ -810,6 +830,7 @@ export default function App() {
           email: l.email || '',
           potentialAmount: l.potentialAmount,
           stage: (l.stage || 'new') as LeadStage,
+          accountType: l.accountType || '',
           notes: l.notes || '',
           manager: l.manager || '',
           createdAt: new Date(l.createdAt).toLocaleString('en-US'),
@@ -1247,7 +1268,7 @@ export default function App() {
         {activeTab === 'landing' && !legalSlug && !getToken() && (
           <LandingPage
             onOpenLoginModal={() => setIsLoginModalOpen(true)}
-            onOpenRegisterModal={() => setIsRegisterModalOpen(true)}
+            onOpenRegisterModal={openRegister}
           />
         )}
 
@@ -1494,9 +1515,14 @@ export default function App() {
 
       <RegisterModal
         isOpen={isRegisterModalOpen}
-        onClose={() => setIsRegisterModalOpen(false)}
+        selectedAccountType={selectedAccountType}
+        onClose={() => {
+          setIsRegisterModalOpen(false);
+          setSelectedAccountType(null);
+        }}
         onBackToLogin={() => {
           setIsRegisterModalOpen(false);
+          setSelectedAccountType(null);
           setIsLoginModalOpen(true);
         }}
       />

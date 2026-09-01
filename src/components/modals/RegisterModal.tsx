@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
 import { X, Mail, Lock, User, ArrowLeft, MailCheck, Loader2, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
 import { apiRegister, apiResendConfirmation } from '../../api';
+import { trackMeta } from '../../analytics/metaPixel';
 
 interface RegisterModalProps {
   isOpen: boolean;
+  selectedAccountType?: string | null;
   onClose: () => void;
   onBackToLogin: () => void;
 }
 
 export const RegisterModal: React.FC<RegisterModalProps> = ({
   isOpen,
+  selectedAccountType = null,
   onClose,
   onBackToLogin
 }) => {
@@ -30,8 +33,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const res = await apiRegister(name, email, password);
+      const res = await apiRegister(name, email, password, selectedAccountType || undefined);
       setEmailSent(res.emailSent !== false);
+      trackMeta('CompleteRegistration', {
+        content_name: selectedAccountType || 'Account registration',
+        status: true,
+      });
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed');
@@ -80,6 +87,11 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
           <p className="text-xs text-[#F5F2E9]/70 mt-1">
             The account is activated after email confirmation.
           </p>
+          {selectedAccountType && (
+            <div className="mt-3 inline-flex items-center rounded-lg bg-[#B08B48]/20 border border-[#B08B48]/45 px-3 py-1.5 text-xs font-bold text-[#F5F2E9]">
+              Selected package: {selectedAccountType}
+            </div>
+          )}
         </div>
 
         {done ? (

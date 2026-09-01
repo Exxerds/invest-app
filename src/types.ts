@@ -32,6 +32,7 @@ export interface Investor {
   totalProfit: number;
   registrationDate: string;
   manager: string;
+  accountType?: string;
   documentName?: string;
   lastSeen?: number | null;
   assignedManagerId?: number | null;
@@ -77,6 +78,8 @@ export interface Lead {
   email?: string;
   potentialAmount: number;
   stage: LeadStage;
+  /** Account tier selected on the public site, if any. */
+  accountType?: string;
   notes: string;
   manager: string;
   createdAt: string;
@@ -178,6 +181,7 @@ export type ClientStatus = string;
 
 export const CLIENT_STATUSES: string[] = [
   'New',
+  'No Answer',
   'Call Back - Low Potential',
   'Call Back - Middle Potential',
   'Call Back - Top Potential',

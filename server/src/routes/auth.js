@@ -16,6 +16,7 @@ const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+const ACCOUNT_TYPES = new Set(['Beginner', 'Silver', 'Gold', 'Platinum', 'Diamond']);
 
 // ---------- helpers ----------
 
@@ -43,7 +44,15 @@ async function findValidToken(token, type) {
 function publicUser(u) {
   // `phone` travels along too, so a profile saved in the cabinet
   // is still there after a page refresh (the cabinet re-reads /me).
-  return { id: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role, status: u.status };
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    phone: u.phone || '',
+    role: u.role,
+    status: u.status,
+    accountType: u.accountType || '',
+  };
 }
 
 function signJwt(u) {
@@ -93,6 +102,9 @@ function resetLetter(user, link) {
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password } = req.body || {};
+    const accountType = ACCOUNT_TYPES.has(String(req.body?.accountType || ''))
+      ? String(req.body.accountType)
+      : '';
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Fill in name, email and password' });
     }
@@ -112,6 +124,7 @@ router.post('/register', async (req, res) => {
       password: hash,
       role: 'CLIENT',
       status: 'pending',
+      accountType,
       created_at: new Date().toISOString()
     });
 
@@ -127,7 +140,10 @@ router.post('/register', async (req, res) => {
           email: user.email,
           potentialAmount: 0,
           stage: 'new',
-          notes: 'Registered on the platform (self sign-up)',
+          accountType,
+          notes: accountType
+            ? `Selected package: ${accountType}\nRegistered on the platform (self sign-up)`
+            : 'Registered on the platform (self sign-up)',
           source: 'Registration',
           manager: '',
           comments: [],
@@ -138,7 +154,7 @@ router.post('/register', async (req, res) => {
           audience: 'staff',
           kind: 'lead_registered',
           title: 'New registration',
-          message: `${user.name} (${user.email}) created an account on the platform.`,
+          message: `${user.name} (${user.email}) created an account${accountType ? ` — selected ${accountType}` : ''}.`,
           link: 'leads',
         }).catch(() => undefined);
       }

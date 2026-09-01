@@ -480,6 +480,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
           totalProfit: profit,
           registrationDate: (u.created_at || '').slice(0, 10),
           manager: u.assignedManagerName || 'Unassigned',
+          accountType: u.accountType || '',
           lastSeen: u.lastSeen || null,
           assignedManagerId: u.assignedManagerId || null,
           defaultLeverage: u.defaultLeverage || 10,
@@ -1009,6 +1010,9 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                           <div className="font-bold text-[#1C412C] text-[14px] truncate">{inv.name}</div>
                           <div className={`text-[11px] font-bold ${seen.online ? 'text-emerald-600' : 'text-[#213532]/55'}`}>{seen.label}</div>
                           <div className="text-[11px] text-[#213532]/70 truncate">{inv.email}</div>
+                          {inv.accountType && (
+                            <div className="text-[10px] text-[#B08B48] font-bold">Package: {inv.accountType}</div>
+                          )}
                         </div>
                       </div>
                       <Badge tone={statusTone(crmStatus)}>{crmStatus}</Badge>
@@ -1086,6 +1090,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                   <thead className="bg-[#F5F2E9] border-b border-[#E4DECB]">
                     <tr>
                       <Th>Client</Th>
+                      <Th>Package</Th>
                       <Th>Phone</Th>
                       <Th>Balance</Th>
                       <Th>Invested</Th>
@@ -1107,6 +1112,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                             </div>
                           </button>
                         </Td>
+                        <Td className="text-[12px] text-[#B08B48] font-bold">{inv.accountType || '—'}</Td>
                         <Td className="font-mono text-[12px] text-[#213532]">{phonesHidden ? maskPhone(inv.phone) : inv.phone}</Td>
                         <Td className="font-bold text-[#1C412C]">${inv.balance.toLocaleString('en-US')}</Td>
                         <Td className="text-[#213532]">${inv.invested.toLocaleString('en-US')}</Td>
@@ -1503,6 +1509,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                             <div className="text-[12px] text-[#B08B48] font-bold mt-1">
                               ${lead.potentialAmount.toLocaleString('en-US')}
                             </div>
+                            {lead.accountType && (
+                              <div className="text-[10px] text-[#1C412C] font-bold mt-1">
+                                Package: {lead.accountType}
+                              </div>
+                            )}
                             <div className="text-[10px] text-[#213532]/60 mt-1">{lead.manager}</div>
                             <div className="flex items-center gap-1.5 mt-2.5">
                               <button

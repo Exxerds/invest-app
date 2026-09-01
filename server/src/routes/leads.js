@@ -42,6 +42,7 @@ const clean = (v, max = 200) => String(v ?? '').slice(0, max);
 /** Digits only, so +1 (415) 555-0182 and 14155550182 match. */
 const normPhone = (v) => String(v ?? '').replace(/\D/g, '');
 const normEmail = (v) => String(v ?? '').trim().toLowerCase();
+const ACCOUNT_TYPES = new Set(['Beginner', 'Silver', 'Gold', 'Platinum', 'Diamond']);
 
 /**
  * Duplicate Control (PDF p.13).
@@ -77,6 +78,7 @@ router.post('/public', async (req, res) => {
 
   const phone = clean(b.phone, 40);
   const message = clean(b.message ?? b.notes ?? '', 2000);
+  const accountType = ACCOUNT_TYPES.has(String(b.accountType || '')) ? String(b.accountType) : '';
   const source = clean(b.source, 120).trim() || 'Landing';
 
   // Duplicates are blocked only while the CRM setting "Duplicate control"
@@ -102,7 +104,10 @@ router.post('/public', async (req, res) => {
     email: emailRaw,
     potentialAmount: 0,
     stage: 'new',
-    notes: message ? `From website: ${message}` : '',
+    accountType,
+    notes: [accountType && `Selected package: ${accountType}`, message && `From website: ${message}`]
+      .filter(Boolean)
+      .join('\n'),
     source,
     manager: '',
     comments: [],
@@ -137,7 +142,10 @@ router.get('/', auth, async (req, res) => {
       email: u.email,
       potentialAmount: Number(u.balance) || 0,
       stage: 'active',
-      notes: 'Synced from registered client',
+      accountType: u.accountType || '',
+      notes: u.accountType
+        ? `Selected package: ${u.accountType}\nSynced from registered client`
+        : 'Synced from registered client',
       manager: u.assignedManagerName || '',
       comments: [],
       source: 'client-sync',
@@ -177,12 +185,14 @@ router.post('/', auth, async (req, res) => {
     }
   }
 
+  const accountType = ACCOUNT_TYPES.has(String(b.accountType || '')) ? String(b.accountType) : '';
   const lead = await store.insert('leads', {
     name: clean(b.name, 120).trim(),
     phone: clean(b.phone, 40),
     email: clean(b.email, 120),
     potentialAmount: Number(b.potentialAmount) || 0,
     stage: clean(b.stage, 60).toLowerCase() || 'new',
+    accountType,
     notes: clean(b.notes, 2000),
     manager: clean(b.manager, 120) || req.user.name,
     comments: [],
@@ -204,6 +214,7 @@ router.patch('/:id', auth, async (req, res) => {
   if (b.phone !== undefined) patch.phone = clean(b.phone, 40);
   if (b.email !== undefined) patch.email = clean(b.email, 120);
   if (b.potentialAmount !== undefined) patch.potentialAmount = Number(b.potentialAmount) || 0;
+  if (b.accountType !== undefined) patch.accountType = ACCOUNT_TYPES.has(String(b.accountType || '')) ? String(b.accountType) : '';
   if (b.stage !== undefined) patch.stage = clean(b.stage, 60);
   if (b.notes !== undefined) patch.notes = clean(b.notes, 2000);
   if (b.manager !== undefined) patch.manager = clean(b.manager, 120);
