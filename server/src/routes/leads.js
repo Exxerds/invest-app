@@ -100,6 +100,8 @@ router.post('/public', async (req, res) => {
   const phone = clean(b.phone, 40);
   const message = clean(b.message ?? b.notes ?? '', 2000);
   const source = clean(b.source, 120).trim() || 'Landing';
+  // Account tier the visitor chose on the landing page (e.g. "Silver").
+  const plan = clean(b.plan, 60).trim();
 
   // Duplicate — same phone or email already in leads or users (do not reveal who owns it).
   // Honours Settings → "Duplicate control": with the switch off the lead is kept.
@@ -123,6 +125,7 @@ router.post('/public', async (req, res) => {
     stage: 'new',
     notes: message ? `From website: ${message}` : '',
     source,
+    plan,
     manager: '',
     comments: [],
     createdBy: 'Website',
@@ -177,6 +180,7 @@ router.post('/', auth, async (req, res) => {
     potentialAmount: Number(b.potentialAmount) || 0,
     stage: normStage(b.stage),
     notes: clean(b.notes, 2000),
+    plan: clean(b.plan, 60).trim(),
     manager: clean(b.manager, 120) || req.user.name,
     comments: [],
     createdBy: req.user.name,
@@ -200,6 +204,7 @@ router.patch('/:id', auth, async (req, res) => {
   if (b.stage !== undefined) patch.stage = normStage(b.stage);
   if (b.notes !== undefined) patch.notes = clean(b.notes, 2000);
   if (b.manager !== undefined) patch.manager = clean(b.manager, 120);
+  if (b.plan !== undefined) patch.plan = clean(b.plan, 60).trim();
   patch.updatedAt = new Date().toISOString();
 
   const lead = await store.update('leads', id, patch);

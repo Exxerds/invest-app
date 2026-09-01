@@ -478,7 +478,7 @@ export const apiAddLeadComment = (id: number, text: string) =>
     body: JSON.stringify({ text }),
   });
 
-export const apiSubmitPublicLead = (data: { name: string; email: string; phone?: string; message?: string; source?: string }) =>
+export const apiSubmitPublicLead = (data: { name: string; email: string; phone?: string; message?: string; source?: string; plan?: string }) =>
   request<{ ok: true; id: number }>('/leads/public', {
     method: 'POST',
     body: JSON.stringify(data),

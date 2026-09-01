@@ -12,6 +12,7 @@ import { sanitizeDecimal, parseNumber } from '../../utils/number';
 import { TickerTape, MarketOverview, MiniChart, MarketQuotes, MiniChartLight } from '../investor/TradingViewChart';
 import { OakLogo } from '../brand/Logo';
 import { apiSubmitPublicLead } from '../../api';
+import { trackMetaPixel } from '../../metaPixel';
 import {
   TrendingUp,
   ChevronDown,
@@ -197,6 +198,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
   const [leadLoading, setLeadLoading] = useState(false);
   const [leadSuccess, setLeadSuccess] = useState(false);
   const [leadError, setLeadError] = useState<string | null>(null);
+  /** Account tier (Silver, Gold, …) the visitor tapped — recorded with the lead */
+  const [selectedPlan, setSelectedPlan] = useState('');
 
 
   return (
@@ -747,10 +750,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
           {ACCOUNTS.map((a, i) => (
             <div
               key={a.name}
-              className={`rounded-2xl p-5 border transition-all ${
+              onClick={() => setSelectedPlan(a.name)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setSelectedPlan(a.name); }}
+              className={`rounded-2xl p-5 border transition-all cursor-pointer ${
                 i === 2
                   ? 'bg-[#B08B48]/[.08] border-[#B08B48]/45 shadow-[0_0_40px_-15px_rgba(245,180,0,.5)]'
                   : 'bg-white border-[#1C412C]/12'
+              } ${
+                selectedPlan === a.name
+                  ? 'ring-2 ring-[#B08B48] ring-offset-2 ring-offset-white'
+                  : ''
               }`}
             >
               {i === 2 && (
@@ -990,9 +1001,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
               try {
                 const params = new URLSearchParams(window.location.search);
                 const src = params.get('utm_campaign') || params.get('utm_source') || 'Landing';
-                await apiSubmitPublicLead({ name: leadName, email: leadEmail, phone: leadPhone, message: leadMessage, source: src });
+                // Carry the chosen account tier through so the CRM lead shows
+                // which package the visitor picked (e.g. "Silver").
+                const plan = selectedPlan;
+                // Keep a human-readable record in the message as well, so it is
+                // never lost even if a manager only reads the notes field.
+                const messageText = [leadMessage, plan ? `Interested plan: ${plan}` : '']
+                  .filter(Boolean)
+                  .join('\n');
+                await apiSubmitPublicLead({
+                  name: leadName,
+                  email: leadEmail,
+                  phone: leadPhone,
+                  message: messageText,
+                  source: plan ? `${src} — ${plan}` : src,
+                  plan,
+                });
+                trackMetaPixel('Lead', { content_name: plan || 'Contact', currency: 'USD' });
                 setLeadSuccess(true);
-                setLeadName(''); setLeadEmail(''); setLeadPhone(''); setLeadMessage('');
+                setLeadName(''); setLeadEmail(''); setLeadPhone(''); setLeadMessage(''); setSelectedPlan('');
               } catch (err) {
                 setLeadError(err instanceof Error ? err.message : 'Could not send message');
               } finally {

@@ -50,6 +50,15 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
   const [micAvailable, setMicAvailable] = useState(true);
   /** The other side is actually sending a video (screen share) */
   const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
+  /**
+   * Browsers (Chrome especially) block autoplay-with-sound until the user
+   * interacts with the page. The remote audio track is attached inside a
+   * WebRTC callback, outside any click gesture, so play() can quietly fail.
+   * We track whether the remote audio actually started → the dock shows a
+   * working "Enable sound" button until it does. Sound is NOT required for
+   * media to flow — it only gates whether the other voice is audible.
+   */
+  const [soundEnabled, setSoundEnabled] = useState(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localRef = useRef<MediaStream | null>(null);
@@ -92,6 +101,26 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     }
   }, []);
 
+  /**
+   * Try to start audible playback of the remote voice. Must run inside a
+   * user gesture (the "Enable sound" button / Accept / Call click) — that is
+   * the only thing Chrome trusts. Returns true when audio is actually playing.
+   */
+  const enableSound = useCallback(async (): Promise<boolean> => {
+    const audio = remoteAudioRef.current;
+    if (!audio) return false;
+    try {
+      audio.muted = false;
+      audio.volume = 1;
+      await audio.play();
+      setSoundEnabled(true);
+      return true;
+    } catch {
+      setSoundEnabled(false);
+      return false;
+    }
+  }, []);
+
   /** Tear everything down — safe to call twice. */
   const cleanup = useCallback(() => {
     if (pollRef.current) {
@@ -123,6 +152,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
     lastSignalRef.current = 0;
     negotiatingRef.current = false;
     sharingRef.current = false;
+    setSoundEnabled(false);
   }, []);
 
   const hangUp = useCallback(async () => {
@@ -258,7 +288,14 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
         } else if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = stream;
-          remoteAudioRef.current.play().catch(() => undefined);
+          // Try to auto-play. If the browser blocks it (autoplay policy) the
+          // promise rejects and we keep soundEnabled=false so the dock shows
+          // the "Enable sound" button — one click from the user unlocks audio.
+          remoteAudioRef.current.muted = false;
+          remoteAudioRef.current.play().then(
+            () => setSoundEnabled(true),
+            () => setSoundEnabled(false),
+          );
           // Recording started before the remote audio arrived? Add it now
           // so the file contains both voices.
           if (recStreamRef.current) recStreamRef.current.addTrack(e.track);
@@ -563,8 +600,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', onEnd
 
   return {
     phase, error, warning, muted, micAvailable,
-    sharingScreen, recording, hasRemoteVideo,
+    sharingScreen, recording, hasRemoteVideo, soundEnabled,
     remoteAudioRef, remoteVideoRef,
-    connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
+    connect, hangUp, toggleMute, toggleScreenShare, toggleRecording, enableSound,
   };
 }

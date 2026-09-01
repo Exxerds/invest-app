@@ -102,7 +102,17 @@ async function expireStaleCalls() {
   }
 }
 
-/** Public STUN servers are enough for most networks; TURN is optional. */
+/**
+ * ICE servers for the peer connection.
+ *
+ * Public STUN handles the common case, but behind symmetric NATs (mobile
+ * carriers, strict office/VPN networks, CGNAT) STUN alone cannot connect the
+ * two peers — that is exactly when a call rings but "both sides could not
+ * reach each other". A TURN relay relays the media through a public server,
+ * so calls succeed regardless of the network. We ship a free Open Relay TURN
+ * by default; set TURN_URL / TURN_USER / TURN_PASS to use your own (or a
+ * paid/private) relay in production.
+ */
 router.get('/ice-servers', auth, async (req, res) => {
   const servers = [
     {
@@ -115,12 +125,24 @@ router.get('/ice-servers', auth, async (req, res) => {
     },
   ];
 
-  // A TURN relay is needed behind strict corporate NATs
+  // A TURN relay is needed behind strict corporate NATs / symmetric NATs.
+  // Prefer an explicitly configured relay; otherwise use the free Open Relay
+  // so cross-network calls work out of the box.
   if (process.env.TURN_URL && process.env.TURN_USER) {
     servers.push({
       urls: process.env.TURN_URL,
       username: process.env.TURN_USER,
       credential: process.env.TURN_PASS || '',
+    });
+  } else {
+    servers.push({
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
     });
   }
 

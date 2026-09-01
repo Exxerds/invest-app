@@ -14,7 +14,6 @@ import * as store from '../db.js';
 import { readCrmSettings } from '../crmSettings.js';
 import { notify } from '../notifications.js';
 import { livePrice } from './symbols.js';
-import { readCrmSettings } from '../crmSettings.js';
 import {
   quoteTrade,
   pnlOf,

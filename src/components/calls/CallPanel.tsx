@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Phone, PhoneOff, Mic, MicOff, MonitorUp, Circle, Ear, Loader2, GripVertical,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, Volume2,
 } from 'lucide-react';
 import { useWebRTCCall } from '../../hooks/useWebRTCCall';
 import type { CallRole } from '../../hooks/useWebRTCCall';
@@ -34,9 +34,9 @@ export const CallDock: React.FC<DockProps> = ({
 }) => {
   const {
     phase, error, warning, muted, micAvailable,
-    sharingScreen, recording, hasRemoteVideo,
+    sharingScreen, recording, hasRemoteVideo, soundEnabled,
     remoteAudioRef, remoteVideoRef,
-    connect, hangUp, toggleMute, toggleScreenShare, toggleRecording,
+    connect, hangUp, toggleMute, toggleScreenShare, toggleRecording, enableSound,
   } = useWebRTCCall({ callId: call.id, role, initiator, channel, onEnded: onClosed });
 
   const [seconds, setSeconds] = useState(0);
@@ -168,6 +168,26 @@ export const CallDock: React.FC<DockProps> = ({
       {warning && (
         <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-[11px] text-amber-900 font-medium leading-tight">
           {warning}
+        </div>
+      )}
+
+      {/*
+        The far voice is connected but the browser blocked autoplay-with-sound
+        (Chrome's "Enable sound" policy). Until the user clicks, the other
+        side's audio stays silent. This is a working, clickable control —
+        unlike the browser's own overlay, it reliably unlocks playback.
+      */}
+      {phase === 'active' && !soundEnabled && (
+        <div className="px-4 py-2 bg-[#1C412C]/[.06] border-b border-[#E4DECB] flex items-center gap-2">
+          <div className="flex-1 text-[11px] text-[#1C412C] font-medium leading-tight">
+            The other side cannot be heard yet.
+          </div>
+          <button
+            onClick={() => void enableSound()}
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#B08B48] hover:bg-[#9a7a3e] text-[#1C412C] text-[11px] font-bold cursor-pointer transition-colors"
+          >
+            <Volume2 className="w-3.5 h-3.5" /> Enable sound
+          </button>
         </div>
       )}
 

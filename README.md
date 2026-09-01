@@ -156,6 +156,40 @@ SMTP_FROM=Trade Nation <no-reply@yourdomain.ru>
 - **Auth:** JWT + bcrypt, письма через nodemailer
 - **Real-time (дальше):** WebSockets (Socket.io) + WebRTC для звонков и демонстрации экрана
 
+## 📊 Meta Pixel (Facebook)
+
+Пиксель уже подключён: он загружается автоматически и шлёт события
+`PageView`, `Lead` (заявка с лендинга) и `CompleteRegistration` (регистрация).
+
+Чтобы включить свой пиксель:
+
+1. Открой **Meta Events Manager → свой пиксель → Settings** и скопируй **Pixel ID** (число).
+2. Создай файл `.env.local` в корне проекта и пропиши:
+   ```bash
+   VITE_META_PIXEL_ID=1234567890123456
+   ```
+3. Перезапусти `npm run dev` (или перезалей на Vercel, указав переменную `VITE_META_PIXEL_ID`
+   в **Project → Settings → Environment Variables**).
+
+Если `VITE_META_PIXEL_ID` пуст — пиксель не загружается вовсе (удобно для локальной разработки).
+
+## 📞 Звонки (WebRTC)
+
+Звонки работают по WebRTC (аудио идёт напрямую между устройствами, обмен сигналами — через API).
+
+- **Кнопка «Enable sound»** в плавающем окне звонка — теперь рабочая: браузеры (особенно Chrome)
+  блокируют автовоспроизведение звука до клика пользователя. Один клик по ней включает звук
+  собеседника. Это тот же механизм, что и системная кнопка «Enable sound», но она **всегда срабатывает**.
+- **TURN-сервер** добавлен по умолчанию (бесплатный Open Relay). Он нужен для звонков через
+  симметричные NAT — мобильные сети, офисы, VPN, где STUN сам по себе не соединяет два устройства.
+  Благодаря этому звонки работают компьютер → телефон → компьютер → телефон.
+- Для продакшена можно подставить собственный TURN в `server/.env`:
+  ```
+  TURN_URL=turn:turn.example.com:443?transport=tcp
+  TURN_USER=your-user
+  TURN_PASS=your-pass
+  ```
+
 ## Troubleshooting
 
 ### "Cannot GET /" when opening http://localhost:4000

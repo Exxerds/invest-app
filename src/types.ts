@@ -52,6 +52,10 @@ export interface Lead {
   manager: string;
   createdAt: string;
   comments: LeadComment[];
+  /** Account tier the visitor chose on the landing page (e.g. "Silver") */
+  plan?: string;
+  /** Where the lead came from (e.g. "Landing", "import") */
+  source?: string;
 }
 
 /** CRM settings (admin-only toggles), mirrored from the server */
@@ -153,6 +157,7 @@ export type ClientStatus = string;
 
 export const CLIENT_STATUSES: string[] = [
   'New',
+  'No Answer',
   'Call Back - Low Potential',
   'Call Back - Middle Potential',
   'Call Back - Top Potential',

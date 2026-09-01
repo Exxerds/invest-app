@@ -1385,6 +1385,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                               ${lead.potentialAmount.toLocaleString('en-US')}
                             </div>
                             <div className="text-[10px] text-[#213532]/60 mt-1">{lead.manager}</div>
+                            {lead.plan && (
+                              <div className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-md bg-[#B08B48]/12 text-[#9a7a3e] text-[10px] font-bold">
+                                {lead.plan} plan
+                              </div>
+                            )}
                             <div className="flex items-center gap-1.5 mt-2.5">
                               <button
                                 onClick={() => onMoveLeadStage(lead.id, 'prev')}
