@@ -106,7 +106,7 @@ export function letterLayout(title, contentHtml) {
         <tr><td style="background:#1C412C;padding:28px 24px 24px;" align="center">
           <table role="presentation" cellpadding="0" cellspacing="0" align="center" width="112" height="112" style="width:112px;height:112px;background:#F5F2E9;border-radius:56px;">
             <tr><td align="center" valign="middle" width="112" height="112" style="width:112px;height:112px;overflow:hidden;border-radius:56px;line-height:0;font-size:0;">
-              <img src="${SITE_URL.replace(/\/$/, '')}/email-crest.png?v=10" width="112" height="112" alt="Oak Haven Yield" style="display:block;width:112px;height:112px;margin:0 auto;border:0;border-radius:56px;">
+              <img src="${SITE_URL.replace(/\/$/, '')}/brand-crest.png?v=31" width="112" height="112" alt="Oak Haven Yield" style="display:block;width:112px;height:112px;margin:0 auto;border:0;border-radius:56px;object-fit:contain;">
             </td></tr>
           </table>
           <div style="line-height:1.15;margin-top:14px;">
