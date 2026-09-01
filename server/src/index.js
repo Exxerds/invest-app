@@ -32,6 +32,7 @@ import supportRoutes from './routes/support.js';
 import assetsRoutes from './routes/assets.js';
 import { seedUsers } from './seed.js';
 import { describeBackend } from './db.js';
+import { startTelegramBot } from './telegramBot.js';
 
 dotenv.config();
 
@@ -256,6 +257,7 @@ async function start() {
       console.log(HAS_BUILD
         ? `   Serving the built site from /dist — open http://localhost:${PORT}\n`
         : `   Development mode — the site runs separately on http://localhost:3000\n`);
+      startTelegramBot().catch(err => console.error('[telegram-bot] could not start:', err.message));
     });
 
     // Port already in use? Explain it clearly instead of crashing silently.

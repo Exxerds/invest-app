@@ -39,6 +39,8 @@ Edit `/opt/oakhaven/server/.env` and add:
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_group_chat_id
+TELEGRAM_BOT_POLLING=on
+TELEGRAM_LEAD_VIEWER_IDS=your_personal_or_group_chat_id
 ```
 
 Do not include these values in screenshots or logs.
@@ -54,6 +56,16 @@ The bot receives:
 
 - website contact-form leads;
 - new registrations, including the selected package and phone number.
+
+When `TELEGRAM_BOT_POLLING=on`, send `/menu` to the bot. It shows inline buttons:
+
+- `Лиды` — a paginated list of leads;
+- `Назад` / `Вперёд` — navigate through the list;
+- `Обновить` — load the latest records.
+
+`TELEGRAM_LEAD_VIEWER_IDS` controls who may browse the leads. A group ID makes
+the whole group able to read the lead cards, so a private chat is safer for
+personal data. The bot cannot create a Telegram account or group itself.
 
 Telegram delivery is best-effort: a Telegram outage never prevents a lead or
 account from being saved in the database.
