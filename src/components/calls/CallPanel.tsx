@@ -108,11 +108,15 @@ interface DockProps {
   channel?: 'main' | 'whisper';
   whisperName?: string | null;
   headless?: boolean;
+  /** Optional listen-only monitor leg for the supervisor. */
+  publishAudio?: boolean;
+  multiAudio?: boolean;
   onClosed: () => void;
 }
 
 export const CallDock: React.FC<DockProps> = ({
-  call, role, initiator, channel = 'main', whisperName, headless = false, onClosed,
+  call, role, initiator, channel = 'main', whisperName, headless = false,
+  publishAudio = true, multiAudio = false, onClosed,
 }) => {
   // Detect LiveKit
   const [useLiveKit, setUseLiveKit] = useState<boolean>(false);
@@ -143,9 +147,9 @@ export const CallDock: React.FC<DockProps> = ({
     return () => { cancelled = true; };
   }, []);
 
-  const autoRecord = role !== 'client' && channel === 'main';
+  const autoRecord = role === 'manager' && channel === 'main';
   const p2p = useWebRTCCall({ callId: call.id, role, initiator, channel, autoRecord, onEnded: onClosed });
-  const lk = useLiveKitCall({ callId: call.id, role, channel, autoRecord, onEnded: onClosed });
+  const lk = useLiveKitCall({ callId: call.id, role, channel, autoRecord, publishAudio, multiAudio, onEnded: onClosed });
 
   // Choose implementation — LiveKit if configured and checked, otherwise P2P
   const active = useLiveKit && liveKitChecked ? lk : p2p;
@@ -317,6 +321,12 @@ export const CallDock: React.FC<DockProps> = ({
       {warning && (
         <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-[11px] text-amber-900 font-medium leading-tight">
           {warning}
+        </div>
+      )}
+
+      {channel === 'main' && call.status === 'active' && (
+        <div className="px-4 py-2 bg-rose-500/10 border-b border-rose-500/20 text-[11px] text-rose-800 font-semibold">
+          ● This call is being recorded
         </div>
       )}
 

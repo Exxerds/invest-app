@@ -1193,22 +1193,36 @@ export default function App() {
         />
       )}
 
-      {/* Supervisor coaching runs on its own connection */}
+      {/* Supervisor listens to the main room (client + manager) without
+          publishing there, and speaks to the manager through the private
+          whisper room below. */}
       {whisperCall && (
-        <CallDock
-          call={whisperCall}
-          role="supervisor"
-          initiator
-          channel="whisper"
-          onClosed={async () => {
-            try {
-              await apiWhisper(whisperCall.id, false);
-            } catch {
-              /* leaving locally is enough */
-            }
-            setWhisperCall(null);
-          }}
-        />
+        <>
+          <CallDock
+            call={whisperCall}
+            role="supervisor"
+            initiator={false}
+            channel="main"
+            headless
+            publishAudio={false}
+            multiAudio
+            onClosed={() => undefined}
+          />
+          <CallDock
+            call={whisperCall}
+            role="supervisor"
+            initiator
+            channel="whisper"
+            onClosed={async () => {
+              try {
+                await apiWhisper(whisperCall.id, false);
+              } catch {
+                /* leaving locally is enough */
+              }
+              setWhisperCall(null);
+            }}
+          />
+        </>
       )}
 
       {/* Impersonation banner — always visible so nobody forgets they are

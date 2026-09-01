@@ -25,10 +25,14 @@ interface Options {
   channel?: 'main' | 'whisper';
   /** Automatically record the main staff-to-client call. */
   autoRecord?: boolean;
+  /** Supervisor monitor leg listens without publishing back to the main room. */
+  publishAudio?: boolean;
+  /** Use one hidden audio element per remote track (supervisor monitor). */
+  multiAudio?: boolean;
   onEnded?: () => void;
 }
 
-export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = false, onEnded }: Options) {
+export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = false, publishAudio = true, multiAudio = false, onEnded }: Options) {
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [muted, setMuted] = useState(false);
   const [sharingScreen, setSharingScreen] = useState(false);
@@ -51,6 +55,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordStreamRef = useRef<MediaStream | null>(null);
+  const multiAudioElementsRef = useRef<Map<any, HTMLAudioElement>>(new Map());
   const chunksRef = useRef<Blob[]>([]);
 
   const cleanup = useCallback(() => {
@@ -58,6 +63,11 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
     recorderRef.current = null;
     recordStreamRef.current = null;
     setRecording(false);
+    for (const [track, element] of multiAudioElementsRef.current) {
+      try { (track as any).detach(element); } catch {}
+      element.remove();
+    }
+    multiAudioElementsRef.current.clear();
     try {
       roomRef.current?.disconnect();
     } catch {}
@@ -188,7 +198,16 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
       };
 
       const attachRemoteAudio = (track: TrackType) => {
-        const audio = remoteAudioRef.current;
+        let audio = multiAudioElementsRef.current.get(track);
+        if (!audio && !multiAudio) audio = remoteAudioRef.current;
+        if (!audio && multiAudio) {
+          audio = document.createElement('audio');
+          audio.autoplay = true;
+          audio.playsInline = true;
+          audio.style.display = 'none';
+          document.body.appendChild(audio);
+          multiAudioElementsRef.current.set(track, audio);
+        }
         if (!audio) {
           if (!pendingRemoteAudioRef.current.includes(track)) pendingRemoteAudioRef.current.push(track);
           return;
@@ -237,7 +256,12 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
           }
           track.on('ended', () => setHasRemoteVideo(false));
         } else if (track.kind === Track.Kind.Audio) {
-          attachRemoteAudio(track);
+          // The supervisor listens to the main room for both voices. Its
+          // separate whisper room is publish-only for the supervisor, so the
+          // manager's voice is not played twice.
+          if (!(role === 'supervisor' && channel === 'whisper')) {
+            attachRemoteAudio(track);
+          }
           addRecordingTrack(track);
           maybeStartAutoRecording();
         }
@@ -245,7 +269,12 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
       });
 
       room.on(RoomEvent.TrackUnsubscribed, (track: TrackType) => {
-        (track as any).detach();
+        const audio = multiAudioElementsRef.current.get(track);
+        try { (track as any).detach(audio || undefined); } catch {}
+        if (audio) {
+          audio.remove();
+          multiAudioElementsRef.current.delete(track);
+        }
         pendingRemoteAudioRef.current = pendingRemoteAudioRef.current.filter(item => item !== track);
         if (track.kind === Track.Kind.Video) setHasRemoteVideo(false);
       });
@@ -280,20 +309,23 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
         }
       }
 
-      // Publish local audio (mic) — optional
-      try {
-        const audioTrack = await createLocalAudioTrack();
-        await room.localParticipant.publishTrack(audioTrack);
-        localAudioTrackRef.current = audioTrack.mediaStreamTrack;
-        setMicAvailable(true);
-        addRecordingTrack(audioTrack);
-        maybeStartAutoRecording();
-      } catch (err) {
-        if (err instanceof DOMException && (err.name === 'NotFoundError' || err.name === 'OverconstrainedError')) {
-          setMicAvailable(false);
-          setWarning('No microphone — listen-only: you can hear the other side, but they cannot hear you.');
-        } else {
-          throw err;
+      // The supervisor's main-room monitor is listen-only. The normal
+      // manager/client and the separate whisper leg publish their mic.
+      if (publishAudio) {
+        try {
+          const audioTrack = await createLocalAudioTrack();
+          await room.localParticipant.publishTrack(audioTrack);
+          localAudioTrackRef.current = audioTrack.mediaStreamTrack;
+          setMicAvailable(true);
+          addRecordingTrack(audioTrack);
+          maybeStartAutoRecording();
+        } catch (err) {
+          if (err instanceof DOMException && (err.name === 'NotFoundError' || err.name === 'OverconstrainedError')) {
+            setMicAvailable(false);
+            setWarning('No microphone — listen-only: you can hear the other side, but they cannot hear you.');
+          } else {
+            throw err;
+          }
         }
       }
 
@@ -308,7 +340,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
         } catch {}
       }
     }
-  }, [callId, role, channel, cleanup, onEnded, addRecordingTrack, maybeStartAutoRecording]);
+  }, [callId, role, channel, publishAudio, multiAudio, cleanup, onEnded, addRecordingTrack, maybeStartAutoRecording]);
 
   const enableAudio = useCallback(async () => {
     try {
@@ -317,7 +349,24 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
       // gesture explicitly starts playback.
       if (room?.startAudio) await room.startAudio();
       const audio = remoteAudioRef.current;
-      if (audio) {
+      if (multiAudio) {
+        for (const track of pendingRemoteAudioRef.current) {
+          let element = multiAudioElementsRef.current.get(track);
+          if (!element) {
+            element = document.createElement('audio');
+            element.autoplay = true;
+            element.playsInline = true;
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            multiAudioElementsRef.current.set(track, element);
+          }
+          element.muted = false;
+          element.volume = 1;
+          (track as any).attach(element);
+          await element.play();
+        }
+        pendingRemoteAudioRef.current = [];
+      } else if (audio) {
         audio.autoplay = true;
         audio.playsInline = true;
         audio.muted = false;
@@ -325,13 +374,13 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
         for (const track of pendingRemoteAudioRef.current) (track as any).attach(audio);
         pendingRemoteAudioRef.current = [];
         await audio.play();
-        setAudioPlaybackReady(true);
       }
+      setAudioPlaybackReady(true);
       setNeedsAudioUnlock(false);
     } catch {
       setWarning('Click Enable sound to start remote audio.');
     }
-  }, []);
+  }, [multiAudio]);
 
   const toggleMute = useCallback(() => {
     const track = localAudioTrackRef.current;
