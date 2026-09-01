@@ -38,9 +38,10 @@ Edit `/opt/oakhaven/server/.env` and add:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_group_chat_id
+# You can list several personal or group chat IDs separated by commas.
+TELEGRAM_CHAT_IDS=your_chat_id,another_chat_id
 TELEGRAM_BOT_POLLING=on
-TELEGRAM_LEAD_VIEWER_IDS=your_personal_or_group_chat_id
+TELEGRAM_LEAD_VIEWER_IDS=your_personal_or_group_chat_id,another_chat_id
 ```
 
 Do not include these values in screenshots or logs.

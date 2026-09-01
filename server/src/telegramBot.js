@@ -18,7 +18,7 @@ function botToken() {
 }
 
 function allowedIds() {
-  const raw = process.env.TELEGRAM_LEAD_VIEWER_IDS || process.env.TELEGRAM_CHAT_ID || '';
+  const raw = process.env.TELEGRAM_LEAD_VIEWER_IDS || process.env.TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || '';
   return new Set(raw.split(',').map(value => value.trim()).filter(Boolean));
 }
 

@@ -7,7 +7,10 @@
 // ============================================================
 
 const token = () => String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-const chatId = () => String(process.env.TELEGRAM_CHAT_ID || '').trim();
+const chatIds = () => String(process.env.TELEGRAM_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || '')
+  .split(',')
+  .map(value => value.trim())
+  .filter(Boolean);
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -19,26 +22,28 @@ function escapeHtml(value) {
 
 export async function sendTelegramMessage(text) {
   const botToken = token();
-  const destination = chatId();
-  if (!botToken || !destination) return { skipped: true };
+  const destinations = chatIds();
+  if (!botToken || !destinations.length) return { skipped: true };
 
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: destination,
-      text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    }),
-  });
+  const results = await Promise.all(destinations.map(async destination => {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: destination,
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`Telegram returned HTTP ${response.status}`);
-  }
-  const result = await response.json().catch(() => ({}));
-  if (!result.ok) throw new Error('Telegram rejected the message');
-  return result;
+    if (!response.ok) throw new Error(`Telegram returned HTTP ${response.status}`);
+    const result = await response.json().catch(() => ({}));
+    if (!result.ok) throw new Error('Telegram rejected the message');
+    return result;
+  }));
+
+  return { ok: true, results };
 }
 
 export function sendTelegramLead({
