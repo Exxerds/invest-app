@@ -177,6 +177,19 @@ export async function startTelegramBot() {
 
   // Remove a previous webhook so long polling can receive commands.
   await telegram('deleteWebhook', { drop_pending_updates: false }).catch(() => undefined);
+  // Add Telegram's native command menu as well as the inline buttons. This
+  // makes the lead browser discoverable without requiring the user to know
+  // the /menu command first.
+  await telegram('setMyCommands', {
+    commands: [
+      { command: 'start', description: 'Open the CRM menu' },
+      { command: 'menu', description: 'Open the CRM menu' },
+      { command: 'leads', description: 'Browse CRM leads' },
+    ],
+  }).catch(err => console.error('[telegram-bot] could not set commands:', err.message));
+  await telegram('setChatMenuButton', {
+    menu_button: { type: 'commands' },
+  }).catch(err => console.error('[telegram-bot] could not set menu button:', err.message));
   started = true;
   console.log('[telegram-bot] lead menu polling enabled');
   void poll();
