@@ -484,10 +484,10 @@ export const CallDock: React.FC<DockProps> = ({
           {muted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
         </button>
 
-        {/* Screen sharing is a staff feature: clients call from phones
-            and iPhone Safari has no screen sharing at all, so the
-            button would only fail for them. */}
-        {role !== 'client' && (
+        {/* Screen sharing for the manager and the client. The
+            supervisor's dock is voice-only: coaching is whisper,
+            and the supervisor's screen never reaches the call. */}
+        {role !== 'supervisor' && (
           <button
             onClick={toggleScreenShare}
             title="Share screen"
