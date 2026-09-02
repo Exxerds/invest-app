@@ -22,6 +22,7 @@ import {
   apiUploadRecording,
   TOKEN_KEY,
 } from '../api';
+import { callAudioBus } from './callAudioBus';
 
 export type CallRole = 'manager' | 'client' | 'supervisor';
 export type CallPhase = 'idle' | 'connecting' | 'active' | 'ended' | 'failed';
@@ -67,8 +68,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
   const chunksRef = useRef<Blob[]>([]);
   /** The manager pressed "Stop recording" — the watchdog must not restart it. */
   const manualStopRef = useRef(false);
-  /** A remote audio track has arrived — otherwise the voice is not flowing. */
-  const remoteAudioSeenRef = useRef(false);
+  /** Unsubscribe from the coach-voice bus (main-leg recording only). */
+  const coachSubRef = useRef<(() => void) | null>(null);
   const lastSignalRef = useRef(0);
   const pollAbortRef = useRef<AbortController | null>(null);
   const negotiatingRef = useRef(false);
@@ -121,6 +122,12 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
     }
     recorderRef.current = null;
     recStreamRef.current = null;
+    if (coachSubRef.current) {
+      coachSubRef.current();
+      coachSubRef.current = null;
+    }
+    // This whisper leg published the coach's voice to the bus — release it.
+    if (channel === 'whisper' && role === 'manager') callAudioBus.setCoachTrack(null);
     localRef.current?.getTracks().forEach(t => t.stop());
     screenRef.current?.getTracks().forEach(t => t.stop());
     localRef.current = null;
@@ -327,7 +334,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
         // A track arriving means media is actually flowing — mark the call
         // active even if the connection-state handlers have not fired yet.
         setPhase('active');
-        if (e.track.kind === 'audio') remoteAudioSeenRef.current = true;
         if (e.track.kind === 'video') {
           setHasRemoteVideo(true);
           e.track.onended = () => setHasRemoteVideo(false);
@@ -338,6 +344,16 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
           // Recording started before the remote audio arrived? Add it now
           // so the file contains both voices.
           if (recStreamRef.current) recStreamRef.current.addTrack(e.track);
+        }
+        if (e.track.kind === 'audio') {
+          // The manager's whisper leg receives the coach's voice here —
+          // publish it so the main leg's recording can capture it too.
+          if (channel === 'whisper' && role === 'manager') {
+            e.track.onended = () => {
+              if (callAudioBus.getCoachTrack() === e.track) callAudioBus.setCoachTrack(null);
+            };
+            callAudioBus.setCoachTrack(e.track);
+          }
         }
       };
 
@@ -584,6 +600,14 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
       ...(local ? local.getAudioTracks() : []),
       ...(remote ? remote.getAudioTracks() : []),
     ];
+
+    // The main leg's recording also captures the coach's voice, which
+    // travels on the separate whisper connection (via the audio bus).
+    if (channel === 'main' && role === 'manager') {
+      const coach = callAudioBus.getCoachTrack();
+      if (coach && !tracks.includes(coach)) tracks.push(coach);
+    }
+
     if (!tracks.length) {
       if (!silent) setError('Nothing to record yet — no audio tracks in the call.');
       return;
@@ -592,6 +616,20 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
     try {
       const stream = new MediaStream(tracks);
       recStreamRef.current = stream;
+      // A supervisor may join mid-call — pull their voice into the file
+      // as soon as it appears (a running MediaRecorder picks up tracks
+      // added to its stream dynamically).
+      if (channel === 'main' && role === 'manager') {
+        if (coachSubRef.current) {
+          coachSubRef.current();
+          coachSubRef.current = null;
+        }
+        coachSubRef.current = callAudioBus.onCoachTrack(t => {
+          if (t && recStreamRef.current && !recStreamRef.current.getTracks().includes(t)) {
+            recStreamRef.current.addTrack(t);
+          }
+        });
+      }
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
         .find(t => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t));
       const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
@@ -656,25 +694,6 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
     const t = window.setInterval(check, 4000);
     return () => window.clearInterval(t);
   }, [autoRecord, channel, phase, recording, role, startRecordingP2P]);
-
-  /**
-   * The remote voice must arrive shortly after the call is live. If no
-   * remote audio track comes through, the call is silently one-way —
-   * typical when the network (proxy/VPN) carries the web page but not
-   * the voice stream. Say so instead of leaving everyone guessing.
-   */
-  useEffect(() => {
-    if (phase !== 'active') return;
-    if (remoteAudioSeenRef.current) return;
-    const t = window.setTimeout(() => {
-      if (!remoteAudioSeenRef.current) {
-        setWarning("The other side's voice is not reaching you. Check the connection — " +
-          "a plain proxy carries the page but not the voice stream (use a VPN or a " +
-          "direct connection). The other side may also have no microphone.");
-      }
-    }, 10000);
-    return () => window.clearTimeout(t);
-  }, [phase]);
 
   useEffect(() => cleanup, [cleanup]);
 

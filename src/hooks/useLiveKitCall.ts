@@ -15,6 +15,7 @@ import {
 } from 'livekit-client';
 import type { Track as TrackType, RemoteParticipant, LocalTrack } from 'livekit-client';
 import { apiCallStatus, apiUploadRecording, TOKEN_KEY } from '../api';
+import { callAudioBus } from './callAudioBus';
 
 export type CallRole = 'manager' | 'client' | 'supervisor';
 export type CallPhase = 'idle' | 'connecting' | 'active' | 'ended' | 'failed';
@@ -59,13 +60,19 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
   const chunksRef = useRef<Blob[]>([]);
   /** The manager pressed "Stop recording" — the watchdog must not restart it. */
   const manualStopRef = useRef(false);
-  /** A remote audio track has arrived — otherwise the voice is not flowing. */
-  const remoteAudioSeenRef = useRef(false);
+  /** Unsubscribe from the coach-voice bus (main-leg recording only). */
+  const coachSubRef = useRef<(() => void) | null>(null);
 
   const cleanup = useCallback(() => {
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
     recorderRef.current = null;
     recordStreamRef.current = null;
+    if (coachSubRef.current) {
+      coachSubRef.current();
+      coachSubRef.current = null;
+    }
+    // This whisper leg published the coach's voice to the bus — release it.
+    if (channel === 'whisper' && role === 'manager') callAudioBus.setCoachTrack(null);
     setRecording(false);
     for (const [track, element] of multiAudioElementsRef.current) {
       try { (track as any).detach(element); } catch {}
@@ -118,6 +125,14 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
     });
 
     const uniqueTracks = tracks.filter((track, index) => tracks.indexOf(track) === index);
+
+    // The main leg's recording also captures the coach's voice, which
+    // travels on the separate whisper connection (via the audio bus).
+    if (channel === 'main' && role === 'manager') {
+      const coach = callAudioBus.getCoachTrack();
+      if (coach && !uniqueTracks.includes(coach)) uniqueTracks.push(coach);
+    }
+
     if (!uniqueTracks.length) {
       if (!silent) setError('Nothing to record yet — no audio tracks in the call.');
       return false;
@@ -126,6 +141,20 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
     try {
       const stream = new MediaStream(uniqueTracks);
       recordStreamRef.current = stream;
+      // A supervisor may join mid-call — pull their voice into the file
+      // as soon as it appears (a running MediaRecorder picks up tracks
+      // added to its stream dynamically).
+      if (channel === 'main' && role === 'manager') {
+        if (coachSubRef.current) {
+          coachSubRef.current();
+          coachSubRef.current = null;
+        }
+        coachSubRef.current = callAudioBus.onCoachTrack(t => {
+          if (t && recordStreamRef.current && !recordStreamRef.current.getTracks().includes(t)) {
+            recordStreamRef.current.addTrack(t);
+          }
+        });
+      }
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
         .find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type));
       const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
@@ -198,25 +227,6 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
     const t = window.setInterval(check, 4000);
     return () => window.clearInterval(t);
   }, [autoRecord, channel, role, recording, startRecording]);
-
-  /**
-   * The remote voice must arrive shortly after the call is live. If no
-   * remote audio track comes through, the call is silently one-way —
-   * typical when a plain proxy/VPN carries the web page but not the
-   * voice stream. Say so instead of leaving everyone guessing.
-   */
-  useEffect(() => {
-    if (phase !== 'active') return;
-    if (remoteAudioSeenRef.current) return;
-    const t = window.setTimeout(() => {
-      if (!remoteAudioSeenRef.current) {
-        setWarning("The other side's voice is not reaching you. Check the connection — " +
-          "a plain proxy carries the page but not the voice stream (use a VPN or a " +
-          "direct connection). The other side may also have no microphone.");
-      }
-    }, 10000);
-    return () => window.clearTimeout(t);
-  }, [phase]);
 
   const connect = useCallback(async () => {
     if (!callId || roomRef.current) return;
@@ -319,7 +329,6 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
           }
           track.on('ended', () => setHasRemoteVideo(false));
         } else if (track.kind === Track.Kind.Audio) {
-          remoteAudioSeenRef.current = true;
           // The supervisor listens to the main room for both voices. Its
           // separate whisper room is publish-only for the supervisor, so the
           // manager's voice is not played twice.
@@ -327,6 +336,11 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
             attachRemoteAudio(track);
           }
           addRecordingTrack(track);
+          // The manager's whisper leg receives the coach's voice here —
+          // publish it so the main leg's recording can capture it too.
+          if (channel === 'whisper' && role === 'manager') {
+            callAudioBus.setCoachTrack((track as any).mediaStreamTrack || null);
+          }
           maybeStartAutoRecording();
         }
         setPhase('active');
@@ -341,6 +355,12 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
         }
         pendingRemoteAudioRef.current = pendingRemoteAudioRef.current.filter(item => item !== track);
         if (track.kind === Track.Kind.Video) setHasRemoteVideo(false);
+        if (
+          channel === 'whisper' && role === 'manager' && track.kind === Track.Kind.Audio
+          && callAudioBus.getCoachTrack() === (track as any).mediaStreamTrack
+        ) {
+          callAudioBus.setCoachTrack(null);
+        }
       });
 
       room.on(RoomEvent.Disconnected, () => {
