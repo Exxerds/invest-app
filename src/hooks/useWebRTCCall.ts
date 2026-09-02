@@ -67,6 +67,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
   const chunksRef = useRef<Blob[]>([]);
   /** The manager pressed "Stop recording" — the watchdog must not restart it. */
   const manualStopRef = useRef(false);
+  /** A remote audio track has arrived — otherwise the voice is not flowing. */
+  const remoteAudioSeenRef = useRef(false);
   const lastSignalRef = useRef(0);
   const pollAbortRef = useRef<AbortController | null>(null);
   const negotiatingRef = useRef(false);
@@ -325,6 +327,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
         // A track arriving means media is actually flowing — mark the call
         // active even if the connection-state handlers have not fired yet.
         setPhase('active');
+        if (e.track.kind === 'audio') remoteAudioSeenRef.current = true;
         if (e.track.kind === 'video') {
           setHasRemoteVideo(true);
           e.track.onended = () => setHasRemoteVideo(false);
@@ -653,6 +656,25 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
     const t = window.setInterval(check, 4000);
     return () => window.clearInterval(t);
   }, [autoRecord, channel, phase, recording, role, startRecordingP2P]);
+
+  /**
+   * The remote voice must arrive shortly after the call is live. If no
+   * remote audio track comes through, the call is silently one-way —
+   * typical when the network (proxy/VPN) carries the web page but not
+   * the voice stream. Say so instead of leaving everyone guessing.
+   */
+  useEffect(() => {
+    if (phase !== 'active') return;
+    if (remoteAudioSeenRef.current) return;
+    const t = window.setTimeout(() => {
+      if (!remoteAudioSeenRef.current) {
+        setWarning("The other side's voice is not reaching you. Check the connection — " +
+          "a plain proxy carries the page but not the voice stream (use a VPN or a " +
+          "direct connection). The other side may also have no microphone.");
+      }
+    }, 10000);
+    return () => window.clearTimeout(t);
+  }, [phase]);
 
   useEffect(() => cleanup, [cleanup]);
 

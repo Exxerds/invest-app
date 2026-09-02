@@ -59,6 +59,8 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
   const chunksRef = useRef<Blob[]>([]);
   /** The manager pressed "Stop recording" — the watchdog must not restart it. */
   const manualStopRef = useRef(false);
+  /** A remote audio track has arrived — otherwise the voice is not flowing. */
+  const remoteAudioSeenRef = useRef(false);
 
   const cleanup = useCallback(() => {
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
@@ -197,12 +199,45 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
     return () => window.clearInterval(t);
   }, [autoRecord, channel, role, recording, startRecording]);
 
+  /**
+   * The remote voice must arrive shortly after the call is live. If no
+   * remote audio track comes through, the call is silently one-way —
+   * typical when a plain proxy/VPN carries the web page but not the
+   * voice stream. Say so instead of leaving everyone guessing.
+   */
+  useEffect(() => {
+    if (phase !== 'active') return;
+    if (remoteAudioSeenRef.current) return;
+    const t = window.setTimeout(() => {
+      if (!remoteAudioSeenRef.current) {
+        setWarning("The other side's voice is not reaching you. Check the connection — " +
+          "a plain proxy carries the page but not the voice stream (use a VPN or a " +
+          "direct connection). The other side may also have no microphone.");
+      }
+    }, 10000);
+    return () => window.clearTimeout(t);
+  }, [phase]);
+
   const connect = useCallback(async () => {
     if (!callId || roomRef.current) return;
     setError(null);
     setWarning(null);
     setAudioPlaybackReady(false);
     setPhase('connecting');
+
+    // Browsers refuse to run WebRTC on plain HTTP ("RTCPeerConnection is
+    // not allowed") — say exactly that instead of leaking the raw error.
+    if (!window.isSecureContext) {
+      cleanup();
+      setPhase('failed');
+      setError('Voice calls need a secure connection (HTTPS). ' +
+        'Open the site via its HTTPS address or through a VPN — on plain HTTP ' +
+        'the browser blocks the audio engine.');
+      if (channel === 'main') {
+        try { await apiCallStatus(callId, 'ended'); } catch {}
+      }
+      return;
+    }
 
     try {
       // Get LiveKit token from backend
@@ -284,6 +319,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
           }
           track.on('ended', () => setHasRemoteVideo(false));
         } else if (track.kind === Track.Kind.Audio) {
+          remoteAudioSeenRef.current = true;
           // The supervisor listens to the main room for both voices. Its
           // separate whisper room is publish-only for the supervisor, so the
           // manager's voice is not played twice.
