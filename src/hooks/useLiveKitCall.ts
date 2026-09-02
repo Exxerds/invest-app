@@ -15,7 +15,7 @@ import {
 } from 'livekit-client';
 import type { Track as TrackType, RemoteParticipant, LocalTrack } from 'livekit-client';
 import { apiCallStatus, apiUploadRecording, TOKEN_KEY } from '../api';
-import { callAudioBus } from './callAudioBus';
+import { callMediaBus } from './callMediaBus';
 
 export type CallRole = 'manager' | 'client' | 'supervisor';
 export type CallPhase = 'idle' | 'connecting' | 'active' | 'ended' | 'failed';
@@ -71,8 +71,11 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
       coachSubRef.current();
       coachSubRef.current = null;
     }
-    // This whisper leg published the coach's voice to the bus — release it.
-    if (channel === 'whisper' && role === 'manager') callAudioBus.setCoachTrack(null);
+    // This whisper leg published the coach's voice/screen to the bus — release them.
+    if (channel === 'whisper' && role === 'manager') {
+      callMediaBus.coachAudio.set(null);
+      callMediaBus.coachVideo.set(null);
+    }
     setRecording(false);
     for (const [track, element] of multiAudioElementsRef.current) {
       try { (track as any).detach(element); } catch {}
@@ -127,9 +130,9 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
     const uniqueTracks = tracks.filter((track, index) => tracks.indexOf(track) === index);
 
     // The main leg's recording also captures the coach's voice, which
-    // travels on the separate whisper connection (via the audio bus).
+    // travels on the separate whisper connection (via the media bus).
     if (channel === 'main' && role === 'manager') {
-      const coach = callAudioBus.getCoachTrack();
+      const coach = callMediaBus.coachAudio.get();
       if (coach && !uniqueTracks.includes(coach)) uniqueTracks.push(coach);
     }
 
@@ -149,7 +152,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
           coachSubRef.current();
           coachSubRef.current = null;
         }
-        coachSubRef.current = callAudioBus.onCoachTrack(t => {
+        coachSubRef.current = callMediaBus.coachAudio.subscribe(t => {
           if (t && recordStreamRef.current && !recordStreamRef.current.getTracks().includes(t)) {
             recordStreamRef.current.addTrack(t);
           }
@@ -327,7 +330,19 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
           if (remoteVideoRef.current) {
             (track as any).attach(remoteVideoRef.current);
           }
-          track.on('ended', () => setHasRemoteVideo(false));
+          // The manager's (headless) whisper leg receives the coach's
+          // screen here — publish it so the manager's MAIN dock shows
+          // it. The client never sees it: it travels on the whisper
+          // room only.
+          if (channel === 'whisper' && role === 'manager') {
+            callMediaBus.coachVideo.set((track as any).mediaStreamTrack || null);
+          }
+          track.on('ended', () => {
+            setHasRemoteVideo(false);
+            if (channel === 'whisper' && role === 'manager' && callMediaBus.coachVideo.get() === (track as any).mediaStreamTrack) {
+              callMediaBus.coachVideo.set(null);
+            }
+          });
         } else if (track.kind === Track.Kind.Audio) {
           // The supervisor listens to the main room for both voices. Its
           // separate whisper room is publish-only for the supervisor, so the
@@ -339,7 +354,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
           // The manager's whisper leg receives the coach's voice here —
           // publish it so the main leg's recording can capture it too.
           if (channel === 'whisper' && role === 'manager') {
-            callAudioBus.setCoachTrack((track as any).mediaStreamTrack || null);
+            callMediaBus.coachAudio.set((track as any).mediaStreamTrack || null);
           }
           maybeStartAutoRecording();
         }
@@ -354,12 +369,17 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
           multiAudioElementsRef.current.delete(track);
         }
         pendingRemoteAudioRef.current = pendingRemoteAudioRef.current.filter(item => item !== track);
-        if (track.kind === Track.Kind.Video) setHasRemoteVideo(false);
+        if (track.kind === Track.Kind.Video) {
+          setHasRemoteVideo(false);
+          if (channel === 'whisper' && role === 'manager' && callMediaBus.coachVideo.get() === (track as any).mediaStreamTrack) {
+            callMediaBus.coachVideo.set(null);
+          }
+        }
         if (
           channel === 'whisper' && role === 'manager' && track.kind === Track.Kind.Audio
-          && callAudioBus.getCoachTrack() === (track as any).mediaStreamTrack
+          && callMediaBus.coachAudio.get() === (track as any).mediaStreamTrack
         ) {
-          callAudioBus.setCoachTrack(null);
+          callMediaBus.coachAudio.set(null);
         }
       });
 

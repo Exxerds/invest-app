@@ -60,6 +60,10 @@ import {
   Briefcase,
   Trash2,
   Calendar,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { CrmTradesManager } from './CrmTradesManager';
 import type { AdminTrade } from './CrmTradesManager';
@@ -3148,6 +3152,166 @@ const AnalyticsPanel: React.FC<{ onNotify: (m: string) => void }> = ({ onNotify 
 };
 
 /* ============================================================
+   CALL RECORDER PLAYER (branded, custom seek bar)
+   ============================================================ */
+function CallRecordingPlayer({
+  src,
+  callDurationSec,
+  clientName,
+  onClose,
+}: {
+  src: string;
+  callDurationSec: number | null;
+  clientName: string;
+  onClose: () => void;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const draggingRef = useRef(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
+
+  const fmtT = (s: number) =>
+    `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+  // The file's own length when the browser knows it, otherwise the call's
+  // recorded duration — "0:00 / 2:45" is always displayed.
+  const total = duration > 0 ? duration : callDurationSec || 0;
+  const progress = total > 0 ? Math.min(1, Math.max(0, current / total)) : 0;
+
+  /**
+   * Chrome reports Infinity for MediaRecorder webm blobs, which is what
+   * made the native controls' bar look "already at the end". Force a
+   * seek to the end so the true length surfaces in `duration`, then
+   * rewind to the start.
+   */
+  const onLoadedMetadata = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (isFinite(a.duration) && a.duration > 0) {
+      setDuration(a.duration);
+      return;
+    }
+    const settle = () => {
+      a.removeEventListener('durationchange', settle);
+      if (isFinite(a.duration) && a.duration > 0) setDuration(a.duration);
+      try { a.currentTime = 0; } catch { /* not seekable yet */ }
+    };
+    a.addEventListener('durationchange', settle);
+    try { a.currentTime = 1e10; } catch { /* not seekable yet */ }
+    window.setTimeout(() => {
+      a.removeEventListener('durationchange', settle);
+      if (isFinite(a.duration) && a.duration > 0) setDuration(a.duration);
+      try { a.currentTime = 0; } catch { /* ignore */ }
+    }, 2500);
+  };
+
+  // "Play" was a real user gesture, so starting here is allowed.
+  useEffect(() => {
+    audioRef.current?.play().catch(() => setIsPlaying(false));
+  }, [src]);
+
+  const seekTo = (clientX: number) => {
+    const bar = barRef.current;
+    const a = audioRef.current;
+    if (!bar || !a || total <= 0) return;
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const t = ratio * total;
+    try { a.currentTime = t; } catch { /* not seekable yet */ }
+    setCurrent(t);
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="auto"
+        onLoadedMetadata={onLoadedMetadata}
+        onTimeUpdate={() => {
+          const a = audioRef.current;
+          if (a) setCurrent(a.currentTime);
+        }}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+      />
+      <div className="flex items-center gap-1 min-w-0 shrink-0">
+        <span className="text-[11px] font-bold text-[#1C412C] truncate max-w-[130px]" title={clientName}>
+          {clientName}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Close player"
+          className="w-5 h-5 rounded-full flex items-center justify-center text-[#213532]/50 hover:bg-[#1C412C]/10 hover:text-[#1C412C] cursor-pointer"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          if (a.paused) a.play().catch(() => undefined);
+          else a.pause();
+        }}
+        title={isPlaying ? 'Pause' : 'Play'}
+        className="w-9 h-9 rounded-full bg-[#1C412C] text-[#B08B48] hover:bg-[#245238] flex items-center justify-center shrink-0 cursor-pointer"
+      >
+        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+      </button>
+      <span className="text-[11px] font-mono font-bold text-[#1C412C] tabular-nums shrink-0">
+        {fmtT(Math.min(current, total || current))} / {total > 0 ? fmtT(total) : '--:--'}
+      </span>
+      <div
+        ref={barRef}
+        onPointerDown={(e) => {
+          draggingRef.current = true;
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          seekTo(e.clientX);
+        }}
+        onPointerMove={(e) => {
+          if (draggingRef.current) seekTo(e.clientX);
+        }}
+        onPointerUp={() => { draggingRef.current = false; }}
+        onPointerCancel={() => { draggingRef.current = false; }}
+        className="relative flex-1 h-6 flex items-center cursor-pointer touch-none select-none"
+        title="Seek"
+      >
+        <div className="relative w-full h-1.5 rounded-full bg-[#E4DECB]">
+          <div
+            className="absolute inset-y-0 left-0 rounded-full bg-[#B08B48]"
+            style={{ width: `${progress * 100}%` }}
+          />
+          <div
+            className="absolute top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1C412C] border-2 border-[#F5F2E9] shadow"
+            style={{ left: `${progress * 100}%` }}
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          const a = audioRef.current;
+          if (!a) return;
+          a.muted = !a.muted;
+          setMuted(a.muted);
+        }}
+        title={muted ? 'Unmute' : 'Mute'}
+        className="w-8 h-8 rounded-full flex items-center justify-center text-[#213532] hover:bg-[#1C412C]/10 shrink-0 cursor-pointer"
+      >
+        {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+      </button>
+    </div>
+  );
+}
+
+/* ============================================================
    CALLS PANEL
    ============================================================ */
 const CallsPanel: React.FC<{
@@ -3161,7 +3325,12 @@ const CallsPanel: React.FC<{
   const [log, setLog] = useState<(ApiCall & { hasRecording: boolean; missed?: boolean })[]>([]);
   const [stats, setStats] = useState({ total: 0, answered: 0, missed: 0, declined: 0, avgSec: 0 });
   const [live, setLive] = useState<ApiCall[]>([]);
-  const [playing, setPlaying] = useState<string | null>(null);
+  const [playing, setPlaying] = useState<{
+    id: number;
+    data: string;
+    durationSec: number | null;
+    clientName: string;
+  } | null>(null);
   const [query, setQuery] = useState('');
 
   const clients = users.filter(u => u.role === 'CLIENT');
@@ -3323,7 +3492,12 @@ const CallsPanel: React.FC<{
                           onClick={async () => {
                             try {
                               const r = await apiCallRecording(c.id);
-                              setPlaying(r.data);
+                              setPlaying({
+                                id: c.id,
+                                data: r.data,
+                                durationSec: c.durationSec ?? null,
+                                clientName: c.clientName,
+                              });
                             } catch { /* ignore */ }
                           }}
                         >
@@ -3340,7 +3514,13 @@ const CallsPanel: React.FC<{
           </div>
           {playing && (
             <div className="p-4 border-t border-[#E4DECB] bg-[#F5F2E9]">
-              <audio src={playing} controls autoPlay className="w-full" />
+              <CallRecordingPlayer
+                key={playing.id}
+                src={playing.data}
+                callDurationSec={playing.durationSec}
+                clientName={playing.clientName}
+                onClose={() => setPlaying(null)}
+              />
             </div>
           )}
         </Card>

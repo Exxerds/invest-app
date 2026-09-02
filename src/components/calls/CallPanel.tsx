@@ -11,6 +11,7 @@ import {
 import { useWebRTCCall } from '../../hooks/useWebRTCCall';
 import { useLiveKitCall } from '../../hooks/useLiveKitCall';
 import { useCallDiagnostics } from '../../hooks/useCallDiagnostics';
+import { callMediaBus } from '../../hooks/callMediaBus';
 import type { CallRole } from '../../hooks/useWebRTCCall';
 import type { ApiCall } from '../../api';
 import { apiLiveKitConfig } from '../../api';
@@ -181,6 +182,36 @@ export const CallDock: React.FC<DockProps> = ({
   const [seconds, setSeconds] = useState(0);
   const [videoExpanded, setVideoExpanded] = useState(false);
 
+  /**
+   * The supervisor's screen share arrives on the manager's WHISPER leg
+   * (which is headless) and is surfaced here, in the visible main dock.
+   * The client never sees it. It yields to the client's own screen
+   * share, which travels on the main connection.
+   */
+  const [coachVideo, setCoachVideo] = useState<MediaStreamTrack | null>(null);
+  const coachVideoStreamRef = useRef<MediaStream | null>(null);
+  useEffect(() => {
+    if (role !== 'manager' || channel !== 'main') {
+      setCoachVideo(null);
+      return undefined;
+    }
+    return callMediaBus.coachVideo.subscribe(setCoachVideo);
+  }, [role, channel]);
+  useEffect(() => {
+    const el = remoteVideoRef.current;
+    if (!el || hasRemoteVideo) return; // the live connection owns the element
+    if (coachVideo) {
+      const stream = new MediaStream([coachVideo]);
+      coachVideoStreamRef.current = stream;
+      el.srcObject = stream;
+      void el.play().catch(() => undefined);
+    } else if (coachVideoStreamRef.current && el.srcObject === coachVideoStreamRef.current) {
+      el.srcObject = null;
+      coachVideoStreamRef.current = null;
+    }
+  }, [coachVideo, hasRemoteVideo, remoteVideoRef]);
+  const showVideo = hasRemoteVideo || Boolean(coachVideo);
+
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
 
@@ -228,8 +259,8 @@ export const CallDock: React.FC<DockProps> = ({
   }, [callActive, call.answeredAt]);
 
   useEffect(() => {
-    if (!hasRemoteVideo) setVideoExpanded(false);
-  }, [hasRemoteVideo]);
+    if (!showVideo) setVideoExpanded(false);
+  }, [showVideo]);
 
   const title =
     role === 'client'
@@ -374,11 +405,16 @@ export const CallDock: React.FC<DockProps> = ({
           className={`bg-black object-contain cursor-pointer ${
             videoExpanded
               ? 'fixed inset-0 z-[90] w-screen h-screen'
-              : `w-full ${hasRemoteVideo ? 'block' : 'hidden'}`
+              : `w-full ${showVideo ? 'block' : 'hidden'}`
           }`}
           style={videoExpanded ? undefined : { maxHeight: 160 }}
         />
-        {hasRemoteVideo && !videoExpanded && (
+        {coachVideo && !hasRemoteVideo && !videoExpanded && (
+          <span className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded bg-violet-600/80 text-white text-[9px] font-bold tracking-wide">
+            COACHING SCREEN
+          </span>
+        )}
+        {showVideo && !videoExpanded && (
           <button
             onClick={() => setVideoExpanded(true)}
             title="Expand to fullscreen"
@@ -425,7 +461,10 @@ export const CallDock: React.FC<DockProps> = ({
           <MonitorUp className="w-4 h-4" />
         </button>
 
-        {role !== 'client' && (
+        {role === 'manager' && (
+          // The manager is the only one with a record button: the main
+          // call is recorded automatically on their side, and a manual
+          // copy on the supervisor's dock was confusing.
           <button
             onClick={toggleRecording}
             title={recording ? 'Stop recording' : 'Record call'}

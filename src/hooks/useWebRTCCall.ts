@@ -22,7 +22,7 @@ import {
   apiUploadRecording,
   TOKEN_KEY,
 } from '../api';
-import { callAudioBus } from './callAudioBus';
+import { callMediaBus } from './callMediaBus';
 
 export type CallRole = 'manager' | 'client' | 'supervisor';
 export type CallPhase = 'idle' | 'connecting' | 'active' | 'ended' | 'failed';
@@ -70,6 +70,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
   const manualStopRef = useRef(false);
   /** Unsubscribe from the coach-voice bus (main-leg recording only). */
   const coachSubRef = useRef<(() => void) | null>(null);
+  /** Unsubscribe from the client-voice bus (whisper-leg relay only). */
+  const clientSubRef = useRef<(() => void) | null>(null);
   const lastSignalRef = useRef(0);
   const pollAbortRef = useRef<AbortController | null>(null);
   const negotiatingRef = useRef(false);
@@ -126,8 +128,16 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
       coachSubRef.current();
       coachSubRef.current = null;
     }
-    // This whisper leg published the coach's voice to the bus — release it.
-    if (channel === 'whisper' && role === 'manager') callAudioBus.setCoachTrack(null);
+    if (clientSubRef.current) {
+      clientSubRef.current();
+      clientSubRef.current = null;
+    }
+    // This leg published a track to the bus — release it.
+    if (channel === 'main' && role === 'manager') callMediaBus.clientAudio.set(null);
+    if (channel === 'whisper' && role === 'manager') {
+      callMediaBus.coachAudio.set(null);
+      callMediaBus.coachVideo.set(null);
+    }
     localRef.current?.getTracks().forEach(t => t.stop());
     screenRef.current?.getTracks().forEach(t => t.stop());
     localRef.current = null;
@@ -167,7 +177,9 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
    * only way to ship a request with headers out of a dying page.
    */
   useEffect(() => {
-    if (!callId || channel !== 'main') return;
+    // The supervisor's headless monitor leg must never end the call
+    // for everyone when its tab closes.
+    if (!callId || channel !== 'main' || role === 'supervisor') return;
     const end = () => {
       if (endedSentRef.current) return;
       endedSentRef.current = true;
@@ -190,7 +202,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
       // that sets activeCall=null would otherwise end the call
       // prematurely and delete signals (client ICE missing bug).
     };
-  }, [callId, channel]);
+  }, [callId, channel, role]);
 
   /** Human-friendly explanation for the most common "it just fails" cases. */
   const describeMediaError = (err: unknown): string => {
@@ -214,6 +226,17 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
   /** Open the microphone, build the peer connection and start polling. */
   const connect = useCallback(async () => {
     if (!callId || pcRef.current) return;
+
+    // In P2P a call is a strict 1:1 pipe. If the coach's monitor leg
+    // answered the main offer it would STEAL the connection from the
+    // client. So it never joins the main connection at all — instead
+    // the manager's whisper leg relays the client's voice to the
+    // coach over the whisper channel (see attachClientRelay below).
+    if (role === 'supervisor' && channel === 'main') {
+      setPhase('active');
+      return;
+    }
+
     setError(null);
     setWarning(null);
     setNeedsAudioUnlock(false);
@@ -324,36 +347,104 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
         pc.addTransceiver('audio', { direction: 'sendrecv' });
       }
 
+      /**
+       * Whisper-leg relay (P2P): the manager also sends the client's
+       * voice over the whisper connection, because P2P is a 1:1 pipe
+       * with no room for the coach's own listener in the main call.
+       * The coach's dock receives TWO audio tracks (the manager's mic
+       * and the relayed client) and plays both mixed. Whisper always
+       * joins an already-live call, so the client's track is normally
+       * on the bus by the time this leg connects and the first answer
+       * carries the extra send-only audio line — the subscription
+       * below covers the rare late arrival with a renegotiation.
+       */
+      let clientRelayAttached = false;
+      const attachClientRelay = async () => {
+        if (clientRelayAttached || pcRef.current !== pc) return;
+        const clientTrack = callMediaBus.clientAudio.get();
+        if (!clientTrack || clientTrack.readyState !== 'live') return;
+        if (pc.getSenders().some(s => s.track === clientTrack)) {
+          clientRelayAttached = true;
+          return;
+        }
+        pc.addTransceiver('audio', { direction: 'sendonly' });
+        pc.addTrack(clientTrack, new MediaStream([clientTrack]));
+        clientRelayAttached = true;
+        // Already negotiated? The new audio line needs renegotiation —
+        // the coach side handles mid-call offers (rollback + answer).
+        if (pc.remoteDescription && pc.signalingState === 'stable') {
+          negotiatingRef.current = true;
+          try {
+            await renegotiate(pc);
+          } catch {
+            /* the call itself is still alive */
+          } finally {
+            negotiatingRef.current = false;
+          }
+        }
+      };
+      if (channel === 'whisper' && role === 'manager') {
+        void attachClientRelay();
+        clientSubRef.current = callMediaBus.clientAudio.subscribe(t => {
+          if (t) void attachClientRelay();
+        });
+      }
+
+      /**
+       * Remote audio is accumulated in ONE stable MediaStream: the
+       * whisper leg receives two remote audio tracks (the coach's
+       * voice and the relayed client's voice) and a single <audio>
+       * element plays every audio track of its stream, mixed.
+       */
+      const remoteAudioStream = new MediaStream();
+      remoteStreamRef.current = remoteAudioStream;
+      const addRemoteAudio = (t: MediaStreamTrack) => {
+        remoteAudioStream.addTrack(t);
+        const el = remoteAudioRef.current;
+        if (!el) return;
+        if (el.srcObject !== remoteAudioStream) el.srcObject = remoteAudioStream;
+        el.play().catch(() => setNeedsAudioUnlock(true));
+      };
+
       pc.ontrack = (e) => {
-        // Some browsers deliver a track WITHOUT a bundled MediaStream
-        // (most notably a screen-share track). Fabricate one so the
-        // <video> element always gets a renderable srcObject instead of
-        // a black rectangle.
-        const stream = e.streams[0] || new MediaStream([e.track]);
-        remoteStreamRef.current = stream;
-        // A track arriving means media is actually flowing — mark the call
-        // active even if the connection-state handlers have not fired yet.
+        // A track arriving means media is actually flowing — mark the
+        // call active even if the connection-state handlers have not
+        // fired yet.
         setPhase('active');
         if (e.track.kind === 'video') {
+          // Some browsers deliver a track WITHOUT a bundled MediaStream
+          // (most notably a screen-share track). Fabricate one so the
+          // <video> element always gets a renderable srcObject instead
+          // of a black rectangle.
+          const stream = e.streams[0] || new MediaStream([e.track]);
           setHasRemoteVideo(true);
-          e.track.onended = () => setHasRemoteVideo(false);
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
-        } else if (remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = stream;
-          remoteAudioRef.current.play().catch(() => setNeedsAudioUnlock(true));
-          // Recording started before the remote audio arrived? Add it now
-          // so the file contains both voices.
-          if (recStreamRef.current) recStreamRef.current.addTrack(e.track);
+          e.track.onended = () => {
+            setHasRemoteVideo(false);
+            if (channel === 'whisper' && role === 'manager' && callMediaBus.coachVideo.get() === e.track) {
+              callMediaBus.coachVideo.set(null);
+            }
+          };
+          return;
         }
-        if (e.track.kind === 'audio') {
-          // The manager's whisper leg receives the coach's voice here —
-          // publish it so the main leg's recording can capture it too.
-          if (channel === 'whisper' && role === 'manager') {
-            e.track.onended = () => {
-              if (callAudioBus.getCoachTrack() === e.track) callAudioBus.setCoachTrack(null);
-            };
-            callAudioBus.setCoachTrack(e.track);
-          }
+        addRemoteAudio(e.track);
+        // Recording started before the remote audio arrived? Add it now
+        // so the file contains both voices.
+        if (recStreamRef.current) recStreamRef.current.addTrack(e.track);
+        e.track.onended = () => {
+          remoteAudioStream.removeTrack(e.track);
+          if (callMediaBus.coachAudio.get() === e.track) callMediaBus.coachAudio.set(null);
+          if (callMediaBus.clientAudio.get() === e.track) callMediaBus.clientAudio.set(null);
+        };
+        // The manager's whisper leg receives the coach's voice here —
+        // publish it so the main leg's recording can capture it too.
+        if (channel === 'whisper' && role === 'manager') {
+          callMediaBus.coachAudio.set(e.track);
+        }
+        // The manager's MAIN leg receives the client's voice here —
+        // publish it so the whisper leg can relay it to the coach.
+        if (channel === 'main' && role === 'manager') {
+          callMediaBus.clientAudio.set(e.track);
         }
       };
 
@@ -602,9 +693,9 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
     ];
 
     // The main leg's recording also captures the coach's voice, which
-    // travels on the separate whisper connection (via the audio bus).
+    // travels on the separate whisper connection (via the media bus).
     if (channel === 'main' && role === 'manager') {
-      const coach = callAudioBus.getCoachTrack();
+      const coach = callMediaBus.coachAudio.get();
       if (coach && !tracks.includes(coach)) tracks.push(coach);
     }
 
@@ -624,7 +715,7 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
           coachSubRef.current();
           coachSubRef.current = null;
         }
-        coachSubRef.current = callAudioBus.onCoachTrack(t => {
+        coachSubRef.current = callMediaBus.coachAudio.subscribe(t => {
           if (t && recStreamRef.current && !recStreamRef.current.getTracks().includes(t)) {
             recStreamRef.current.addTrack(t);
           }
