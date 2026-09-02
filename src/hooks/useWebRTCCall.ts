@@ -65,6 +65,8 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  /** The manager pressed "Stop recording" — the watchdog must not restart it. */
+  const manualStopRef = useRef(false);
   const lastSignalRef = useRef(0);
   const pollAbortRef = useRef<AbortController | null>(null);
   const negotiatingRef = useRef(false);
@@ -570,22 +572,17 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
     }
   }, [sharingScreen, callId, renegotiate]);
 
-  const toggleRecording = useCallback(async () => {
-    if (recording) {
-      recorderRef.current?.stop();
-      setRecording(false);
-      return;
-    }
+  const startRecordingP2P = useCallback(async ({ silent = false, keepChunks = false } = {}) => {
+    if (!callId || recorderRef.current?.state === 'recording') return;
     const local = localRef.current;
     const remote = remoteStreamRef.current;
-    if (!callId) return;
 
     const tracks = [
       ...(local ? local.getAudioTracks() : []),
       ...(remote ? remote.getAudioTracks() : []),
     ];
     if (!tracks.length) {
-      setError('Nothing to record yet — no audio tracks in the call.');
+      if (!silent) setError('Nothing to record yet — no audio tracks in the call.');
       return;
     }
 
@@ -595,7 +592,9 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
         .find(t => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t));
       const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-      chunksRef.current = [];
+      // keepChunks: a watchdog restart keeps everything captured so far,
+      // so the file uploaded on the final stop is cumulative, not partial.
+      if (!keepChunks) chunksRef.current = [];
       recorder.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
       recorder.onstop = () => {
         if (!chunksRef.current.length) return;
@@ -608,16 +607,52 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
       };
       recorder.start(1000);
       recorderRef.current = recorder;
+      manualStopRef.current = false;
       setRecording(true);
     } catch {
-      setError('Recording is not supported in this browser.');
+      if (!silent) setError('Recording is not supported in this browser.');
     }
-  }, [recording, callId]);
+  }, [callId]);
+
+  const stopRecordingP2P = useCallback(() => {
+    manualStopRef.current = true;
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    setRecording(false);
+  }, []);
+
+  const toggleRecording = useCallback(async () => {
+    if (recording) {
+      stopRecordingP2P();
+      return;
+    }
+    await startRecordingP2P();
+  }, [recording, startRecordingP2P, stopRecordingP2P]);
 
   useEffect(() => {
     if (!autoRecord || role === 'client' || channel !== 'main' || phase !== 'active' || recording) return;
-    void toggleRecording();
-  }, [autoRecord, channel, phase, recording, role, toggleRecording]);
+    void startRecordingP2P({ silent: true, keepChunks: true });
+  }, [autoRecord, channel, phase, recording, role, startRecordingP2P]);
+
+  /**
+   * Watchdog: mobile browsers (and a backgrounded tab) can silently kill
+   * the MediaRecorder mid-call, which is why a 16 s call sometimes yields
+   * a 5 s file. If the call is still active but the auto-recorder died —
+   * and the manager did NOT stop it manually — restart it, keeping the
+   * chunks captured so far (the upload is cumulative).
+   */
+  useEffect(() => {
+    if (!autoRecord || role === 'client' || channel !== 'main') return;
+    const check = () => {
+      if (manualStopRef.current) return;
+      if (phase !== 'active') return;
+      const rec = recorderRef.current;
+      if (rec && rec.state === 'recording') return; // healthy
+      if (rec === null && !recording) return;       // never started — the effect above starts it
+      void startRecordingP2P({ silent: true, keepChunks: true });
+    };
+    const t = window.setInterval(check, 4000);
+    return () => window.clearInterval(t);
+  }, [autoRecord, channel, phase, recording, role, startRecordingP2P]);
 
   useEffect(() => cleanup, [cleanup]);
 

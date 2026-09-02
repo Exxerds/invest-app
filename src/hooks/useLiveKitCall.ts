@@ -57,6 +57,8 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
   const recordStreamRef = useRef<MediaStream | null>(null);
   const multiAudioElementsRef = useRef<Map<any, HTMLAudioElement>>(new Map());
   const chunksRef = useRef<Blob[]>([]);
+  /** The manager pressed "Stop recording" — the watchdog must not restart it. */
+  const manualStopRef = useRef(false);
 
   const cleanup = useCallback(() => {
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
@@ -99,7 +101,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
     stream.addTrack(native);
   }, []);
 
-  const startRecording = useCallback(async ({ silent = false } = {}) => {
+  const startRecording = useCallback(async ({ silent = false, keepChunks = false } = {}) => {
     if (!callId || !roomRef.current || recorderRef.current?.state === 'recording') return false;
 
     const tracks: MediaStreamTrack[] = [];
@@ -125,7 +127,9 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
         .find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type));
       const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-      chunksRef.current = [];
+      // keepChunks: a watchdog restart keeps everything captured so far,
+      // so the file uploaded on the final stop is cumulative, not partial.
+      if (!keepChunks) chunksRef.current = [];
       recorder.ondataavailable = event => {
         if (event.data.size) chunksRef.current.push(event.data);
       };
@@ -141,6 +145,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
       };
       recorder.start(1000);
       recorderRef.current = recorder;
+      manualStopRef.current = false;
       setRecording(true);
       return true;
     } catch {
@@ -150,6 +155,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
   }, [callId]);
 
   const stopRecording = useCallback(() => {
+    manualStopRef.current = true;
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
     recorderRef.current = null;
     recordStreamRef.current = null;
@@ -166,8 +172,30 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
 
   const maybeStartAutoRecording = useCallback(() => {
     if (!autoRecord || role === 'client' || channel !== 'main') return;
-    void startRecording({ silent: true });
+    void startRecording({ silent: true, keepChunks: true });
   }, [autoRecord, channel, role, startRecording]);
+
+  /**
+   * Watchdog: mobile browsers (and a backgrounded tab) can silently kill
+   * the MediaRecorder mid-call, which is why a 16 s call sometimes yields
+   * a 5 s file. If the call is still alive but the auto-recorder died —
+   * and the manager did NOT stop it manually — restart it, keeping the
+   * chunks captured so far (the upload is cumulative).
+   */
+  useEffect(() => {
+    if (!autoRecord || role === 'client' || channel !== 'main') return;
+    const check = () => {
+      if (manualStopRef.current) return;
+      const room = roomRef.current as any;
+      if (!room || room.state === 'disconnected' || room.state === 'failed') return;
+      const rec = recorderRef.current;
+      if (rec && rec.state === 'recording') return; // healthy
+      if (rec === null && !recording) return;       // never started — event handlers start it
+      void startRecording({ silent: true, keepChunks: true });
+    };
+    const t = window.setInterval(check, 4000);
+    return () => window.clearInterval(t);
+  }, [autoRecord, channel, role, recording, startRecording]);
 
   const connect = useCallback(async () => {
     if (!callId || roomRef.current) return;
