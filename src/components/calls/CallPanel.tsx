@@ -326,13 +326,9 @@ export const CallDock: React.FC<DockProps> = ({
         </div>
       )}
 
-      {/* Recording banner is staff-only: the client must never see that
-          the call is being recorded. */}
-      {channel === 'main' && call.status === 'active' && role !== 'client' && (
-        <div className="px-4 py-2 bg-rose-500/10 border-b border-rose-500/20 text-[11px] text-rose-800 font-semibold">
-          ● This call is being recorded
-        </div>
-      )}
+      {/* The pink "This call is being recorded" banner was removed on
+          purpose: the client must never see any sign of recording. The
+          staff side keeps only the small REC badge in the header above. */}
 
       {(needsAudioUnlock || (useLiveKit && callActive && !liveKitAudioPlaybackReady)) && (
         <button
