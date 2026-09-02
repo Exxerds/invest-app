@@ -334,7 +334,7 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
           // screen here — publish it so the manager's MAIN dock shows
           // it. The client never sees it: it travels on the whisper
           // room only.
-          if (channel === 'whisper' && role === 'manager') {
+          if (channel === 'whisper' && role === 'manager' && track.source === Track.Source.ScreenShare) {
             callMediaBus.coachVideo.set((track as any).mediaStreamTrack || null);
           }
           track.on('ended', () => {
@@ -353,7 +353,10 @@ export function useLiveKitCall({ callId, role, channel = 'main', autoRecord = fa
           addRecordingTrack(track);
           // The manager's whisper leg receives the coach's voice here —
           // publish it so the main leg's recording can capture it too.
-          if (channel === 'whisper' && role === 'manager') {
+          // Only the microphone: screen share also publishes a
+          // system-audio track, which would replace the coach's voice
+          // on the bus (and in the recording) while a screen is shared.
+          if (channel === 'whisper' && role === 'manager' && track.source === Track.Source.Microphone) {
             callMediaBus.coachAudio.set((track as any).mediaStreamTrack || null);
           }
           maybeStartAutoRecording();

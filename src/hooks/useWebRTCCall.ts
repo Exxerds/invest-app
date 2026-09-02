@@ -418,7 +418,13 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
           // of a black rectangle.
           const stream = e.streams[0] || new MediaStream([e.track]);
           setHasRemoteVideo(true);
-          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = stream;
+            // Do not rely on autoplay alone: the element may still be
+            // display:none at this moment (the re-render is pending),
+            // which is a classic cause of a stuck black frame.
+            void remoteVideoRef.current.play().catch(() => undefined);
+          }
           e.track.onended = () => {
             setHasRemoteVideo(false);
             if (channel === 'whisper' && role === 'manager' && callMediaBus.coachVideo.get() === e.track) {
@@ -541,6 +547,27 @@ export function useWebRTCCall({ callId, role, initiator, channel = 'main', autoR
                 await pc.setLocalDescription(answer);
                 await apiPostSignal(callId, 'answer', JSON.stringify(pc.localDescription), role, channel);
                 if (role === 'client') await apiCallStatus(callId, 'active');
+                // The answer mirrors the offer's media lines, so a local
+                // track that exists but has no m-line in the offer (the
+                // client relay on the whisper leg) would never be sent —
+                // the client's voice would stay silent for the coach.
+                // Renegotiate to add the missing audio line.
+                if (channel === 'whisper' && role === 'manager' && clientRelayAttached) {
+                  const offerAudioLines = (pc.remoteDescription?.sdp.match(/^m=audio/gm) || []).length;
+                  const localAudioSenders = pc.getSenders().filter(s => s.track && s.track.kind === 'audio').length;
+                  if (localAudioSenders > offerAudioLines) {
+                    // Let the answer be processed by the other side first.
+                    await new Promise(resolve => setTimeout(resolve, 400));
+                    negotiatingRef.current = true;
+                    try {
+                      await renegotiate(pc);
+                    } catch {
+                      /* the call itself is still alive */
+                    } finally {
+                      negotiatingRef.current = false;
+                    }
+                  }
+                }
               } else if (signal.kind === 'answer') {
                 if (pc.signalingState === 'have-local-offer') {
                   await pc.setRemoteDescription(new RTCSessionDescription(data));

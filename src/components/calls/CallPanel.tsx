@@ -189,6 +189,9 @@ export const CallDock: React.FC<DockProps> = ({
    * share, which travels on the main connection.
    */
   const [coachVideo, setCoachVideo] = useState<MediaStreamTrack | null>(null);
+  /** 'waiting' — track is live but no frame rendered yet (honest state,
+   *  not a mysterious black rectangle). */
+  const [screenState, setScreenState] = useState<'live' | 'waiting' | 'ended'>('waiting');
   const coachVideoStreamRef = useRef<MediaStream | null>(null);
   useEffect(() => {
     if (role !== 'manager' || channel !== 'main') {
@@ -200,15 +203,39 @@ export const CallDock: React.FC<DockProps> = ({
   useEffect(() => {
     const el = remoteVideoRef.current;
     if (!el || hasRemoteVideo) return; // the live connection owns the element
-    if (coachVideo) {
-      const stream = new MediaStream([coachVideo]);
-      coachVideoStreamRef.current = stream;
-      el.srcObject = stream;
-      void el.play().catch(() => undefined);
-    } else if (coachVideoStreamRef.current && el.srcObject === coachVideoStreamRef.current) {
-      el.srcObject = null;
-      coachVideoStreamRef.current = null;
+    if (!coachVideo) {
+      if (coachVideoStreamRef.current && el.srcObject === coachVideoStreamRef.current) {
+        el.srcObject = null;
+        coachVideoStreamRef.current = null;
+      }
+      return;
     }
+    const stream = new MediaStream([coachVideo]);
+    coachVideoStreamRef.current = stream;
+    el.srcObject = stream;
+    if (coachVideo.readyState !== 'live') {
+      setScreenState('ended');
+      return;
+    }
+    setScreenState(el.videoWidth > 0 ? 'live' : 'waiting');
+    const onPlaying = () => setScreenState('live');
+    const onTrackEnded = () => setScreenState('ended');
+    el.addEventListener('playing', onPlaying);
+    coachVideo.addEventListener('ended', onTrackEnded);
+    // Chrome can sit at 0 frames right after the track starts delivering
+    // (element assigned the stream before the first frame arrived).
+    // Nudge it once before leaving the "waiting" state.
+    const t = window.setTimeout(() => {
+      if (el.videoWidth === 0 && el.srcObject === stream) {
+        el.load();
+        void el.play().catch(() => undefined);
+      }
+    }, 2500);
+    return () => {
+      window.clearTimeout(t);
+      el.removeEventListener('playing', onPlaying);
+      coachVideo.removeEventListener('ended', onTrackEnded);
+    };
   }, [coachVideo, hasRemoteVideo, remoteVideoRef]);
   const showVideo = hasRemoteVideo || Boolean(coachVideo);
 
@@ -409,9 +436,15 @@ export const CallDock: React.FC<DockProps> = ({
           }`}
           style={videoExpanded ? undefined : { maxHeight: 160 }}
         />
-        {coachVideo && !hasRemoteVideo && !videoExpanded && (
-          <span className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded bg-violet-600/80 text-white text-[9px] font-bold tracking-wide">
-            COACHING SCREEN
+        {showVideo && !videoExpanded && (
+          <span className={`absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide ${
+            hasRemoteVideo || screenState === 'live' ? 'bg-violet-600/80 text-white' : 'bg-black/70 text-white/80'
+          }`}>
+            {hasRemoteVideo
+              ? 'SCREEN SHARE'
+              : screenState === 'ended'
+              ? 'SCREEN SHARE ENDED'
+              : 'Waiting for the screen signal…'}
           </span>
         )}
         {showVideo && !videoExpanded && (
@@ -451,15 +484,20 @@ export const CallDock: React.FC<DockProps> = ({
           {muted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
         </button>
 
-        <button
-          onClick={toggleScreenShare}
-          title="Share screen"
-          className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-            sharingScreen ? 'bg-[#B08B48] text-white' : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12]'
-          }`}
-        >
-          <MonitorUp className="w-4 h-4" />
-        </button>
+        {/* Screen sharing is a staff feature: clients call from phones
+            and iPhone Safari has no screen sharing at all, so the
+            button would only fail for them. */}
+        {role !== 'client' && (
+          <button
+            onClick={toggleScreenShare}
+            title="Share screen"
+            className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+              sharingScreen ? 'bg-[#B08B48] text-white' : 'bg-[#1C412C]/[.06] text-[#213532] hover:bg-[#1C412C]/[.12]'
+            }`}
+          >
+            <MonitorUp className="w-4 h-4" />
+          </button>
+        )}
 
         {role === 'manager' && (
           // The manager is the only one with a record button: the main
