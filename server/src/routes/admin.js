@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
 import { logActivity } from './workspace.js';
+import { ownClientIds, isOwnId } from '../ownership.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -136,6 +137,11 @@ router.get('/users/:id/activity', auth('STAFF'), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid user id' });
 
+  // A manager may only open the activity log of their own clients
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), id)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
+
   // entries BY the user (logins etc.) and ABOUT the user (staff actions on them)
   const rows = (await store.allWhere('activity', (a) =>
     a.actorId === id || a.target === `user ${id}` || Number(a.target) === id || String(a.target).includes(`#${id}`),
@@ -205,6 +211,10 @@ router.patch('/users/:id', auth('STAFF'), async (req, res) => {
   }
 
   if (defaultLeverage !== undefined) {
+    // The only field a manager may change here — on their own clients
+    if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), id)) {
+      return res.status(403).json({ error: 'This client is not assigned to you.' });
+    }
     const lev = Math.max(1, Math.min(500, Number(defaultLeverage) || 1));
     fields.defaultLeverage = lev;
   }
@@ -249,6 +259,9 @@ router.put('/users/:id/balance', auth('STAFF'), async (req, res) => {
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (target.role !== 'CLIENT') {
     return res.status(400).json({ error: 'Only client balances can be changed' });
+  }
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), id)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
   }
 
   const raw = Number(req.body?.balance);

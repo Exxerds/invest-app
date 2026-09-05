@@ -74,6 +74,7 @@ export async function fireDueAppointments() {
       if (t - now > s.ms) continue;
       await notify({
         audience: 'staff',
+        userId: a.clientId,
         kind: 'calendar',
         title: `Calendar reminder — ${s.label}`,
         message: `${a.clientName} — ${a.title || 'appointment'} at ${when}${a.notes ? `. ${a.notes}` : ''}`,
@@ -89,8 +90,28 @@ export async function fireDueAppointments() {
 /** Notifications a given user is allowed to see, newest first */
 export async function listFor(user) {
   const isStaff = user.role === 'ADMIN' || user.role === 'MANAGER';
-  const rows = await store.allWhere('notifications', (n) =>
-    isStaff ? n.audience === 'staff' : n.audience === 'client' && n.userId === user.id,
-  );
+  if (!isStaff) {
+    return (await store.allWhere('notifications', (n) =>
+      n.audience === 'client' && n.userId === user.id,
+    )).sort((a, b) => b.id - a.id);
+  }
+
+  const rows = await store.allWhere('notifications', (n) => n.audience === 'staff');
+  // A manager's bell only rings for their own clients (and general
+  // market news), never for the rest of the book.
+  if (user.role === 'MANAGER') {
+    const all = await store.all('users');
+    const mine = String(user.name || '').trim().toLowerCase();
+    const own = new Set(
+      all
+        .filter(u => u.role === 'CLIENT' && (
+          Number(u.assignedManagerId) === Number(user.id) ||
+          (mine && String(u.assignedManagerName || '').trim().toLowerCase() === mine)))
+        .map(u => u.id),
+    );
+    return rows
+      .filter(n => n.kind === 'market_pulse' || (n.userId != null && own.has(Number(n.userId))))
+      .sort((a, b) => b.id - a.id);
+  }
   return rows.sort((a, b) => b.id - a.id);
 }

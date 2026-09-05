@@ -28,6 +28,7 @@ import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
 import { logActivity } from './workspace.js';
+import { ownClientIds, isOwnId } from '../ownership.js';
 
 // LiveKit is optional — if env vars are missing we stay on P2P
 let AccessToken = null;
@@ -57,6 +58,16 @@ async function auth(req, res, next) {
 
 const isStaff = (u) => u.role === 'ADMIN' || u.role === 'MANAGER';
 const clean = (v, max = 200) => String(v ?? '').slice(0, max);
+
+/**
+ * A manager only sees calls they made themselves or with clients
+ * assigned to them; an admin (supervisor) sees every call.
+ */
+async function callVisibleTo(call, user, own) {
+  if (user.role === 'ADMIN') return true;
+  if (call.managerId === user.id || call.clientId === user.id) return true;
+  return isOwnId(own, call.clientId);
+}
 
 /**
  * Self-healing: calls whose tab was closed (or that nobody answered)
@@ -220,6 +231,11 @@ router.post('/', auth, async (req, res) => {
   const client = await store.byId('users', clientId);
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
+  // A manager may only call clients assigned to them
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), client.id)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
+
   // One live call per client: clicking "Call" twice used to stack a second
   // ringing record on top of the first, and the client kept seeing the
   // incoming prompt again and again for a call that was already over.
@@ -266,6 +282,7 @@ router.post('/request', auth, async (req, res) => {
 
   await notify({
     audience: 'staff',
+    userId: req.user.id,
     kind: 'call_request',
     title: 'Client wants a call',
     message: `${req.user.name} requested a call from the client cabinet.`,
@@ -281,15 +298,14 @@ router.post('/request', auth, async (req, res) => {
 router.get('/inbox', auth, async (req, res) => {
   await expireStaleCalls();
   const all = await store.all('calls');
-  const mine = all.filter(c => {
-    if (c.status === 'ended') return false;
-    if (c.clientId === req.user.id) return true;
-    if (c.managerId === req.user.id) return true;
-    // Staff (admin / manager) may see and join ANY live call as a whisper
-    // coach. Previously only calls the user was already whispering on were
-    // returned, so a supervisor standing by could never attach.
-    return isStaff(req.user);
-  });
+  const own = req.user.role === 'MANAGER' ? await ownClientIds(req.user) : null;
+  // Admins (supervisors) see every live call to stand by and whisper-coach.
+  // Managers see their own calls and calls with their assigned clients only.
+  const mine = (await Promise.all(
+    all
+      .filter(c => c.status !== 'ended')
+      .map(async c => (await callVisibleTo(c, req.user, own) ? c : null)),
+  )).filter(Boolean);
   res.json({ calls: mine.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1)) });
 });
 
@@ -301,7 +317,10 @@ async function signalContext(req, res, callId) {
     res.status(404).json({ error: 'Call not found' });
     return null;
   }
-  const allowed = call.clientId === req.user.id || call.managerId === req.user.id || isStaff(req.user);
+  let allowed = call.clientId === req.user.id || call.managerId === req.user.id;
+  if (!allowed && isStaff(req.user)) {
+    allowed = req.user.role === 'ADMIN' || (await callVisibleTo(call, req.user, await ownClientIds(req.user)));
+  }
   if (!allowed) {
     res.status(403).json({ error: 'Access denied' });
     return null;
@@ -462,6 +481,10 @@ router.post('/:id/whisper', auth, async (req, res) => {
   const callId = Number(req.params.id);
   const call = await store.byId('calls', callId);
   if (!call) return res.status(404).json({ error: 'Call not found' });
+  // A manager may only whisper on their own calls; admins stay unrestricted
+  if (req.user.role === 'MANAGER' && !(await callVisibleTo(call, req.user, await ownClientIds(req.user)))) {
+    return res.status(403).json({ error: 'This call is not yours.' });
+  }
   if (call.status === 'ended') return res.status(400).json({ error: 'Call has already ended' });
 
   const join = req.body?.join !== false;
@@ -487,6 +510,9 @@ router.post('/:id/recording', auth, async (req, res) => {
   const callId = Number(req.params.id);
   const call = await store.byId('calls', callId);
   if (!call) return res.status(404).json({ error: 'Call not found' });
+  if (req.user.role === 'MANAGER' && !(await callVisibleTo(call, req.user, await ownClientIds(req.user)))) {
+    return res.status(403).json({ error: 'This call is not yours.' });
+  }
 
   // Stored as a data URL: no object storage needed for short clips
   const data = String(req.body?.data || '');
@@ -506,8 +532,13 @@ router.get('/log', auth, async (req, res) => {
 
   await expireStaleCalls();
 
+  const own = req.user.role === 'MANAGER' ? await ownClientIds(req.user) : null;
   const all = await store.all('calls');
-  const log = all
+  // A manager's history is limited to their own calls; admins see all.
+  const visible = (await Promise.all(
+    all.map(async c => (await callVisibleTo(c, req.user, own) ? c : null)),
+  )).filter(Boolean);
+  const log = visible
     .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))
     .slice(0, 200)
     .map(c => ({
@@ -549,7 +580,11 @@ router.get('/log', auth, async (req, res) => {
 router.get('/:id/recording', auth, async (req, res) => {
   if (!isStaff(req.user)) return res.status(403).json({ error: 'Staff access only' });
   const call = await store.byId('calls', Number(req.params.id));
-  if (!call?.recordingUrl) return res.status(404).json({ error: 'No recording for this call' });
+  if (!call) return res.status(404).json({ error: 'Call not found' });
+  if (req.user.role === 'MANAGER' && !(await callVisibleTo(call, req.user, await ownClientIds(req.user)))) {
+    return res.status(403).json({ error: 'This call is not yours.' });
+  }
+  if (!call.recordingUrl) return res.status(404).json({ error: 'No recording for this call' });
   res.json({ data: call.recordingUrl });
 });
 

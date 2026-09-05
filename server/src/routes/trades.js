@@ -20,6 +20,7 @@ import {
   validateProtection,
   protectionHit,
 } from '../margin.js';
+import { ownClientIds, isOwnId } from '../ownership.js';
 
 /** Admin-configured margin rates, if any. */
 async function marginOverrides() {
@@ -73,7 +74,11 @@ router.get('/mine', auth, async (req, res) => {
 });
 
 router.get('/all', auth, staffOnly, async (req, res) => {
-  res.json({ trades: await store.all('trades') });
+  const own = await ownClientIds(req.user);
+  const trades = own === null
+    ? await store.all('trades')
+    : await store.allWhere('trades', t => isOwnId(own, t.userId));
+  res.json({ trades });
 });
 
 /* ---------------- open ---------------- */
@@ -95,6 +100,12 @@ router.post('/', auth, async (req, res) => {
     }
     const target = await store.byId('users', Number(b.userId));
     if (!target) return res.status(404).json({ error: 'Client not found' });
+    if (req.user.role === 'MANAGER') {
+      const own = await ownClientIds(req.user);
+      if (!isOwnId(own, target.id)) {
+        return res.status(403).json({ error: 'This client is not assigned to you.' });
+      }
+    }
     owner = target;
   }
 
@@ -239,6 +250,19 @@ router.patch('/:id', auth, staffOnly, async (req, res) => {
   }
 
   const id = Number(req.params.id);
+
+  // A manager may edit positions of their own clients only
+  if (req.user.role === 'MANAGER') {
+    const existing = await store.byId('trades', id);
+    if (!existing) return res.status(404).json({ error: 'Position not found' });
+    if (existing.userId !== req.user.id) {
+      const own = await ownClientIds(req.user);
+      if (!isOwnId(own, existing.userId)) {
+        return res.status(403).json({ error: 'This client is not assigned to you.' });
+      }
+    }
+  }
+
   const b = req.body || {};
   const patch = {};
 
@@ -274,6 +298,14 @@ router.post('/:id/close', auth, async (req, res) => {
 
   if (!isStaff(req.user) && existing.userId !== req.user.id) {
     return res.status(403).json({ error: 'Access denied' });
+  }
+
+  // A manager may close positions of their own clients only
+  if (req.user.role === 'MANAGER' && existing.userId !== req.user.id) {
+    const own = await ownClientIds(req.user);
+    if (!isOwnId(own, existing.userId)) {
+      return res.status(403).json({ error: 'This client is not assigned to you.' });
+    }
   }
 
   // "Allow manual position management" — CRM setting, admin-managed.

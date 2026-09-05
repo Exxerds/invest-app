@@ -18,6 +18,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
+import { ownClientIds, isOwnId } from '../ownership.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -259,7 +260,10 @@ router.post('/investments/:id/claim', auth, async (req, res) => {
 });
 
 router.get('/notes', auth, staffOnly, async (req, res) => {
-  const notes = await store.all('notes');
+  const own = await ownClientIds(req.user);
+  const notes = own === null
+    ? await store.all('notes')
+    : await store.allWhere('notes', n => isOwnId(own, n.clientId));
   res.json({ notes: notes.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
 });
 
@@ -268,6 +272,9 @@ router.post('/notes', auth, staffOnly, async (req, res) => {
   const clientId = String(clean(req.body?.clientId, 60)).replace(/^acc-/, '').replace(/\D/g, '') || clean(req.body?.clientId, 60);
   if (!text) return res.status(400).json({ error: 'Note cannot be empty' });
   if (!clientId) return res.status(400).json({ error: 'Client is required' });
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), clientId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
 
   // Notes are append-only by design: an agent can add, never rewrite history
   const note = await store.insert('notes', {
@@ -292,15 +299,22 @@ router.get('/messages', auth, async (req, res) => {
     ? Number(req.query.clientId) || 0
     : req.user.id;
 
+  const own = isStaff(req.user) ? await ownClientIds(req.user) : null;
+
   if (isStaff(req.user) && !threadId) {
-    // Inbox view: latest message per client
+    // Inbox view: latest message per client (a manager: per own client)
     const all = await store.all('messages');
+    const visible = own === null ? all : all.filter(m => isOwnId(own, m.threadId));
     const threads = new Map();
-    for (const m of all) {
+    for (const m of visible) {
       const prev = threads.get(m.threadId);
       if (!prev || prev.createdAt < m.createdAt) threads.set(m.threadId, m);
     }
     return res.json({ threads: [...threads.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
+  }
+
+  if (req.user.role === 'MANAGER' && !isOwnId(own, threadId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
   }
 
   const messages = await store.manyByField('messages', 'threadId', threadId);
@@ -314,6 +328,9 @@ router.post('/messages', auth, async (req, res) => {
   // Clients always write into their own thread; staff pick one
   const threadId = isStaff(req.user) ? Number(req.body?.clientId) || 0 : req.user.id;
   if (!threadId) return res.status(400).json({ error: 'Client is required' });
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), threadId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
 
   const message = await store.insert('messages', {
     threadId,
@@ -379,8 +396,15 @@ router.put('/crm-settings', auth, async (req, res) => {
 /* ---------------- per-client status ---------------- */
 
 router.get('/client-status', auth, staffOnly, async (req, res) => {
-  const rec = await store.byField('settings', 'key', 'clientStatuses');
-  res.json({ statuses: rec?.value || {} });
+  const own = await ownClientIds(req.user);
+  const all = await store.byField('settings', 'key', 'clientStatuses');
+  let statuses = all?.value || {};
+  if (own !== null) {
+    statuses = Object.fromEntries(
+      Object.entries(statuses).filter(([id]) => isOwnId(own, id)),
+    );
+  }
+  res.json({ statuses });
 });
 
 router.put('/client-status', auth, staffOnly, async (req, res) => {
@@ -388,6 +412,10 @@ router.put('/client-status', auth, staffOnly, async (req, res) => {
   const clientId = String(rawId).replace(/^acc-/, '').replace(/\D/g, '') || rawId;
   const status = clean(req.body?.status, 60);
   if (!clientId) return res.status(400).json({ error: 'Client is required' });
+  const own = await ownClientIds(req.user);
+  if (req.user.role === 'MANAGER' && !isOwnId(own, clientId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
 
   const rec = await store.byField('settings', 'key', 'clientStatuses');
   const prev = { ...(rec?.value || {}) };
@@ -398,7 +426,11 @@ router.put('/client-status', auth, staffOnly, async (req, res) => {
   else await store.insert('settings', { key: 'clientStatuses', ...payload });
 
   await logActivity({ actor: req.user, action: 'status_changed', target: clientId, details: status });
-  res.json({ ok: true, statuses: value });
+  // A manager's response must not carry other clients' statuses
+  const out = own === null
+    ? value
+    : Object.fromEntries(Object.entries(value).filter(([id]) => isOwnId(own, id)));
+  res.json({ ok: true, statuses: out });
 });
 
 /* ---------------- activity log ---------------- */
@@ -406,7 +438,21 @@ router.put('/client-status', auth, staffOnly, async (req, res) => {
 router.get('/activity', auth, staffOnly, async (req, res) => {
   const all = await store.all('activity');
   const target = req.query.target ? String(req.query.target) : null;
-  const filtered = target ? all.filter(a => a.target === target) : all;
+  let filtered = target ? all.filter(a => a.target === target) : all;
+
+  // A manager's audit trail: their own actions plus actions on their
+  // assigned clients — nothing about the rest of the book.
+  if (req.user.role === 'MANAGER') {
+    const own = await ownClientIds(req.user);
+    const userIds = new Set([...own].map(String));
+    filtered = filtered.filter(a => {
+      if (a.actorId === req.user.id) return true;
+      const t = String(a.target || '');
+      const m = t.match(/(?:^|[^0-9])(\d{1,9})(?=$|[^0-9])/);
+      return m ? userIds.has(m[1]) : false;
+    });
+  }
+
   res.json({
     activity: filtered.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 300),
   });
@@ -417,14 +463,23 @@ router.get('/activity', auth, staffOnly, async (req, res) => {
    answers 403. Stored as plain numeric user-id keys. */
 
 router.get('/withdraw-blocks', auth, staffOnly, async (req, res) => {
-  const rec = await store.byField('settings', 'key', 'withdrawBlocks');
-  res.json({ blocks: rec?.value || {} });
+  const own = await ownClientIds(req.user);
+  const all = await store.byField('settings', 'key', 'withdrawBlocks');
+  const value = all?.value || {};
+  const blocks = own === null
+    ? value
+    : Object.fromEntries(Object.entries(value).filter(([id]) => isOwnId(own, id)));
+  res.json({ blocks });
 });
 
 router.put('/withdraw-blocks', auth, staffOnly, async (req, res) => {
   const clientId = String(req.body?.clientId || '').replace(/\D/g, '');
   const blocked = Boolean(req.body?.blocked);
   if (!clientId) return res.status(400).json({ error: 'clientId is required' });
+  const own = await ownClientIds(req.user);
+  if (req.user.role === 'MANAGER' && !isOwnId(own, clientId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
 
   const rec = await store.byField('settings', 'key', 'withdrawBlocks');
   const value = { ...(rec?.value || {}) };
@@ -441,7 +496,11 @@ router.put('/withdraw-blocks', auth, staffOnly, async (req, res) => {
     target: `user ${clientId}`,
     details: '',
   });
-  res.json({ ok: true, blocks: value });
+  // A manager's response must not carry other clients' blocks
+  const out = own === null
+    ? value
+    : Object.fromEntries(Object.entries(value).filter(([id]) => isOwnId(own, id)));
+  res.json({ ok: true, blocks: out });
 });
 
 /* ---------------- staff calendar (admin + manager) ---------------- */
@@ -449,7 +508,10 @@ router.put('/withdraw-blocks', auth, staffOnly, async (req, res) => {
 router.get('/appointments', auth, staffOnly, async (req, res) => {
   const { fireDueAppointments } = await import('../notifications.js');
   await fireDueAppointments().catch(() => undefined);
-  const all = await store.all('appointments');
+  const own = await ownClientIds(req.user);
+  const all = own === null
+    ? await store.all('appointments')
+    : await store.allWhere('appointments', a => isOwnId(own, a.clientId));
   res.json({
     appointments: all
       // Reminders created before the explicit title existed carry the
@@ -469,6 +531,9 @@ router.post('/appointments', auth, staffOnly, async (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'Pick a client' });
   const client = await store.byId('users', clientId);
   if (!client || client.role !== 'CLIENT') return res.status(404).json({ error: 'Client not found' });
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), clientId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
   const startsAt = String(b.startsAt || '').trim();
   if (!startsAt || Number.isNaN(new Date(startsAt).getTime())) {
     return res.status(400).json({ error: 'Pick a date and time' });
@@ -502,6 +567,9 @@ router.patch('/appointments/:id', auth, staffOnly, async (req, res) => {
   const id = Number(req.params.id);
   const existing = await store.byId('appointments', id);
   if (!existing) return res.status(404).json({ error: 'Appointment not found' });
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), existing.clientId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
   const b = req.body || {};
   const patch = {};
   if (b.title != null) patch.title = clean(b.title, 160);
@@ -514,6 +582,11 @@ router.patch('/appointments/:id', auth, staffOnly, async (req, res) => {
 
 router.delete('/appointments/:id', auth, staffOnly, async (req, res) => {
   const id = Number(req.params.id);
+  const existing = await store.byId('appointments', id);
+  if (!existing) return res.status(404).json({ error: 'Appointment not found' });
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), existing.clientId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
   const removed = await store.removeWhere('appointments', (a) => a.id === id);
   if (!removed) return res.status(404).json({ error: 'Appointment not found' });
   res.json({ ok: true });

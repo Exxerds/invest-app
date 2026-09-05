@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import * as store from '../db.js';
 import { USE_PG } from '../db.js';
 import { notify } from '../notifications.js';
+import { ownClientIds, isOwnId } from '../ownership.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -153,12 +154,18 @@ router.post('/upload', auth, async (req, res) => {
 /* ---------------- staff ---------------- */
 
 router.get('/all', auth, staffOnly, async (req, res) => {
-  const docs = await store.all('kyc');
+  const own = await ownClientIds(req.user);
+  const docs = own === null
+    ? await store.all('kyc')
+    : await store.allWhere('kyc', d => isOwnId(own, d.userId));
   res.json({ documents: docs.map(publicDoc) });
 });
 
 router.get('/user/:userId', auth, staffOnly, async (req, res) => {
   const id = Number(req.params.userId);
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), id)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
   const docs = await store.manyByField('kyc', 'userId', id);
   res.json({ documents: docs.map(publicDoc) });
 });
@@ -169,6 +176,12 @@ router.post('/:id/review', auth, staffOnly, async (req, res) => {
 
   if (status !== 'approved' && status !== 'rejected') {
     return res.status(400).json({ error: 'Status must be approved or rejected' });
+  }
+
+  const current = await store.byId('kyc', id);
+  if (!current) return res.status(404).json({ error: 'Document not found' });
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), current.userId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
   }
 
   const doc = await store.update('kyc', id, {
@@ -224,10 +237,15 @@ router.get('/file/:id', auth, async (req, res) => {
   const doc = await store.byId('kyc', id);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
 
-  // clients may only look at their own scans
+  // clients may only look at their own scans; managers only at their own clients
   const isStaff = req.user.role === 'ADMIN' || req.user.role === 'MANAGER';
   if (!isStaff && doc.userId !== req.user.id) {
     return res.status(403).json({ error: 'Access denied' });
+  }
+  if (req.user.role === 'MANAGER' && doc.userId !== req.user.id) {
+    if (!isOwnId(await ownClientIds(req.user), doc.userId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
   }
   res.setHeader('Content-Type', doc.mime);
   res.setHeader('Cache-Control', 'private, max-age=60');

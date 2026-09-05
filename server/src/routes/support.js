@@ -12,6 +12,7 @@ import * as store from '../db.js';
 import { sendMail, letterLayout } from '../mailer.js';
 import { notify } from '../notifications.js';
 import { pushToUser } from './push.js';
+import { ownClientIds, isOwnId } from '../ownership.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -38,6 +39,9 @@ const clean = (v, max = 2000) => String(v ?? '').slice(0, max);
 router.get('/conversations', auth, async (req, res) => {
   if (!isStaff(req.user)) return res.status(403).json({ error: 'Staff access only' });
 
+  // A manager only sees threads with clients assigned to them
+  const own = req.user.role === 'MANAGER' ? await ownClientIds(req.user) : null;
+
   const allMessages = await store.all('messages');
   // only support-chat messages have clientId field
   const supportMessages = allMessages.filter(m => m.clientId != null);
@@ -51,6 +55,7 @@ router.get('/conversations', auth, async (req, res) => {
 
   const result = [];
   for (const [clientId, msgs] of byClient) {
+    if (own !== null && !isOwnId(own, clientId)) continue;
     // sort by createdAt ascending for correct first/last
     msgs.sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
     const last = msgs[msgs.length - 1];
@@ -103,6 +108,9 @@ router.get('/messages', auth, async (req, res) => {
     const clientUser = await store.byId('users', targetId);
     if (!clientUser) return res.status(404).json({ error: 'Client not found' });
     if (clientUser.role !== 'CLIENT') return res.status(400).json({ error: 'Invalid client' });
+    if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), targetId)) {
+      return res.status(403).json({ error: 'This client is not assigned to you.' });
+    }
   }
 
   const all = await store.all('messages');
@@ -130,6 +138,9 @@ router.post('/messages', auth, async (req, res) => {
     const clientUser = await store.byId('users', clientId);
     if (!clientUser) return res.status(404).json({ error: 'Client not found' });
     if (clientUser.role !== 'CLIENT') return res.status(400).json({ error: 'Invalid client' });
+    if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), clientId)) {
+      return res.status(403).json({ error: 'This client is not assigned to you.' });
+    }
   }
 
   const from = req.user.role === 'CLIENT' ? 'client' : 'staff';
@@ -145,9 +156,16 @@ router.post('/messages', auth, async (req, res) => {
   });
 
   if (from === 'client') {
-    // notify all staff via e-mail + in-app bell
+    // E-mail goes to admins plus the client's assigned manager only, so a
+    // message never lands in the inbox of an unrelated manager.
     const users = await store.all('users');
-    const staff = users.filter(u => u.role === 'ADMIN' || u.role === 'MANAGER');
+    const client = await store.byId('users', clientId);
+    const own = client
+      ? users.filter(u =>
+          Number(client.assignedManagerId) === u.id && u.role === 'MANAGER')
+      : [];
+    const staff = users.filter(u =>
+      u.role === 'ADMIN' || own.some(m => m.id === u.id));
     const timeStr = new Date(msg.createdAt).toLocaleString('en-US');
     const html = letterLayout('New support message', `
       <p style="color:#213532;font-size:14px;line-height:1.6;">Client <strong>${req.user.name}</strong> (${req.user.email}) sent a new support message at ${timeStr}:</p>
@@ -183,6 +201,9 @@ router.post('/read', auth, async (req, res) => {
     if (raw == null || raw === '') return res.status(400).json({ error: 'clientId is required' });
     clientId = Number(raw);
     if (!Number.isFinite(clientId)) return res.status(400).json({ error: 'Invalid clientId' });
+    if (isStaff(req.user) && req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), clientId)) {
+      return res.status(403).json({ error: 'This client is not assigned to you.' });
+    }
   }
 
   const all = await store.all('messages');

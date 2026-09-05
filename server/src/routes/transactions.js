@@ -19,6 +19,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import * as store from '../db.js';
 import { notify } from '../notifications.js';
+import { ownClientIds, isOwnId } from '../ownership.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -201,7 +202,10 @@ router.post('/withdraw', auth, async (req, res) => {
 /* ---------------- staff: review queue ---------------- */
 
 router.get('/all', auth, staffOnly, async (req, res) => {
-  const items = await store.all('transactions');
+  const own = await ownClientIds(req.user);
+  const items = own === null
+    ? await store.all('transactions')
+    : await store.allWhere('transactions', t => isOwnId(own, t.userId));
   res.json({ transactions: items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
 });
 
@@ -209,6 +213,9 @@ router.post('/:id/approve', auth, staffOnly, async (req, res) => {
   const id = Number(req.params.id);
   const tx = await store.byId('transactions', id);
   if (!tx) return res.status(404).json({ error: 'Request not found' });
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), tx.userId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
   if (tx.status !== 'pending') return res.status(400).json({ error: 'Request is already processed' });
 
   const client = await store.byId('users', tx.userId);
@@ -249,6 +256,9 @@ router.post('/:id/reject', auth, staffOnly, async (req, res) => {
   const reason = String(req.body?.reason || '').slice(0, 300);
   const tx = await store.byId('transactions', id);
   if (!tx) return res.status(404).json({ error: 'Request not found' });
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), tx.userId)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
   if (tx.status !== 'pending') return res.status(400).json({ error: 'Request is already processed' });
 
   const updated = await store.update('transactions', id, {
@@ -284,6 +294,10 @@ router.post('/adjust', auth, staffOnly, async (req, res) => {
 
   const client = await store.byId('users', userId);
   if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  if (req.user.role === 'MANAGER' && !isOwnId(await ownClientIds(req.user), client.id)) {
+    return res.status(403).json({ error: 'This client is not assigned to you.' });
+  }
 
   const next = money(money(client.balance || 0) + amount);
   if (next < 0) return res.status(400).json({ error: 'Resulting balance cannot be negative' });
