@@ -5,7 +5,7 @@
 //  Dashboard · Trading (Spot/Futures/P2P/AI) · Withdrawals ·
 //  Transactions · Support · Call manager · Profile · Statistics
 // ============================================================
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -145,6 +145,73 @@ function liveAccruedOf(inv: ActiveInvestment, live: number, now: number): number
 }
 
 const WALLETS: Wallet[] = [];
+
+/**
+ * Asset class of an instrument — the same classifier the server margin
+ * model uses (server/src/margin.js), so legacy trades without a stored
+ * category still land in the right bucket.
+ */
+const KNOWN_CATEGORIES = ['Crypto', 'Stocks', 'Indices', 'Commodities', 'Currencies', 'Other'];
+const CRYPTO_RE = /^(BTC|XBT|ETH|SOL|BNB|XRP|LINK|ADA|DOGE|AVAX|MATIC|DOT|LTC|TRX|NEAR|USDT|USDC)/;
+const METALS_RE = /^(XAU|XAG|XPT|XPD|GOLD|SILVER)/;
+const ENERGY_RE = /(USOIL|UKOIL|BRENT|WTI|NG1|NGAS)/;
+const INDEX_RE = /(SPX|NDX|NSXUSD|DJI|US30|US500|NAS100|DAX|FTSE|NKY|DEU40|UKX)/;
+function clientCategoryOf(symbol: string, category?: string): string {
+  if (category && KNOWN_CATEGORIES.includes(category)) return category;
+  const s = String(symbol || '').toUpperCase().replace(/^[A-Z]+:/, '');
+  if (INDEX_RE.test(s)) return 'Indices';
+  if (METALS_RE.test(s) || ENERGY_RE.test(s)) return 'Commodities';
+  if (CRYPTO_RE.test(s)) return 'Crypto';
+  if (/^[A-Z]{6}$/.test(s) && /(USD|EUR|GBP|JPY|CHF|AUD|CAD|NZD)$/.test(s)) return 'Currencies';
+  if (/^[A-Z.]{1,5}$/.test(s)) return 'Stocks';
+  return 'Other';
+}
+
+const MARKET_COLORS: Record<string, string> = {
+  Crypto: '#B08B48',
+  Currencies: '#1C412C',
+  Commodities: '#2563eb',
+  Indices: '#7c3aed',
+  Stocks: '#0d9488',
+  Other: '#6b7280',
+};
+
+/**
+ * Cumulative realised P/L curve, drawn from the client's own closed
+ * trades (oldest → newest). No sample data: an empty account shows an
+ * empty state instead of somebody else's curve.
+ */
+const PlChart: React.FC<{ values: number[] }> = ({ values }) => {
+  const W = 400;
+  const H = 140;
+  const PAD = 10;
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  const span = max - min || 1;
+  const x = (i: number) => (values.length === 1 ? W / 2 : (i / (values.length - 1)) * W);
+  const y = (v: number) => H - PAD - ((v - min) / span) * (H - PAD * 2);
+  const pts = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  const line = `M${pts.join(' L')}`;
+  const y0 = y(0);
+  const area = `${line} L${x(values.length - 1).toFixed(1)},${y0.toFixed(1)} L${x(0).toFixed(1)},${y0.toFixed(1)} Z`;
+  const rising = values[values.length - 1] >= 0;
+  const color = rising ? '#1C412C' : '#dc2626';
+  return (
+    <svg viewBox="0 0 400 140" className="w-full h-44">
+      <defs>
+        <linearGradient id="plreal" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity=".35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {min < 0 && max > 0 && (
+        <line x1="0" x2={W} y1={y0} y2={y0} stroke="#E4DECB" strokeWidth="1" strokeDasharray="4 4" />
+      )}
+      <path d={area} fill="url(#plreal)" />
+      <path d={line} fill="none" stroke={color} strokeWidth="2.5" />
+    </svg>
+  );
+};
 
 export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   user,
@@ -564,6 +631,62 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
    * demo data is gone — that is why every card was stuck at $0.
    */
   const openTrades = myTrades.filter(t => t.status === 'OPEN');
+
+  /**
+   * Statistics tab figures — computed from this account's own trades,
+   * with the same formulas the server uses for the PDF statement
+   * (server/src/routes/statements.js): realised P/L from closed
+   * trades, volume as notional, win rate over closed trades.
+   */
+  const stats = useMemo(() => {
+    const closed = myTrades.filter(t => t.status === 'CLOSED');
+    const open = myTrades.filter(t => t.status === 'OPEN');
+    const pending = myTrades.filter(t => t.status === 'PENDING');
+    const realisedPnl = closed.reduce((s, t) => s + (Number(t.pnl) || 0), 0);
+    const wins = closed.filter(t => (Number(t.pnl) || 0) > 0).length;
+    const volume = myTrades.reduce((s, t) => s + (Number(t.notional) || Number(t.amount) || 0), 0);
+    return {
+      closed,
+      openCount: open.length,
+      pendingCount: pending.length,
+      realisedPnl,
+      wins,
+      volume,
+      total: myTrades.length,
+      winRate: closed.length ? Math.round((wins / closed.length) * 1000) / 10 : null,
+    };
+  }, [myTrades]);
+
+  /** Cumulative realised P/L, oldest closed trade first. */
+  const plSeries = useMemo(() => {
+    const pts = stats.closed
+      .slice()
+      .sort((a, b) => String(a.closedAt || a.openedAt).localeCompare(String(b.closedAt || b.openedAt)));
+    let cum = 0;
+    return pts.map(t => (cum += Number(t.pnl) || 0));
+  }, [stats.closed]);
+  const plDates = useMemo(() => {
+    const pts = stats.closed
+      .slice()
+      .sort((a, b) => String(a.closedAt || a.openedAt).localeCompare(String(b.closedAt || b.openedAt)));
+    const fmtD = (iso?: string) =>
+      iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+    return { first: fmtD(pts[0]?.closedAt || pts[0]?.openedAt), last: fmtD(pts[pts.length - 1]?.closedAt || pts[pts.length - 1]?.openedAt) };
+  }, [stats.closed]);
+
+  /** Volume share per asset class over closed trades. */
+  const marketDist = useMemo(() => {
+    const byCat: Record<string, number> = {};
+    stats.closed.forEach(t => {
+      const cat = clientCategoryOf(t.symbol, t.category);
+      byCat[cat] = (byCat[cat] || 0) + (Number(t.notional) || Number(t.amount) || 0);
+    });
+    const total = Object.values(byCat).reduce((s, v) => s + v, 0);
+    if (!total) return [];
+    return Object.entries(byCat)
+      .map(([m, v]) => ({ m, v: Math.round((v / total) * 1000) / 10 }))
+      .sort((a, b) => b.v - a.v);
+  }, [stats.closed]);
   const investedInPositions = myInvestments.reduce((s, inv) => s + (Number(inv.amount) || 0), 0);
   const positionsAccrued = myInvestments.reduce(
     (s, inv) => s + liveAccruedOf(inv, invPriceOf(inv), nowTs),
@@ -1394,45 +1517,65 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         {tab === 'statistics' && (
           <div className="space-y-5">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <Kpi icon={TrendingUp} label="Total PnL" value="$907.43" tone="green" hint="Better than 84% of traders" />
-              <Kpi icon={BarChart3} label="Trading volume" value="$136,984.68" />
-              <Kpi icon={Layers} label="Trades" value="22" tone="blue" />
-              <Kpi icon={DollarSign} label="Win rate" value="45.5%" tone="gold" />
+              <Kpi
+                icon={TrendingUp}
+                label="Total PnL"
+                value={stats.realisedPnl < 0 ? `-${usd(Math.abs(stats.realisedPnl))}` : usd(stats.realisedPnl)}
+                tone={stats.realisedPnl >= 0 ? 'green' : 'red'}
+                hint="Realised, all time"
+              />
+              <Kpi icon={BarChart3} label="Trading volume" value={usd(stats.volume)} />
+              <Kpi
+                icon={Layers}
+                label="Trades"
+                value={String(stats.total)}
+                tone="blue"
+                hint={`${stats.closed.length} closed · ${stats.openCount} open${stats.pendingCount ? ` · ${stats.pendingCount} pending` : ''}`}
+              />
+              <Kpi
+                icon={DollarSign}
+                label="Win rate"
+                value={stats.winRate == null ? '—' : `${stats.winRate}%`}
+                tone="gold"
+                hint={stats.closed.length ? `${stats.wins} of ${stats.closed.length} in profit` : 'No closed trades yet'}
+              />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Card title="Profit / loss dynamics">
-                <div className="p-5">
-                  <svg viewBox="0 0 400 140" className="w-full h-44">
-                    <defs>
-                      <linearGradient id="pl" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#B08B48" stopOpacity=".45" />
-                        <stop offset="100%" stopColor="#B08B48" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                    <path d="M0,120 L50,110 L100,118 L150,84 L200,92 L250,54 L300,62 L350,28 L400,16 L400,140 L0,140 Z" fill="url(#pl)" />
-                    <path d="M0,120 L50,110 L100,118 L150,84 L200,92 L250,54 L300,62 L350,28 L400,16" fill="none" stroke="#B08B48" strokeWidth="2.5" />
-                  </svg>
-                </div>
+                {plSeries.length === 0 ? (
+                  <div className="p-5 text-[12px] text-[#213532]/60 leading-relaxed">
+                    No closed trades yet — the curve appears after your first closed position.
+                  </div>
+                ) : (
+                  <div className="p-5">
+                    <PlChart values={plSeries} />
+                    <div className="flex justify-between mt-1 text-[10px] text-[#213532]/60 font-medium">
+                      <span>{plDates.first}</span>
+                      <span>{plDates.last}</span>
+                    </div>
+                  </div>
+                )}
               </Card>
               <Card title="Distribution by markets">
-                <div className="p-5 space-y-3">
-                  {[
-                    { m: 'Crypto', v: 62, c: '#B08B48' },
-                    { m: 'Forex', v: 21, c: '#1C412C' },
-                    { m: 'Metals', v: 11, c: '#2563eb' },
-                    { m: 'Indices', v: 6, c: '#7c3aed' },
-                  ].map(r => (
-                    <div key={r.m}>
-                      <div className="flex justify-between text-[12px] mb-1">
-                        <span className="text-[#213532] font-semibold">{r.m}</span>
-                        <span className="text-[#213532]/70">{r.v}%</span>
+                {marketDist.length === 0 ? (
+                  <div className="p-5 text-[12px] text-[#213532]/60 leading-relaxed">
+                    No closed trades yet — the distribution appears after your first closed position.
+                  </div>
+                ) : (
+                  <div className="p-5 space-y-3">
+                    {marketDist.map(r => (
+                      <div key={r.m}>
+                        <div className="flex justify-between text-[12px] mb-1">
+                          <span className="text-[#213532] font-semibold">{r.m}</span>
+                          <span className="text-[#213532]/70">{r.v}%</span>
+                        </div>
+                        <div className="h-2 bg-[#EFEAD9] rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${r.v}%`, background: MARKET_COLORS[r.m] || '#6b7280' }} />
+                        </div>
                       </div>
-                      <div className="h-2 bg-[#EFEAD9] rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${r.v}%`, background: r.c }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </Card>
             </div>
             <Card title="PDF statement" subtitle="Download your trading report">
