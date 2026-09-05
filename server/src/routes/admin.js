@@ -280,15 +280,27 @@ router.put('/users/:id/balance', auth('STAFF'), async (req, res) => {
 /* ------------------------------------------------------------
    IMPERSONATION — "Login as user"
    Issues a short-lived token for the client so support can see
-   exactly what the client sees. Admin only, and the token carries
-   an `impersonatedBy` claim so the action is traceable.
+   exactly what the client sees. Available to admins and managers;
+   a manager may only sign in as clients assigned to them. The
+   token carries an `impersonatedBy` claim so the action is
+   traceable.
    ------------------------------------------------------------ */
-router.post('/users/:id/impersonate', auth('ADMIN'), async (req, res) => {
+router.post('/users/:id/impersonate', auth('STAFF'), async (req, res) => {
   const id = Number(req.params.id);
   const target = await store.byId('users', id);
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (target.role !== 'CLIENT') {
     return res.status(400).json({ error: 'Only client accounts can be viewed this way' });
+  }
+
+  // A manager may only sign in as clients assigned to them
+  if (req.user.role !== 'ADMIN') {
+    const byId = Number(target.assignedManagerId) === Number(req.user.id);
+    const byName = String(target.assignedManagerName || '').trim().toLowerCase()
+      === String(req.user.name || '').trim().toLowerCase();
+    if (!byId && !byName) {
+      return res.status(403).json({ error: 'You can only sign in as your assigned clients.' });
+    }
   }
 
   const token = jwt.sign(

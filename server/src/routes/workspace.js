@@ -451,7 +451,15 @@ router.get('/appointments', auth, staffOnly, async (req, res) => {
   await fireDueAppointments().catch(() => undefined);
   const all = await store.all('appointments');
   res.json({
-    appointments: all.sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt))),
+    appointments: all
+      // Reminders created before the explicit title existed carry the
+      // generated "Call with {client}" title — present them as "Note".
+      .map(a => {
+        const generated = a.clientName ? `Call with ${a.clientName}` : '';
+        const title = !a.title || a.title === generated ? 'Note' : a.title;
+        return title === a.title ? a : { ...a, title };
+      })
+      .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt))),
   });
 });
 
@@ -473,7 +481,7 @@ router.post('/appointments', auth, staffOnly, async (req, res) => {
     clientId,
     clientName: client.name,
     clientEmail: client.email,
-    title: clean(b.title, 160).trim() || `Call with ${client.name}`,
+    title: clean(b.title, 160).trim() || 'Note',
     notes: clean(b.notes, 2000),
     startsAt: new Date(startsAt).toISOString(),
     endsAt: new Date(endsAt).toISOString(),

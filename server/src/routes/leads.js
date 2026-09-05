@@ -38,6 +38,25 @@ async function auth(req, res, next) {
   }
 }
 
+const emailOf = (v) => String(v || '').trim().toLowerCase();
+
+/**
+ * Ownership rule used by every scoped lead endpoint: a lead belongs
+ * to a manager when its `manager` field names them, or when the lead
+ * is synced from a client assigned to them.
+ */
+function isOwnLead(lead, user, clients) {
+  if (user.role === 'ADMIN') return true;
+  const mine = String(user.name || '').trim().toLowerCase();
+  const myId = Number(user.id);
+  const mgr = String(lead.manager || '').trim().toLowerCase();
+  if (mine && mgr && (mgr === mine || mgr.includes(mine) || mine.includes(mgr))) return true;
+  const client = clients.find(
+    u => u.role === 'CLIENT' && emailOf(u.email) && emailOf(u.email) === emailOf(lead.email),
+  );
+  return Boolean(client && Number(client.assignedManagerId) === myId);
+}
+
 const clean = (v, max = 200) => String(v ?? '').slice(0, max);
 
 /** Digits only, so +1 (415) 555-0182 and 14155550182 match. */
@@ -142,7 +161,6 @@ router.get('/', auth, async (req, res) => {
   let leads = await store.all('leads');
   const users = await store.all('users');
   const clients = users.filter(u => u.role === 'CLIENT');
-  const emailOf = (v) => String(v || '').trim().toLowerCase();
   const known = new Set(leads.map(l => emailOf(l.email)).filter(Boolean));
   for (const u of clients) {
     const em = emailOf(u.email);
@@ -166,16 +184,9 @@ router.get('/', auth, async (req, res) => {
     leads.push(lead);
     known.add(em);
   }
+  // Managers see only the leads assigned to them (admin sees the whole funnel)
   if (req.user.role !== 'ADMIN') {
-    const mine = String(req.user.name || '').toLowerCase();
-    const myId = Number(req.user.id);
-    leads = leads.filter(l => {
-      const mgr = String(l.manager || '').toLowerCase();
-      if (mgr && (mgr === mine || mgr.includes(mine) || mine.includes(mgr))) return true;
-      const client = clients.find(u => emailOf(u.email) && emailOf(u.email) === emailOf(l.email));
-      if (client && Number(client.assignedManagerId) === myId) return true;
-      return false;
-    });
+    leads = leads.filter(l => isOwnLead(l, req.user, clients));
   }
   res.json({ leads: leads.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) });
 });
@@ -220,6 +231,19 @@ router.patch('/:id', auth, async (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Lead not found' });
 
   const b = req.body || {};
+
+  // Managers may only edit (including move between columns) their own leads
+  if (req.user.role !== 'ADMIN') {
+    const clients = (await store.all('users')).filter(u => u.role === 'CLIENT');
+    if (!isOwnLead(existing, req.user, clients)) {
+      return res.status(403).json({ error: 'You can only edit your assigned leads.' });
+    }
+    // Reassigning a lead to another manager is an admin action
+    if (b.manager !== undefined) {
+      return res.status(403).json({ error: 'Only an administrator can reassign a lead.' });
+    }
+  }
+
   const patch = {};
   if (b.name !== undefined) patch.name = clean(b.name, 120);
   if (b.phone !== undefined) patch.phone = clean(b.phone, 40);
@@ -239,6 +263,13 @@ router.post('/:id/comment', auth, async (req, res) => {
   const id = Number(req.params.id);
   const existing = await store.byId('leads', id);
   if (!existing) return res.status(404).json({ error: 'Lead not found' });
+
+  if (req.user.role !== 'ADMIN') {
+    const clients = (await store.all('users')).filter(u => u.role === 'CLIENT');
+    if (!isOwnLead(existing, req.user, clients)) {
+      return res.status(403).json({ error: 'You can only comment on your assigned leads.' });
+    }
+  }
 
   const text = clean(req.body?.text, 2000).trim();
   if (!text) return res.status(400).json({ error: 'Comment cannot be empty' });

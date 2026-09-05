@@ -7,7 +7,7 @@ import {
   apiUpdateAppointment,
 } from '../../api';
 import { Card, Btn, Input, Select } from './ui';
-import { ChevronLeft, ChevronRight, Pencil, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Trash2, User, X } from 'lucide-react';
 
 function startOfWeek(d: Date) {
   const x = new Date(d);
@@ -384,6 +384,9 @@ export const CrmCalendarPanel: React.FC<{
                   <span className="min-w-0">
                     <span className="block truncate text-[12.5px] font-semibold text-[#1C412C]">{appointment.clientName}</span>
                     <span className="block break-words text-[11px] text-[#213532]/70">{dateTimeRange(new Date(appointment.startsAt), new Date(appointment.endsAt))}</span>
+                    {appointment.createdByName && (
+                      <span className="block text-[10px] text-[#213532]/50">by {appointment.createdByName}</span>
+                    )}
                   </span>
                   <span className="shrink-0 text-[10px] text-[#B08B48]">Open</span>
                 </button>
@@ -594,6 +597,12 @@ export const CrmCalendarPanel: React.FC<{
                             </div>
                             <div className="opacity-80">{hmLocal(appointment.startsAt)} · {appointment.title}</div>
                             {appointment.notes && <div className="opacity-70 break-words">{appointment.notes}</div>}
+                            {appointment.createdByName && (
+                              <div className="mt-1 pt-1 border-t border-white/20 flex items-center gap-1 text-[10px] opacity-85">
+                                <User className="w-2.5 h-2.5 shrink-0" />
+                                <span className="truncate font-medium">{appointment.createdByName}</span>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

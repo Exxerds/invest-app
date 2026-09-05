@@ -2272,7 +2272,6 @@ const UserDetails: React.FC<{
             icon={LogIn}
             onClick={() => {
               if (!account) return onNotify('This client does not have a platform account.');
-              if (!isAdmin) return onNotify('Only an administrator can sign in as a client.');
               onImpersonate?.(account);
             }}
           >
@@ -2442,6 +2441,9 @@ const UserDetails: React.FC<{
                 {staffUsers.map(m => (
                   <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
                 ))}
+                {assignedId !== '' && !staffUsers.some(m => String(m.id) === assignedId) && (
+                  <option value={assignedId}>{account?.assignedManagerName || `User #${assignedId}`}</option>
+                )}
               </Select>
             </Field>
             <Field label="Default leverage">
