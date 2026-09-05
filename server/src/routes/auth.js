@@ -233,6 +233,45 @@ router.post('/confirm-email', async (req, res) => {
   const user = await store.update('users', t.user_id, { status: 'active' });
   if (!user) return res.status(400).json({ error: 'User not found' });
 
+  // Link the confirmed account back to the CRM pipeline:
+  //  - the self-signup lead (matched by e-mail, then phone, then name)
+  //    moves to ACTIVE — the board must not keep a second "new" card
+  //    for a person that is now a registered client;
+  //  - the selected package is copied onto the account when it is
+  //    missing, so "All users" shows the package right away.
+  try {
+    const allLeads = await store.all('leads');
+    const email = String(user.email || '').trim().toLowerCase();
+    const phone = String(user.phone || '').replace(/\D/g, '');
+    const name = String(user.name || '').trim().toLowerCase();
+    const lead = allLeads.find(l => {
+      const le = String(l.email || '').trim().toLowerCase();
+      const lp = String(l.phone || '').replace(/\D/g, '');
+      const ln = String(l.name || '').trim().toLowerCase();
+      if (email && le && le === email) return true;
+      if (phone.length >= 6 && lp && lp === phone) return true;
+      return Boolean(name && ln && ln === name);
+    });
+    if (lead) {
+      // A fresh sign-up card (NEW) graduates to ACTIVE; a card the desk
+      // already moved further (CALLBACK / DEP) keeps its position.
+      await store.update('leads', lead.id, {
+        stage: !lead.stage || lead.stage === 'new' ? 'active' : lead.stage,
+        name: user.name || lead.name,
+        phone: user.phone || lead.phone,
+        email: user.email || lead.email,
+        accountType: lead.accountType || user.accountType || '',
+        updatedAt: new Date().toISOString(),
+      });
+      if (!user.accountType && lead.accountType) {
+        await store.update('users', user.id, { accountType: lead.accountType });
+      }
+    }
+  } catch (e) {
+    // the confirmation must never fail because of the lead pipeline
+    console.error('[confirm-email] lead link skipped:', e && e.message);
+  }
+
   res.json({ ok: true, token: signJwt(user), user: publicUser(user) });
 });
 

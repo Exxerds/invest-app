@@ -161,10 +161,53 @@ router.get('/', auth, async (req, res) => {
   let leads = await store.all('leads');
   const users = await store.all('users');
   const clients = users.filter(u => u.role === 'CLIENT');
-  const known = new Set(leads.map(l => emailOf(l.email)).filter(Boolean));
+
+  // Every registered client has exactly ONE card in the pipeline.
+  // The same person is matched by e-mail first, then phone, then name —
+  // so a lead from the website form (no e-mail) or an imported lead is
+  // enriched instead of getting a duplicate "active" card.
+  const emailIndex = new Map();
+  const phoneIndex = new Map();
+  const nameIndex = new Map();
+  for (const l of leads) {
+    const le = emailOf(l.email);
+    const lp = String(l.phone || '').replace(/\D/g, '');
+    const ln = String(l.name || '').trim().toLowerCase();
+    if (le) emailIndex.set(le, l);
+    if (lp.length >= 6) phoneIndex.set(lp, l);
+    if (ln) nameIndex.set(ln, l);
+  }
+
   for (const u of clients) {
     const em = emailOf(u.email);
-    if (!em || known.has(em)) continue;
+    const uphone = String(u.phone || '').replace(/\D/g, '');
+    const uname = String(u.name || '').trim().toLowerCase();
+    const existing =
+      (em && emailIndex.get(em)) ||
+      (uphone.length >= 6 && phoneIndex.get(uphone)) ||
+      (uname && nameIndex.get(uname)) ||
+      null;
+
+    if (existing) {
+      // Already in the pipeline: keep the stage the desk set, only fill
+      // in what the account now knows, and surface the chosen package
+      // on the account so "All users" shows it.
+      const patch = {};
+      if (em && emailOf(existing.email) !== em) patch.email = em;
+      if (!String(existing.phone || '').replace(/\D/g, '') && uphone) patch.phone = u.phone;
+      if (u.accountType && !existing.accountType) patch.accountType = u.accountType;
+      if (u.assignedManagerName && !existing.manager) patch.manager = u.assignedManagerName;
+      if (Object.keys(patch).length) {
+        const updated = await store.update('leads', existing.id, patch);
+        const i = leads.findIndex(l => l.id === existing.id);
+        if (i !== -1) leads[i] = updated;
+      }
+      if (!u.accountType && existing.accountType) {
+        await store.update('users', u.id, { accountType: existing.accountType });
+      }
+      continue;
+    }
+
     const lead = await store.insert('leads', {
       name: u.name,
       phone: u.phone || '',
@@ -182,8 +225,74 @@ router.get('/', auth, async (req, res) => {
       createdAt: u.created_at || new Date().toISOString(),
     });
     leads.push(lead);
-    known.add(em);
+    if (em) emailIndex.set(em, lead);
   }
+
+  // A person may arrive through two doors (website form lead + self
+  // sign-up) and end up with two cards. Consolidate cards that clearly
+  // describe the same person: same e-mail, same phone or the same full
+  // name. The most advanced card survives; its data is enriched from the
+  // dropped ones (comments, e-mail, phone, package, manager).
+  if (leads.length > 1) {
+    const rank = { new: 0, contact: 1, kyc: 2, active: 3 };
+    const parent = leads.map((_, i) => i);
+    const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const emailL = leads.map(l => emailOf(l.email));
+    const phoneL = leads.map(l => String(l.phone || '').replace(/\D/g, ''));
+    const nameL = leads.map(l => String(l.name || '').trim().toLowerCase());
+    for (let i = 0; i < leads.length; i++) {
+      for (let j = i + 1; j < leads.length; j++) {
+        const same =
+          (emailL[i] && emailL[i] === emailL[j]) ||
+          (phoneL[i].length >= 6 && phoneL[i] === phoneL[j]) ||
+          (nameL[i].length >= 5 && nameL[i] === nameL[j]);
+        if (same) parent[find(i)] = find(j);
+      }
+    }
+    const groups = new Map();
+    leads.forEach((l, i) => {
+      const r = find(i);
+      if (!groups.has(r)) groups.set(r, []);
+      groups.get(r).push(l);
+    });
+
+    const removedIds = new Set();
+    for (const cards of groups.values()) {
+      if (cards.length < 2) continue;
+      cards.sort((a, b) =>
+        (rank[b.stage] ?? -1) - (rank[a.stage] ?? -1) ||
+        (b.email ? 1 : 0) - (a.email ? 1 : 0) ||
+        (b.comments?.length || 0) - (a.comments?.length || 0) ||
+        (String(a.createdAt) < String(b.createdAt) ? -1 : 1),
+      );
+      const kept = cards[0];
+      const extras = cards.slice(1);
+      const patch = {};
+      const comments = [...(kept.comments || [])];
+      const known = new Set(comments.map(c => c.id));
+      for (const ex of extras) {
+        for (const c of ex.comments || []) {
+          if (!known.has(c.id)) { comments.push(c); known.add(c.id); }
+        }
+        if (!kept.email && ex.email) patch.email = ex.email;
+        if (!kept.phone && ex.phone) patch.phone = ex.phone;
+        if (!kept.accountType && ex.accountType) patch.accountType = ex.accountType;
+        if (!kept.manager && ex.manager) patch.manager = ex.manager;
+        removedIds.add(ex.id);
+      }
+      if (comments.length !== (kept.comments || []).length) patch.comments = comments;
+      if (Object.keys(patch).length) {
+        const updated = await store.update('leads', kept.id, patch);
+        const at = leads.indexOf(kept);
+        if (at !== -1) leads[at] = updated;
+      }
+    }
+    if (removedIds.size) {
+      await store.removeWhere('leads', l => removedIds.has(l.id));
+      leads = leads.filter(l => !removedIds.has(l.id));
+    }
+  }
+
   // Managers see only the leads assigned to them (admin sees the whole funnel)
   if (req.user.role !== 'ADMIN') {
     leads = leads.filter(l => isOwnLead(l, req.user, clients));
