@@ -562,6 +562,15 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
     setCommentText('');
   };
 
+  /**
+   * The comments modal must render the LIVE lead record, not the snapshot
+   * taken when it was opened — App refetches the leads after every comment,
+   * so the fresh entry appears immediately instead of after a reopen.
+   */
+  const openLead = commentLead
+    ? leads.find(l => l.id === commentLead.id) || commentLead
+    : null;
+
   const handleChangePassword = async () => {
     if (!pwdUser) return;
     setPwdLoading(true);
@@ -1865,13 +1874,13 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
       </div>
 
       {/* ===== MODAL: Lead comments ===== */}
-      {commentLead && (
-        <Modal onClose={() => setCommentLead(null)} title="Lead comments" subtitle={`${commentLead.name} · $${commentLead.potentialAmount.toLocaleString('en-US')} potential`}>
+      {openLead && (
+        <Modal onClose={() => setCommentLead(null)} title="Lead comments" subtitle={`${openLead.name} · $${openLead.potentialAmount.toLocaleString('en-US')} potential`}>
           <div className="space-y-2.5 max-h-56 overflow-y-auto">
-            {commentLead.comments.length === 0 && (
+            {openLead.comments.length === 0 && (
               <div className="text-center text-[12px] text-[#213532]/60 py-6">No comments yet</div>
             )}
-            {commentLead.comments.map(c => (
+            {openLead.comments.map(c => (
               <div key={c.id} className="bg-[#F5F2E9] border border-[#E4DECB] rounded-xl p-3">
                 <div className="text-[13px] text-[#213532]">{c.text}</div>
                 <div className="text-[10px] text-[#213532]/60 mt-1.5">
