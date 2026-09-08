@@ -183,13 +183,37 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
   }, []);
 
   /* Nav links (Home / Markets / Trading / About Us) — smooth scroll to
-     the section instead of a hard jump, keeping the hash in the URL. */
+     the section instead of a hard jump, keeping the hash in the URL.
+     The animation is driven with requestAnimationFrame on purpose:
+     native `behavior:'smooth'` is delivered as an instant jump in some
+     browsers/environments, while explicit frame-by-frame scrolling
+     always animates. */
+  const smoothScrollTo = (targetY: number) => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      window.scrollTo(0, targetY);
+      return;
+    }
+    const startY = window.scrollY;
+    const diff = targetY - startY;
+    if (Math.abs(diff) < 2) return;
+    const duration = Math.min(1500, Math.max(450, Math.abs(diff) * 0.3));
+    const startTime = performance.now();
+    const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+    const step = (now: number) => {
+      const p = Math.min(1, (now - startTime) / duration);
+      window.scrollTo(0, startY + diff * ease(p));
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     const hash = e.currentTarget.hash.replace('#', '');
     const el = hash ? document.getElementById(hash) : null;
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    else window.scrollTo({ top: 0, behavior: 'smooth' });
+    // 72px = the sticky header height, so the section title is not hidden
+    const targetY = el ? el.getBoundingClientRect().top + window.scrollY - 72 : 0;
+    smoothScrollTo(targetY);
     window.history.replaceState(null, '', hash ? `#${hash}` : window.location.pathname);
   };
 
