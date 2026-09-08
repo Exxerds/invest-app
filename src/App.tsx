@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import type { ActiveTab } from './components/Header';
 import { LandingPage } from './components/landing/LandingPage';
@@ -112,6 +112,23 @@ export default function App() {
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  /**
+   * Keep one history entry behind the app on load. Without it, pressing
+   * the browser back button from the first screen carried the user
+   * straight back to whatever page opened the site (a blank / external
+   * tab). With the guard, the first back press lands on this entry —
+   * the same screen, no jump out of the site — and only a second press
+   * leaves.
+   */
+  const backGuarded = useRef(false);
+  useEffect(() => {
+    if (backGuarded.current) return;
+    backGuarded.current = true;
+    const st = (window.history.state || {}) as { tab?: ActiveTab };
+    window.history.pushState({ ...st, tab: st.tab ?? activeTab }, '', window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Core State — everything starts EMPTY; the server fills it (no demo data)
