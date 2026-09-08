@@ -28,6 +28,7 @@ import {
   Plus,
   CheckCircle,
   CheckCircle2,
+  UserPlus,
   ArrowRight,
   ArrowLeft,
   Search,
@@ -69,6 +70,7 @@ import type { AdminTrade } from './CrmTradesManager';
 import { OakCrest, OakWordmark } from '../brand/Logo';
 import { Card, Btn, Badge, Field, Input, Select, Kpi, Th, Td, Avatar } from './ui';
 import { ImportLeadsModal } from '../modals/ImportLeadsModal';
+import { CreateClientModal } from '../modals/CreateClientModal';
 import { StatementModal } from '../modals/StatementModal';
 import { CrmMarketsPanel } from './CrmMarketsPanel';
 import { CrmCalendarPanel } from './CrmCalendarPanel';
@@ -218,18 +220,6 @@ const TAB_TITLES: Record<CrmTab, { title: string; sub: string }> = {
   calendar: { title: 'Calendar', sub: 'Reminders and call times — click a client to open their card' },
 };
 
-/**
- * The funnel stage is a person's single status: it is stored on their
- * lead card in the database and shown everywhere the person appears
- * (board, All users, Client cards) — one person, one status.
- */
-const STAGE_META: Record<string, { label: string; tone: 'gold' | 'green' | 'red' | 'blue' | 'violet' | 'gray' }> = {
-  new: { label: 'New', tone: 'blue' },
-  contact: { label: 'Callback', tone: 'gold' },
-  kyc: { label: 'Dep', tone: 'violet' },
-  active: { label: 'Active', tone: 'green' },
-};
-
 export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   leads,
   onMoveLeadStage,
@@ -254,6 +244,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   onUpdateTrade,
   onCloseTrade,
   onAddLeadComment,
+  onRefreshLeads,
   users,
   currentUserName,
   currentUserRole,
@@ -287,7 +278,8 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedUserId, setSelectedUserId] = useState<string>(investors[0]?.id ?? '');
 
-  // Lead import modal
+  // Lead import and client creation modals
+  const [isCreateClientOpen, setIsCreateClientOpen] = useState(false);
   const [isImportLeadsOpen, setIsImportLeadsOpen] = useState(false);
   const [statementModalUser, setStatementModalUser] = useState<{ id: number; name: string } | null>(null);
 
@@ -499,39 +491,6 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
         } as Investor;
       });
   }, [users, trades, kycDocuments, clientStatuses]);
-
-  /**
-   * Map every client to the stage of their funnel card — matched by
-   * e-mail first, then phone, then name, exactly like the server does,
-   * so a person always resolves to the same card. Moving a card on the
-   * board therefore updates the status seen in All users and on the
-   * Client cards: the stage is stored in the database and is the
-   * person's single status everywhere.
-   */
-  const clientStage = React.useMemo(() => {
-    const byEmail = new Map<string, string>();
-    const byPhone = new Map<string, string>();
-    const byName = new Map<string, string>();
-    for (const l of leads) {
-      const e = String(l.email || '').trim().toLowerCase();
-      const p = String(l.phone || '').replace(/\D/g, '');
-      const n = String(l.name || '').trim().toLowerCase();
-      if (e) byEmail.set(e, l.stage);
-      if (p.length >= 6) byPhone.set(p, l.stage);
-      if (n) byName.set(n, l.stage);
-    }
-    return (inv: Investor): string => {
-      const e = String(inv.email || '').trim().toLowerCase();
-      const p = String(inv.phone || '').replace(/\D/g, '');
-      const n = String(inv.name || '').trim().toLowerCase();
-      return (
-        (e && byEmail.get(e)) ||
-        (p.length >= 6 && byPhone.get(p)) ||
-        (n && byName.get(n)) ||
-        ''
-      );
-    };
-  }, [leads]);
 
   /**
    * Two id formats circulate: `acc-<userId>` (this component's own
@@ -944,6 +903,9 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               <div className="flex flex-wrap items-center gap-2">
                 {isAdmin && (
                   <>
+                    <Btn variant="gold" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
+                      Create client
+                    </Btn>
                     <Btn variant="ghost" icon={Upload} onClick={() => setIsImportLeadsOpen(true)}>
                       Import leads
                     </Btn>
@@ -996,7 +958,16 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                     <p className="text-[11px] text-[#213532]/70 mt-1">{requests.filter(r => r.type === 'deposit').length} deposits</p>
                   </div>
                 </Card>
-                {!isAdmin && (
+                {isAdmin ? (
+                <Card title="Quick registration" subtitle="Create a client account">
+                  <div className="p-5 space-y-2">
+                    <Btn variant="gold" size="sm" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
+                      Create client
+                    </Btn>
+                    <p className="text-[11px] text-[#213532]/70">Automatic account creation with active access</p>
+                  </div>
+                </Card>
+                ) : (
                 <Card title="Your book" subtitle="Clients assigned to you">
                   <div className="p-5">
                     <div className="text-3xl font-extrabold text-[#1C412C]">{allClients.length}</div>
@@ -1057,13 +1028,7 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <Badge tone={statusTone(crmStatus)}>{crmStatus}</Badge>
-                        {(() => {
-                          const m = STAGE_META[clientStage(inv)];
-                          return m ? <Badge tone={m.tone}>{m.label}</Badge> : null;
-                        })()}
-                      </div>
+                      <Badge tone={statusTone(crmStatus)}>{crmStatus}</Badge>
                     </div>
                     <div className="grid grid-cols-3 gap-2 mt-4">
                       <div className="bg-white rounded-xl p-2.5 border border-[#E4DECB]">
@@ -1112,6 +1077,11 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
               subtitle="Platform accounts, balances and access"
               actions={
                 <div className="flex flex-wrap items-center gap-3">
+                  {isAdmin && (
+                  <Btn variant="gold" size="sm" icon={UserPlus} onClick={() => setIsCreateClientOpen(true)}>
+                    Create client
+                  </Btn>
+                  )}
                   <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="min-w-52">
                     <option value="all">All statuses</option>
                     {CLIENT_STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
@@ -1138,7 +1108,6 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                       <Th>Balance</Th>
                       <Th>Invested</Th>
                       <Th>Manager</Th>
-                      <Th>Stage</Th>
                       <Th>Status</Th>
                       <Th className="text-right">Actions</Th>
                     </tr>
@@ -1161,16 +1130,6 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
                         <Td className="font-bold text-[#1C412C]">${inv.balance.toLocaleString('en-US')}</Td>
                         <Td className="text-[#213532]">${inv.invested.toLocaleString('en-US')}</Td>
                         <Td className="text-[12px] text-[#213532]/70">{inv.manager}</Td>
-                        <Td>
-                          {(() => {
-                            const m = STAGE_META[clientStage(inv)];
-                            return m ? (
-                              <Badge tone={m.tone}>{m.label}</Badge>
-                            ) : (
-                              <span className="text-[12px] text-[#213532]/40">—</span>
-                            );
-                          })()}
-                        </Td>
                         <Td>
                           <Badge tone={statusTone(lookupClientStatus(clientStatuses, inv.id))}>
                             {lookupClientStatus(clientStatuses, inv.id)}
@@ -1993,6 +1952,18 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
         managers={users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name).length ? users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name) : ['Laura Bennett (Senior Advisor)', 'Daniel Foster (Desk 2)', 'Oleg Vasilyev (Desk 3)']}
         onImportSuccess={(count) => {
           onNotify(`✔ Successfully imported ${count} leads into the pipeline.`);
+        }}
+      />
+
+      {/* ===== MODAL: Create Client ===== */}
+      <CreateClientModal
+        isOpen={isCreateClientOpen}
+        onClose={() => setIsCreateClientOpen(false)}
+        managers={users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name).length ? users.filter(u => u.role === 'MANAGER' || u.role === 'ADMIN').map(u => u.name) : ['Laura Bennett (Senior Advisor)', 'Daniel Foster (Desk 2)', 'Oleg Vasilyev (Desk 3)']}
+        onClientCreated={(newUser) => {
+          onNotify(`✔ Client ${newUser.name} created — also added to Leads.`);
+          onRefreshLeads?.();
+          setActiveTab('leads');
         }}
       />
 
@@ -2871,7 +2842,7 @@ const UserDetails: React.FC<{
                   disabled={!dialogText.trim() || sendingMessage}
                   onClick={async () => {
                     if (!account) {
-                      onNotify('This person has no platform account yet — they will appear in the CRM after registering on the site.');
+                      onNotify('This client does not have a platform account — create it first via «Create client».');
                       return;
                     }
                     setSendingMessage(true);
