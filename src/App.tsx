@@ -80,6 +80,20 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   const [legalSlug, setLegalSlug] = useState<LegalSlug | null>(() => legalSlugFromPath(window.location.pathname));
 
+  /**
+   * Top-level screens are wired into the browser history: clicking a
+   * section (Dashboard, Markets, Website, Admin panel) pushes a history
+   * entry, so the browser back / forward buttons walk the app's screens
+   * (Dashboard -> Markets -> back to Dashboard) instead of leaving the
+   * site. Programmatic switches (sign in / out, e-mail confirmation,
+   * impersonation) replace the entry instead of pushing a new one.
+   */
+  const navigateTab = (tab: ActiveTab) => {
+    if (tab === activeTab) return;
+    window.history.pushState({ tab }, '', window.location.pathname);
+    setActiveTab(tab);
+  };
+
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<ApiUser | null>(null);
 
@@ -89,7 +103,13 @@ export default function App() {
   }, [activeTab, isLoggedIn]);
 
   useEffect(() => {
-    const onPop = () => setLegalSlug(legalSlugFromPath(window.location.pathname));
+    const onPop = () => {
+      setLegalSlug(legalSlugFromPath(window.location.pathname));
+      // Back / forward inside the site: return to the screen the history
+      // entry carries instead of leaving the platform.
+      const tab = (window.history.state?.tab ?? undefined) as ActiveTab | undefined;
+      if (tab) setActiveTab(tab);
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -294,7 +314,9 @@ export default function App() {
           const allowed: ActiveTab[] =
             res.user.role === 'CLIENT' ? ['investor', 'catalog'] : ['crm'];
           if (!legalSlugFromPath(window.location.pathname)) {
-            setActiveTab(saved && allowed.includes(saved) ? saved : allowed[0]);
+            const tab = saved && allowed.includes(saved) ? saved : allowed[0];
+            setActiveTab(tab);
+            window.history.replaceState({ tab }, '', window.location.pathname);
           }
         })
         .catch(() => setToken(null));
@@ -507,7 +529,9 @@ export default function App() {
     setCurrentUser(user);
     setIsLoggedIn(true);
     if (policy) setClientPolicy(policy);
-    setActiveTab(user.role === 'CLIENT' ? 'investor' : 'crm');
+    const tab: ActiveTab = user.role === 'CLIENT' ? 'investor' : 'crm';
+    setActiveTab(tab);
+    window.history.replaceState({ tab }, '', window.location.pathname);
     showToast(`✔ Signed in as ${user.name} (${user.role})!`);
   };
 
@@ -528,6 +552,7 @@ export default function App() {
     localStorage.removeItem(ADMIN_TOKEN_KEY);
     setImpersonating(false);
     setActiveTab('landing');
+    window.history.replaceState({ tab: 'landing' }, '', window.location.pathname);
     showToast('✔ Signed out.', 'info');
   };
 
@@ -974,7 +999,7 @@ export default function App() {
 
   const closeLegal = () => {
     setLegalSlug(null);
-    window.history.pushState({}, '', '/');
+    window.history.pushState({ tab: 'landing' }, '', '/');
     setActiveTab('landing');
   };
 
@@ -1243,6 +1268,7 @@ export default function App() {
                 .then(res => {
                   setCurrentUser(res.user);
                   setActiveTab('crm');
+                  window.history.replaceState({ tab: 'crm' }, '', window.location.pathname);
                   showToast('Back in the admin panel');
                 })
                 .catch(() => handleLogout());
@@ -1258,7 +1284,7 @@ export default function App() {
       {activeTab !== 'crm' && activeTab !== 'landing' && activeTab !== 'investor' && !legalSlug && (
       <Header
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={navigateTab}
         investorBalance={investorBalance}
         totalPortfolio={totalPortfolio}
         onOpenDepositModal={() => setIsDepositModalOpen(true)}
@@ -1293,7 +1319,7 @@ export default function App() {
             transactions={myTransactions}
             investorBalance={investorBalance}
             myInvestments={myInvestments}
-            onOpenCatalog={() => setActiveTab('catalog')}
+            onOpenCatalog={() => navigateTab('catalog')}
             onOpenDepositModal={() => setIsDepositModalOpen(true)}
             onOpenWithdrawModal={() => setIsWithdrawModalOpen(true)}
             allowManualClosing={clientPolicy.manualClosing}
@@ -1322,7 +1348,7 @@ export default function App() {
             canManageAssets={isStaff}
             notifications={notifications}
             onOpenInvestModal={(proj) => setSelectedProjectForInvest(proj)}
-            onSwitchToCrm={() => setActiveTab('crm')}
+            onSwitchToCrm={() => navigateTab('crm')}
           />
           </div>
         )}
@@ -1383,6 +1409,7 @@ export default function App() {
                 setCurrentUser(res.user);
                 setImpersonating(true);
                 setActiveTab('investor');
+                window.history.replaceState({ tab: 'investor' }, '', window.location.pathname);
                 showToast(`Viewing the platform as ${res.user.name}`);
               } catch (err) {
                 showToast(err instanceof Error ? `✖ ${err.message}` : '✖ Could not open the account', 'info');
