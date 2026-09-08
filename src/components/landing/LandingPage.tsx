@@ -182,6 +182,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
     };
   }, []);
 
+  /* Nav links (Home / Markets / Trading / About Us) — smooth scroll to
+     the section instead of a hard jump, keeping the hash in the URL. */
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    const hash = e.currentTarget.hash.replace('#', '');
+    const el = hash ? document.getElementById(hash) : null;
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.history.replaceState(null, '', hash ? `#${hash}` : window.location.pathname);
+  };
+
   const [faqOpen, setFaqOpen] = useState<number | null>(0);
 
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
@@ -213,19 +224,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenLoginModal, onOp
 
       <header className="sticky top-0 z-50 bg-[#F5F2E9]/95 backdrop-blur border-b border-[#1C412C]/12">
         <div className="max-w-6xl mx-auto px-5 h-[72px] flex items-center gap-8">
-          <a href="#top" className="flex items-center shrink-0">
+          <a href="#top" onClick={handleNavClick} className="flex items-center shrink-0">
             <OakLogo size={64} />
           </a>
 
           <nav className="hidden lg:flex items-center gap-7 text-[14px] font-medium text-[#213532]">
-            <a href="#top" className="hover:text-[#1C412C] transition-colors">Home</a>
-            <a href="#markets" className="hover:text-[#1C412C] transition-colors">Markets</a>
+            <a href="#top" onClick={handleNavClick} className="hover:text-[#1C412C] transition-colors">Home</a>
+            <a href="#markets" onClick={handleNavClick} className="hover:text-[#1C412C] transition-colors">Markets</a>
             {/* Plain link — no dropdown. "Trading" jumps to the web-terminal
                 block ("The platform is always at hand"), "Markets" to the quotes */}
-            <a href="#platform" className="hover:text-[#1C412C] transition-colors">
+            <a href="#platform" onClick={handleNavClick} className="hover:text-[#1C412C] transition-colors">
               Trading
             </a>
-            <a href="#about" className="hover:text-[#1C412C] transition-colors">About Us</a>
+            <a href="#about" onClick={handleNavClick} className="hover:text-[#1C412C] transition-colors">About Us</a>
           </nav>
 
           <div className="ml-auto flex items-center gap-2.5">

@@ -5,7 +5,7 @@
 //  Dashboard · Trading (Spot/Futures/P2P/AI) · Withdrawals ·
 //  Transactions · Support · Call manager · Profile · Statistics
 // ============================================================
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -41,6 +41,12 @@ import { sanitizeDecimal, parseNumber } from '../../utils/number';
 import { openStatementWindow } from '../../utils/statement';
 
 interface InvestorDashboardProps {
+  /** Sub-screen to open when this section mounts (history restore). */
+  initialSub?: string;
+  /** External sub-screen request from the browser back / forward button. */
+  subRequest?: { value: string; nonce: number } | null;
+  /** Fired on a user sub-screen change — the app pushes it to history. */
+  onSubChange?: (sub: string) => void;
   /** Signed-in account — the cabinet shows real data, never a demo persona */
   user?: { id?: number; name: string; email: string; phone?: string } | null;
   /** True once an admin approved the client's KYC documents */
@@ -214,6 +220,9 @@ const PlChart: React.FC<{ values: number[] }> = ({ values }) => {
 };
 
 export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
+  initialSub,
+  subRequest,
+  onSubChange,
   user,
   kycVerified = false,
   transactions = [],
@@ -245,7 +254,29 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     ? nameParts[0][0] + nameParts[nameParts.length - 1][0]
     : (nameParts[0]?.slice(0, 2) || 'CL')).toUpperCase();
 
-  const [tab, setTab] = useState<Tab>('dashboard');
+  const [tab, setTab] = useState<Tab>((initialSub as Tab) || 'dashboard');
+
+  // The sub-screen (sidebar tab) participates in the browser history:
+  // every change is reported to the app (which pushes a history entry),
+  // and back / forward requests from the browser are applied here.
+  const firstSubSync = useRef(true);
+  const applyingExternal = useRef(false);
+  useEffect(() => {
+    if (firstSubSync.current) {
+      firstSubSync.current = false;
+      return;
+    }
+    if (applyingExternal.current) {
+      applyingExternal.current = false;
+      return;
+    }
+    onSubChange?.(tab);
+  }, [tab]);
+  useEffect(() => {
+    if (!subRequest || subRequest.value === tab) return;
+    applyingExternal.current = true;
+    setTab(subRequest.value as Tab);
+  }, [subRequest]);
 
   // Mobile (< lg): the sidebar becomes a slide-in drawer over the content
   const [navOpen, setNavOpen] = useState(false);

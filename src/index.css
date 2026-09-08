@@ -57,6 +57,15 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
+
+  /* Landing nav targets: keep the sticky header from covering the
+     section title when the page smooth-scrolls to it. */
+  [id='top'],
+  [id='markets'],
+  [id='platform'],
+  [id='about'] {
+    scroll-margin-top: 72px;
+  }
 }
 
 /* Custom scrollbars */

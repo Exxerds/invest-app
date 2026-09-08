@@ -96,6 +96,12 @@ type CrmTab =
   | 'settings';
 
 interface CrmDashboardProps {
+  /** Sub-screen to open when this section mounts (history restore). */
+  initialSub?: string;
+  /** External sub-screen request from the browser back / forward button. */
+  subRequest?: { value: string; nonce: number } | null;
+  /** Fired on a user sub-screen change — the app pushes it to history. */
+  onSubChange?: (sub: string) => void;
   leads: Lead[];
   onMoveLeadStage: (id: string, direction: 'next' | 'prev') => void;
   onOpenNewLeadModal: () => void;
@@ -221,6 +227,9 @@ const TAB_TITLES: Record<CrmTab, { title: string; sub: string }> = {
 };
 
 export const CrmDashboard: React.FC<CrmDashboardProps> = ({
+  initialSub,
+  subRequest,
+  onSubChange,
   leads,
   onMoveLeadStage,
   onOpenNewLeadModal,
@@ -268,7 +277,29 @@ export const CrmDashboard: React.FC<CrmDashboardProps> = ({
   unreadCount,
   onMarkNotificationsRead,
 }) => {
-  const [activeTab, setActiveTab] = useState<CrmTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<CrmTab>((initialSub as CrmTab) || 'dashboard');
+
+  // The sub-screen (sidebar tab) participates in the browser history:
+  // every change is reported to the app (which pushes a history entry),
+  // and back / forward requests from the browser are applied here.
+  const firstSubSync = useRef(true);
+  const applyingExternal = useRef(false);
+  useEffect(() => {
+    if (firstSubSync.current) {
+      firstSubSync.current = false;
+      return;
+    }
+    if (applyingExternal.current) {
+      applyingExternal.current = false;
+      return;
+    }
+    onSubChange?.(activeTab);
+  }, [activeTab]);
+  useEffect(() => {
+    if (!subRequest || subRequest.value === activeTab) return;
+    applyingExternal.current = true;
+    setActiveTab(subRequest.value as CrmTab);
+  }, [subRequest]);
 
   // Mobile (< lg): the sidebar becomes a slide-in drawer over the content
   const [navOpen, setNavOpen] = useState(false);

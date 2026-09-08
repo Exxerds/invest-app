@@ -56,6 +56,12 @@ const TAB_KEY = 'ohy_tab';
 /** Holds the admin's own token while they view a client account */
 const ADMIN_TOKEN_KEY = 'ohy_admin_token';
 
+/** The sub-screen (sidebar tab) each section opens on by default. */
+const SECTION_DEFAULT_SUB: Partial<Record<ActiveTab, string>> = {
+  crm: 'dashboard',
+  investor: 'dashboard',
+};
+
 function legalSlugFromPath(path: string): LegalSlug | null {
   const m = path.match(/^\/legal\/(client|aml|terms|risk)\/?$/);
   return m ? (m[1] as LegalSlug) : null;
@@ -102,13 +108,44 @@ export default function App() {
     if (isLoggedIn && activeTab !== 'landing') localStorage.setItem(TAB_KEY, activeTab);
   }, [activeTab, isLoggedIn]);
 
+  /* ---- Sub-screens (CRM / client sidebar tabs) in the browser history ----
+     Moving between sub-screens (Dashboard, Client cards, Trading, ...)
+     pushes a history entry, so the browser back / forward buttons walk
+     them: Dashboard -> Client cards -> back -> Dashboard.  */
+  const subMemoryRef = useRef<Partial<Record<ActiveTab, string>>>({});
+  const subNonceRef = useRef(0);
+  const activeTabRef = useRef(activeTab);
+  const [subRequest, setSubRequest] = useState<{ tab: ActiveTab; value: string; nonce: number } | null>(null);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+    // Leaving a section unmounts it — a pending sub-request must not
+    // survive the remount and re-apply a stale sub-screen.
+    setSubRequest(null);
+  }, [activeTab]);
+
+  /** A section reports its sub-screen change; push it onto the history. */
+  const handleSubChange = (sub: string) => {
+    const top = activeTabRef.current;
+    subMemoryRef.current[top] = sub;
+    window.history.pushState({ tab: top, sub }, '', window.location.pathname);
+  };
+
   useEffect(() => {
     const onPop = () => {
       setLegalSlug(legalSlugFromPath(window.location.pathname));
       // Back / forward inside the site: return to the screen the history
-      // entry carries instead of leaving the platform.
-      const tab = (window.history.state?.tab ?? undefined) as ActiveTab | undefined;
-      if (tab) setActiveTab(tab);
+      // entry carries instead of leaving the platform — including the
+      // section's sub-screen (Dashboard / Client cards / Trading / ...).
+      const st = (window.history.state || {}) as { tab?: ActiveTab; sub?: string };
+      if (!st.tab) return;
+      subMemoryRef.current[st.tab] = st.sub;
+      const def = SECTION_DEFAULT_SUB[st.tab];
+      const switching = st.tab !== activeTabRef.current;
+      setActiveTab(st.tab);
+      // A remounted section picks its sub up from initialSub; only a
+      // section that stays mounted needs an explicit request.
+      if (def && !switching) setSubRequest({ tab: st.tab, value: st.sub ?? def, nonce: ++subNonceRef.current });
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -1331,6 +1368,9 @@ export default function App() {
 
         {activeTab === 'investor' && (
           <InvestorDashboard
+            initialSub={subMemoryRef.current.investor}
+            subRequest={subRequest?.tab === 'investor' ? subRequest : null}
+            onSubChange={handleSubChange}
             user={currentUser}
             kycVerified={kycApproved}
             transactions={myTransactions}
@@ -1372,6 +1412,9 @@ export default function App() {
 
         {activeTab === 'crm' && isStaff && !legalSlug && (
           <CrmDashboard
+            initialSub={subMemoryRef.current.crm}
+            subRequest={subRequest?.tab === 'crm' ? subRequest : null}
+            onSubChange={handleSubChange}
             leads={leads}
             onMoveLeadStage={handleMoveLeadStage}
             onOpenNewLeadModal={() => setIsNewLeadModalOpen(true)}
